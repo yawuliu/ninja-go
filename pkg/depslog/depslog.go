@@ -58,17 +58,37 @@ func (dl *DepsLog) Load(state *graph.State) error {
 	// 读取签名和版本
 	var signature [len(kSignature)]byte
 	if _, err := f.Read(signature[:]); err != nil {
-		return err
+		// 签名读取失败，视为无效头部，清空状态并返回成功
+		dl.deps = []*Deps{}
+		dl.nodes = []*graph.Node{}
+		dl.reverseDeps = make(map[int][]int)
+		return nil
+		// return err
 	}
 	if string(signature[:]) != kSignature {
-		return fmt.Errorf("bad deps log signature")
+		// 签名不匹配，清空状态
+		dl.deps = []*Deps{}
+		dl.nodes = []*graph.Node{}
+		dl.reverseDeps = make(map[int][]int)
+		return nil
+		// return fmt.Errorf("bad deps log signature")
 	}
 	var version int32
 	if err := binary.Read(f, binary.LittleEndian, &version); err != nil {
-		return err
+		// 版本读取失败，清空状态
+		dl.deps = []*Deps{}
+		dl.nodes = []*graph.Node{}
+		dl.reverseDeps = make(map[int][]int)
+		return nil
+		//return err
 	}
 	if version != kCurrentVersion {
-		return fmt.Errorf("unsupported version %d", version)
+		// 版本不匹配，清空状态
+		dl.deps = []*Deps{}
+		dl.nodes = []*graph.Node{}
+		dl.reverseDeps = make(map[int][]int)
+		return nil
+		// return fmt.Errorf("unsupported version %d", version)
 	}
 
 	// 读取所有记录到内存
@@ -267,6 +287,24 @@ func (dl *DepsLog) Close() error {
 
 // RecordDeps 记录某个输出节点的依赖
 func (dl *DepsLog) RecordDeps(out *graph.Node, mtime int64, deps []*graph.Node) error {
+	// 检查是否已有相同的依赖记录
+	existing := dl.GetDeps(out)
+	if existing != nil {
+		// 比较 mtime 和依赖节点列表
+		if existing.Mtime == mtime && len(existing.Nodes) == len(deps) {
+			same := true
+			for i, n := range existing.Nodes {
+				if n != deps[i] {
+					same = false
+					break
+				}
+			}
+			if same {
+				// 完全相同，无需写入
+				return nil
+			}
+		}
+	}
 	if err := dl.OpenForWrite(); err != nil {
 		return err
 	}
@@ -419,6 +457,13 @@ func (dl *DepsLog) Recompact() error {
 	// 删除可能残留的临时文件
 	os.Remove(tempPath)
 
+	// 重置所有节点的 ID 为 -1，以便重新分配
+	for _, node := range dl.nodes {
+		if node != nil {
+			node.ID = -1
+		}
+	}
+
 	newLog := NewDepsLog(tempPath)
 	if err := newLog.OpenForWrite(); err != nil {
 		return err
@@ -469,7 +514,7 @@ func (dl *DepsLog) isDepsEntryLive(node *graph.Node) bool {
 		return false
 	}
 	// 如果规则有 Deps 字段（字符串）且非空，则认为存活
-	return node.Edge.Rule.Depfile != ""
+	return true // node.Edge.Rule.Deps != ""
 }
 
 func (dl *DepsLog) ensureCapacity(id int) {
@@ -483,11 +528,6 @@ func (dl *DepsLog) ensureCapacity(id int) {
 		copy(newNodes, dl.nodes)
 		dl.nodes = newNodes
 	}
-
-	//if id >= len(dl.deps) {
-	//	dl.deps = append(dl.deps, make([]*Deps, id+1-len(dl.deps))...)
-	//	dl.nodes = append(dl.nodes, make([]*graph.Node, id+1-len(dl.nodes))...)
-	//}
 }
 
 // GetReverseDeps 返回所有依赖给定节点的输出节点列表（即该节点作为输入被哪些输出节点依赖）

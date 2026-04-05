@@ -39,6 +39,7 @@ type Edge struct {
 	OrderOnlyDeps []*Node // || 后的 order-only 依赖
 	DyndepFile    *Node
 	Pool          *Pool
+	// Deps          string // 新增：deps = gcc 或 msvc
 }
 
 type State struct {
