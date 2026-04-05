@@ -7,6 +7,7 @@ import (
 )
 
 type Node struct {
+	ID        int // 节点唯一标识，由 State 分配
 	Path      string
 	Mtime     int64 // 文件修改时间（纳秒），-1 表示不存在
 	Dirty     bool
@@ -41,12 +42,14 @@ type Edge struct {
 }
 
 type State struct {
-	mu       sync.RWMutex
-	Pools    map[string]*Pool
-	Rules    map[string]*Rule
-	Edges    []*Edge
-	Nodes    map[string]*Node
-	Defaults []*Node // default 语句指定的目标
+	mu        sync.RWMutex
+	Pools     map[string]*Pool
+	Rules     map[string]*Rule
+	Edges     []*Edge
+	Nodes     map[string]*Node
+	Defaults  []*Node // default 语句指定的目标
+	nextID    int
+	nodesByID []*Node
 }
 
 func NewState() *State {
@@ -65,8 +68,10 @@ func (s *State) AddNode(path string) *Node {
 	if n, ok := s.Nodes[path]; ok {
 		return n
 	}
-	n := &Node{Path: path, Mtime: -1}
+	n := &Node{Path: path, Mtime: -1, ID: s.nextID}
+	s.nextID++
 	s.Nodes[path] = n
+	s.nodesByID = append(s.nodesByID, n)
 	return n
 }
 
@@ -102,4 +107,18 @@ func (s *State) LookupNode(path string) *Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.Nodes[path]
+}
+
+func (s *State) GetNodeByID(id int) *Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if id >= 0 && id < len(s.nodesByID) {
+		return s.nodesByID[id]
+	}
+	return nil
+}
+
+// GetNode 返回指定路径的节点，如果不存在则创建（与 AddNode 相同，但语义更清晰）
+func (s *State) GetNode(path string) *Node {
+	return s.AddNode(path)
 }

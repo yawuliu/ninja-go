@@ -97,7 +97,7 @@ func NewBuilder(state *graph.State, parallel int, cmdRunner util.CommandRunner, 
 
 func (b *Builder) Build(targets []string) error {
 	// 加载已有的依赖缓存
-	if err := b.depsLog.Load(); err != nil {
+	if err := b.depsLog.Load(b.state); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: load .ninja_deps: %v\n", err)
 	}
 	if err := b.buildLog.Load(b.fs); err != nil {
@@ -577,8 +577,134 @@ func (b *Builder) parseDepfile(e *graph.Edge) error {
 	// 统一换行符为 \n
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
+	lines := strings.Split(content, "\n")
+	var currentLine strings.Builder
+	var allDeps []string
+	var depNodes []*graph.Node
+	targetOutput := util.UnescapeDepfile(e.Outputs[0].Path)
+	for i := 0; i < len(lines); i++ {
+		rawLine := lines[i]
+		// 去除行尾空格和制表符（但保留行首缩进，不过对于续行，缩进可能被忽略）
+		line := strings.TrimRight(rawLine, " \t")
+		// 处理续行：如果行以反斜杠结尾，去掉反斜杠并继续
+		if strings.HasSuffix(line, "\\") {
+			currentLine.WriteString(strings.TrimSuffix(line, "\\"))
+			// 注意：反斜杠后不添加空格，因为 make 规则中反斜杠后直接换行
+			continue
+		}
+		// 没有续行符，将当前累积的行加上这一行作为完整行
+		if currentLine.Len() > 0 {
+			currentLine.WriteString(line)
+			line = currentLine.String()
+			currentLine.Reset()
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 查找冒号
+		colonIdx := util.FindUnescapedColon(line)
+		if colonIdx == -1 {
+			// 没有冒号且不是空行，报错
+			return fmt.Errorf("expected ':' in depfile")
+		}
+		//if colonIdx == -1 {
+		//	// 无效行，跳过（可记录警告）
+		//	continue
+		//}
+		outputsPart := strings.TrimSpace(line[:colonIdx])
+		depsPart := strings.TrimSpace(line[colonIdx+1:])
+		// 解析输出（可能有多个，空格分隔）
+		outputsRaw := util.SplitEscapedFields(outputsPart)
+		outputs := make([]string, len(outputsRaw))
+		for i, o := range outputsRaw {
+			outputs[i] = util.UnescapeDepfile(o)
+		}
+		// 检查当前边的主输出是否在这个规则中
+		found := false
+		for _, out := range outputs {
+			if out == targetOutput {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		// 解析依赖
+		depsRaw := util.SplitEscapedFields(depsPart)
+		deps := make([]string, len(depsRaw))
+		for _, token := range depsRaw {
+			deps = append(deps, util.UnescapeDepfile(token))
+		}
+		allDeps = append(allDeps, deps...)
+	}
+	// 处理循环结束后可能剩余的累积行（如果文件以反斜杠结尾）
+	if currentLine.Len() > 0 {
+		line := strings.TrimSpace(currentLine.String())
+		if line != "" {
+			colonIdx := util.FindUnescapedColon(line)
+			if colonIdx == -1 {
+				// 没有冒号且不是空行，报错
+				return fmt.Errorf("expected ':' in depfile")
+			}
+			if colonIdx != -1 {
+				outputsPart := strings.TrimSpace(line[:colonIdx])
+				depsPart := strings.TrimSpace(line[colonIdx+1:])
+				outputsRaw := util.SplitEscapedFields(outputsPart)
+				outputs := make([]string, len(outputsRaw))
+				for i, o := range outputsRaw {
+					outputs[i] = util.UnescapeDepfile(o)
+				}
+				found := false
+				for _, out := range outputs {
+					if out == targetOutput {
+						found = true
+						break
+					}
+				}
+				if found {
+					outputsRaw := util.SplitEscapedFields(depsPart)
+					var deps []string
+					for _, token := range outputsRaw {
+						deps = append(deps, util.UnescapeDepfile(token))
+					}
+					allDeps = append(allDeps, deps...)
+				}
+			}
+		}
+	}
+	// 去重并添加到边的隐式依赖中
+	seen := make(map[string]bool)
+	for _, dep := range allDeps {
+		if dep == "" || seen[dep] {
+			continue
+		}
+		seen[dep] = true
+		depNode := b.state.AddNode(dep)
+		// 避免重复添加
+		found := false
+		for _, existing := range e.ImplicitDeps {
+			if existing == depNode {
+				found = true
+				break
+			}
+		}
+		if !found {
+			e.ImplicitDeps = append(e.ImplicitDeps, depNode)
+			depNodes = append(depNodes, depNode)
+		}
+	}
+	if len(depNodes) > 0 {
+		var depPaths []string
+		for _, n := range depNodes {
+			depPaths = append(depPaths, n.Path)
+		}
+		b.depsLog.AddDeps(e.Outputs[0].Path, depPaths, b.state)
+	}
+	return nil
 	//
-	colonIdx := strings.Index(content, ":")
+	/*colonIdx := strings.Index(content, ":")
 	if colonIdx == -1 {
 		return nil
 	}
@@ -619,7 +745,7 @@ func (b *Builder) parseDepfile(e *graph.Edge) error {
 		}
 		b.depsLog.AddDeps(e.Outputs[0].Path, depPaths)
 	}
-	return nil
+	return nil*/
 }
 
 func paths(nodes []*graph.Node) []string {

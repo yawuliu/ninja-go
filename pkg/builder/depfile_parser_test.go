@@ -108,7 +108,7 @@ func TestDepfileParser_Spaces(t *testing.T) {
 }
 
 func TestDepfileParser_MultipleBackslashes(t *testing.T) {
-	content := "a\\ b\\#c.h: \\\\\\\\\\  \\\\\\\\ \\\\share\\info\\\\#1"
+	content := "a\\ b\\#c.h: \\\\\\\\\\  \\\\\\\\\\\\\\\\ \\\\\\\\share\\info\\\\#1"
 	edge, _ := parseDepfileContent(t, content, "a b#c.h")
 	assert.Len(t, edge.ImplicitDeps, 3)
 	assert.Equal(t, "\\\\ ", edge.ImplicitDeps[0].Path)
@@ -125,25 +125,25 @@ func TestDepfileParser_Escapes(t *testing.T) {
 func TestDepfileParser_EscapedColons(t *testing.T) {
 	content := "c\\:\\gcc\\x86_64-w64-mingw32\\include\\stddef.o: \\\n" +
 		" c:\\gcc\\x86_64-w64-mingw32\\include\\stddef.h \n"
-	edge, _ := parseDepfileContent(t, content, "c:\\gcc\\x86_64-w64-mingw32\\include\\stddef.o")
+	edge, _ := parseDepfileContent(t, content, "c\\:\\gcc\\x86_64-w64-mingw32\\include\\stddef.o")
 	assert.Len(t, edge.ImplicitDeps, 1)
 	assert.Equal(t, "c:\\gcc\\x86_64-w64-mingw32\\include\\stddef.h", edge.ImplicitDeps[0].Path)
 }
 
 func TestDepfileParser_EscapedTargetColon(t *testing.T) {
-	content := "foo1\\: x\nfoo1\\:\nfoo1\\:\r\nfoo1\\:\t\nfoo1\\:"
+	content := "foo1\\\\: x\nfoo1\\\\:\nfoo1\\\\:\r\nfoo1\\\\:\t\nfoo1\\\\:"
 	edge, _ := parseDepfileContent(t, content, "foo1\\")
 	assert.Len(t, edge.ImplicitDeps, 1)
 	assert.Equal(t, "x", edge.ImplicitDeps[0].Path)
 }
 
 func TestDepfileParser_SpecialChars(t *testing.T) {
-	content := "C:/Program\\ Files\\ (x86)/Microsoft\\ crtdefs.h: \\\n" +
+	content := "C\\:/Program\\ Files\\ (x86)/Microsoft\\ crtdefs.h: \\\n" +
 		" en@quot.header~ t+t-x!=1 \\\n" +
 		" openldap/slapd.d/cn=config/cn=schema/cn={0}core.ldif\\\n" +
 		" Fu\303\244ball\\\n" +
 		" a[1]b@2%c"
-	edge, _ := parseDepfileContent(t, content, "C:/Program Files (x86)/Microsoft crtdefs.h")
+	edge, _ := parseDepfileContent(t, content, "C\\:/Program\\ Files\\ (x86)/Microsoft\\ crtdefs.h")
 	assert.Len(t, edge.ImplicitDeps, 5)
 	paths := []string{}
 	for _, n := range edge.ImplicitDeps {
