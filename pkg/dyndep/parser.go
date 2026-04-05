@@ -52,8 +52,9 @@ func (p *DyndepParser) Parse(filename, content string) error {
 					return fmt.Errorf("%s:%d: duplicate version", filename, lineNo)
 				}
 				version := strings.Trim(val, `"`)
-				if version != "1" && version != "1.0" {
-					return fmt.Errorf("%s:%d: unsupported dyndep version %s", filename, lineNo, version)
+				major, minor := util.ParseVersion(version)
+				if major != 1 || minor != 0 {
+					return fmt.Errorf("%s:%d: unsupported 'ninja_dyndep_version = %s'", filename, lineNo, version)
 				}
 				haveVersion = true
 			}
