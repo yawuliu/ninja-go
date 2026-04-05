@@ -57,7 +57,11 @@ func (p *DyndepParser) Parse(filename, content string) error {
 					return fmt.Errorf("%s:%d: unsupported 'ninja_dyndep_version = %s'", filename, lineNo, version)
 				}
 				haveVersion = true
-			}
+			} //} else if key == "" {
+			//	return fmt.Errorf("unexpected '='")
+			//} else if key == " " {
+			//	return fmt.Errorf("unexpected indent")
+			//}
 			continue
 		}
 
