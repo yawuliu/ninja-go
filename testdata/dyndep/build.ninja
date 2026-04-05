@@ -1,0 +1,18 @@
+# 根据操作系统选择命令
+#if windows
+rule protoc
+  command = fake_protoc.bat $in
+  dyndep = $out.dd
+#else
+#  rule protoc
+#    command = ./fake_protoc.sh $in
+#    dyndep = $out.dd
+#endif
+
+rule cxx
+#  command = touch $out   # 模拟编译
+   command = echo. > $out
+
+build proto.pb.cc proto.pb.h: protoc proto.proto
+build proto.pb.o: cxx proto.pb.cc
+default proto.pb.o
