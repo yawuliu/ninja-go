@@ -74,7 +74,7 @@ func (p *DyndepParser) Parse(filename, content string) error {
 		}
 	}
 	if !haveVersion {
-		return fmt.Errorf("%s: missing ninja_dyndep_version", filename)
+		return fmt.Errorf("%s: expected 'ninja_dyndep_version = ...'", filename)
 	}
 	return scanner.Err()
 }
