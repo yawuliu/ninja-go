@@ -42,14 +42,14 @@ type Edge struct {
 }
 
 type State struct {
-	mu        sync.RWMutex
-	Pools     map[string]*Pool
-	Rules     map[string]*Rule
-	Edges     []*Edge
-	Nodes     map[string]*Node
-	Defaults  []*Node // default 语句指定的目标
-	nextID    int
-	nodesByID []*Node
+	mu       sync.RWMutex
+	Pools    map[string]*Pool
+	Rules    map[string]*Rule
+	Edges    []*Edge
+	Nodes    map[string]*Node
+	Defaults []*Node // default 语句指定的目标
+	// nextID    int
+	//nodesByID []*Node
 }
 
 func NewState() *State {
@@ -68,10 +68,10 @@ func (s *State) AddNode(path string) *Node {
 	if n, ok := s.Nodes[path]; ok {
 		return n
 	}
-	n := &Node{Path: path, Mtime: -1, ID: s.nextID}
-	s.nextID++
+	n := &Node{Path: path, Mtime: -1, ID: -1}
+	// s.nextID++
 	s.Nodes[path] = n
-	s.nodesByID = append(s.nodesByID, n)
+	// s.nodesByID = append(s.nodesByID, n)
 	return n
 }
 
@@ -109,14 +109,14 @@ func (s *State) LookupNode(path string) *Node {
 	return s.Nodes[path]
 }
 
-func (s *State) GetNodeByID(id int) *Node {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if id >= 0 && id < len(s.nodesByID) {
-		return s.nodesByID[id]
-	}
-	return nil
-}
+//func (s *State) GetNodeByID(id int) *Node {
+//	s.mu.RLock()
+//	defer s.mu.RUnlock()
+//	if id >= 0 && id < len(s.nodesByID) {
+//		return s.nodesByID[id]
+//	}
+//	return nil
+//}
 
 // GetNode 返回指定路径的节点，如果不存在则创建（与 AddNode 相同，但语义更清晰）
 func (s *State) GetNode(path string) *Node {

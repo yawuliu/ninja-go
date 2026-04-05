@@ -104,7 +104,7 @@ func (b *Builder) Build(targets []string) error {
 		fmt.Fprintf(os.Stderr, "warning: load .ninja_log: %v\n", err)
 	}
 	defer func() { // 构建结束后保存
-		b.depsLog.Save()
+		b.depsLog.Close()
 		b.buildLog.Save()
 	}()
 
@@ -696,11 +696,15 @@ func (b *Builder) parseDepfile(e *graph.Edge) error {
 		}
 	}
 	if len(depNodes) > 0 {
-		var depPaths []string
-		for _, n := range depNodes {
-			depPaths = append(depPaths, n.Path)
+		//var depPaths []string
+		//for _, n := range depNodes {
+		//	depPaths = append(depPaths, n.Path)
+		//}
+		// b.depsLog.AddDeps(e.Outputs[0].Path, depPaths, b.state)
+		// 记录依赖（需要 mtime，可传入当前时间或 0）
+		if err := b.depsLog.RecordDeps(e.Outputs[0], 0, depNodes); err != nil {
+			return err
 		}
-		b.depsLog.AddDeps(e.Outputs[0].Path, depPaths, b.state)
 	}
 	return nil
 	//
