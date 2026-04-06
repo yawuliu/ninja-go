@@ -6,6 +6,7 @@ import (
 	"ninja-go/pkg/util"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -200,6 +201,723 @@ func (n *NinjaMain) ToolGraph(options *Options, args []string) int {
 		graph.AddTarget(node)
 	}
 	graph.Finish()
+	return 0
+}
+
+// ToolQuery 显示指定目标的输入、输出和验证信息。
+func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "ninja: expected a target to query\n")
+		return 1
+	}
+
+	dyndepLoader := builder.NewDyndepLoader(n.state_, n.disk_interface_)
+
+	for _, arg := range args {
+		node, err := n.CollectTarget(arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+			return 1
+		}
+
+		fmt.Printf("%s:\n", node.Path)
+		if edge := node.InEdge; edge != nil {
+			// 如果边有挂起的 dyndep 文件，尝试加载
+			if edge.DyndepFile != nil && edge.DyndepFile.DyndepPending {
+				if err := dyndepLoader.LoadDyndeps(edge.DyndepFile); err != nil {
+					fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)
+				}
+			}
+			fmt.Printf("  input: %s\n", edge.Rule.Name)
+			for idx, in := range edge.Inputs {
+				label := ""
+				if edge.IsImplicit(idx) {
+					label = "| "
+				} else if edge.IsOrderOnly(idx) {
+					label = "|| "
+				}
+				fmt.Printf("    %s%s\n", label, in.Path)
+			}
+			if len(edge.Validations) > 0 {
+				fmt.Printf("  validations:\n")
+				for _, v := range edge.Validations {
+					fmt.Printf("    %s\n", v.Path)
+				}
+			}
+		}
+		fmt.Printf("  outputs:\n")
+		for _, outEdge := range node.OutEdges {
+			for _, out := range outEdge.Outputs {
+				fmt.Printf("    %s\n", out.Path)
+			}
+		}
+		if validationEdges := node.ValidationOutEdges; len(validationEdges) > 0 {
+			fmt.Printf("  validation for:\n")
+			for _, outEdge := range validationEdges {
+				for _, out := range outEdge.Outputs {
+					fmt.Printf("    %s\n", out.Path)
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// ToolTargetsList 递归打印节点树（深度限制）。
+func ToolTargetsList(nodes []*builder.Node, depth, indent int) {
+	for _, n := range nodes {
+		for i := 0; i < indent; i++ {
+			fmt.Print("  ")
+		}
+		if edge := n.InEdge; edge != nil {
+			fmt.Printf("%s: %s\n", n.Path, edge.Rule.Name)
+			if depth > 1 || depth <= 0 {
+				ToolTargetsList(edge.Inputs, depth-1, indent+1)
+			}
+		} else {
+			fmt.Printf("%s\n", n.Path)
+		}
+	}
+}
+
+// ToolTargetsSourceList 打印所有源文件（没有入边的节点）。
+func ToolTargetsSourceList(state *builder.State) {
+	for _, edge := range state.Edges {
+		for _, in := range edge.Inputs {
+			if in.InEdge == nil {
+				fmt.Println(in.Path)
+			}
+		}
+	}
+}
+
+// ToolTargetsListByRule 打印指定规则生成的所有输出。
+func ToolTargetsListByRule(state *builder.State, ruleName string) {
+	outputs := make(map[string]bool)
+	for _, edge := range state.Edges {
+		if edge.Rule.Name == ruleName {
+			for _, out := range edge.Outputs {
+				outputs[out.Path] = true
+			}
+		}
+	}
+	for out := range outputs {
+		fmt.Println(out)
+	}
+}
+
+// ToolTargetsListAll 打印所有输出及其所属规则。
+func ToolTargetsListAll(state *builder.State) {
+	for _, edge := range state.Edges {
+		for _, out := range edge.Outputs {
+			fmt.Printf("%s: %s\n", out.Path, edge.Rule.Name)
+		}
+	}
+}
+
+// ToolBrowse 启动浏览器查看依赖图（如果平台支持）。
+func (n *NinjaMain) ToolBrowse(options *Options, args []string) int {
+	// 模拟条件编译：如果构建时未启用浏览支持，则报错退出。
+	// 实际使用时可以通过构建标签或运行时检测来替代。
+	// 这里简单返回错误信息。
+	fmt.Fprintf(os.Stderr, "ninja: browse tool not supported on this platform\n")
+	return 1
+}
+
+// ToolMSVC MSVC 辅助工具（仅 Windows）。
+func (n *NinjaMain) ToolMSVC(options *Options, args []string) int {
+	if runtime.GOOS != "windows" {
+		fmt.Fprintf(os.Stderr, "ninja: msvc tool only available on Windows\n")
+		return 1
+	}
+	// 调用实际的 MSVCHelperMain 实现。
+	// 注意：需要将当前进程的命令行参数传递给 MSVCHelperMain。
+	// 由于 Go 没有直接等价物，这里假设 MSVCHelperMain 是一个外部函数，
+	// 接收完整的命令行参数切片并返回退出码。
+	// 实际使用时可能需要重新构造参数列表。
+	return MSVCHelperMain(append([]string{"msvc"}, args...))
+}
+
+// ToolDeps 显示依赖日志中的依赖关系。
+func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
+	var nodes []*builder.Node
+	if len(args) == 0 {
+		// 遍历 deps log 中的所有节点，只保留存活的条目
+		for _, node := range n.deps_log_.Nodes() {
+			if builder.IsDepsEntryLiveFor(node) {
+				nodes = append(nodes, node)
+			}
+		}
+	} else {
+		collected, err := n.CollectTargetsFromArgs(args)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+			return 1
+		}
+		nodes = collected
+	}
+
+	disk := &builder.RealFileSystem{}
+	for _, node := range nodes {
+		deps := n.deps_log_.GetDeps(node)
+		if deps == nil {
+			fmt.Printf("%s: deps not found\n", node.Path)
+			continue
+		}
+
+		mtime, err := disk.Stat(node.Path)
+		if err != nil {
+			// 记录错误但继续（与 C++ 中忽略 Stat 错误一致）
+			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.Path, err)
+		}
+		status := "VALID"
+		if mtime.IsZero() || mtime.ModTime().UnixNano() > deps.Mtime {
+			status = "STALE"
+		}
+		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
+			node.Path, len(deps.Nodes), deps.Mtime, status)
+		for _, dep := range deps.Nodes {
+			fmt.Printf("    %s\n", dep.Path)
+		}
+		fmt.Println()
+	}
+	return 0
+}
+
+// ToolMissingDeps 检查依赖日志中是否存在缺失的生成文件依赖。
+func (n *NinjaMain) ToolMissingDeps(options *Options, args []string) int {
+	nodes, err := n.CollectTargetsFromArgs(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+
+	disk := disk.NewRealDiskInterface()
+	printer := missingdeps.NewPrinter()
+	scanner := missingdeps.NewScanner(printer, n.depsLog, n.state_, disk)
+
+	for _, node := range nodes {
+		scanner.ProcessNode(node)
+	}
+	scanner.PrintStats()
+	if scanner.HadMissingDeps() {
+		return 3
+	}
+	return 0
+}
+
+// ToolTargets 列出目标（按规则、深度或全部）。
+func (n *NinjaMain) ToolTargets(options *Options, args []string) int {
+	depth := 1
+	if len(args) >= 1 {
+		mode := args[0]
+		switch mode {
+		case "rule":
+			ruleName := ""
+			if len(args) > 1 {
+				ruleName = args[1]
+			}
+			if ruleName == "" {
+				ToolTargetsSourceList(n.state_)
+			} else {
+				ToolTargetsListByRule(n.state_, ruleName)
+			}
+			return 0
+		case "depth":
+			if len(args) > 1 {
+				if d, err := strconv.Atoi(args[1]); err == nil {
+					depth = d
+				}
+			}
+		case "all":
+			ToolTargetsListAll(n.state_)
+			return 0
+		default:
+			suggestion := util.SpellcheckString(mode, "rule", "depth", "all")
+			if suggestion != "" {
+				fmt.Fprintf(os.Stderr, "ninja: unknown target tool mode '%s', did you mean '%s'?\n", mode, suggestion)
+			} else {
+				fmt.Fprintf(os.Stderr, "ninja: unknown target tool mode '%s'\n", mode)
+			}
+			return 1
+		}
+	}
+
+	rootNodes, err := n.state_.RootNodes()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+	ToolTargetsList(rootNodes, depth, 0)
+	return 0
+}
+
+// ToolRules 列出所有规则，可选打印描述。
+func (n *NinjaMain) ToolRules(options *Options, args []string) int {
+	// 解析选项（简化：手动解析 args 中的 -d）
+	printDescription := false
+	newArgs := []string{}
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-d" {
+			printDescription = true
+		} else if args[i] == "-h" {
+			fmt.Println(`usage: ninja -t rules [options]
+
+options:
+  -d     also print the description of the rule
+  -h     print this message`)
+			return 1
+		} else {
+			newArgs = append(newArgs, args[i])
+		}
+	}
+	// 忽略位置参数（通常没有）
+
+	rules := n.state_.Bindings.GetRules()
+	for name, rule := range rules {
+		fmt.Print(name)
+		if printDescription {
+			if desc := rule.GetBinding("description"); desc != nil {
+				fmt.Printf(": %s", desc.Unparse())
+			}
+		}
+		fmt.Println()
+	}
+	return 0
+}
+
+// ToolWinCodePage 打印 Windows 代码页信息（仅 Windows）。
+func (n *NinjaMain) ToolWinCodePage(options *Options, args []string) int {
+	if len(args) != 0 {
+		fmt.Println("usage: ninja -t wincodepage")
+		return 1
+	}
+	// 获取当前 Windows 代码页（ANSI 或 UTF-8）
+	// 注：Go 的 runtime 未直接提供 GetACP，但可以检查环境或使用默认假定。
+	// 简单实现：判断是否处于 UTF-8 环境（如代码页 65001）
+	// 这里输出固定信息，实际需要调用 Windows API。
+	fmt.Println("Build file encoding: ANSI") // 或检测是否为 UTF-8
+	return 0
+}
+
+// PrintCommandMode 打印命令的模式
+type PrintCommandMode int
+
+const (
+	PCM_Single PrintCommandMode = iota
+	PCM_All
+)
+
+// PrintCommands 递归打印边（及其依赖）的命令行。
+func PrintCommands(edge *builder.Edge, seen map[*builder.Edge]bool, mode PrintCommandMode) {
+	if edge == nil {
+		return
+	}
+	if seen[edge] {
+		return
+	}
+	seen[edge] = true
+
+	if mode == PCM_All {
+		for _, in := range edge.Inputs {
+			PrintCommands(in.InEdge, seen, mode)
+		}
+	}
+
+	if !edge.IsPhony() {
+		fmt.Println(edge.EvaluateCommand(false))
+	}
+}
+
+// ToolCommands 列出构建给定目标所需的所有命令。
+func (n *NinjaMain) ToolCommands(options *Options, args []string) int {
+	// 解析选项
+	mode := PCM_All
+	var newArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-s" {
+			mode = PCM_Single
+		} else if args[i] == "-h" {
+			fmt.Println(`usage: ninja -t commands [options] [targets]
+
+options:
+  -s     only print the final command to build [target], not the whole chain`)
+			return 1
+		} else {
+			newArgs = append(newArgs, args[i])
+		}
+	}
+
+	nodes, err := n.CollectTargetsFromArgs(newArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+
+	seen := make(map[*builder.Edge]bool)
+	for _, node := range nodes {
+		PrintCommands(node.InEdge, seen, mode)
+	}
+	return 0
+}
+
+// ToolInputs 列出给定目标所需的所有输入文件。
+func (n *NinjaMain) ToolInputs(options *Options, args []string) int {
+	// 解析选项
+	print0 := false
+	shellEscape := true
+	dependencyOrder := false
+
+	var newArgs []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-0", "--print0":
+			print0 = true
+		case "-E", "--no-shell-escape":
+			shellEscape = false
+		case "-d", "--dependency-order":
+			dependencyOrder = true
+		case "-h", "--help":
+			fmt.Printf(`Usage: ninja -t inputs [options] [targets]
+
+List all inputs used for a set of targets, sorted in dependency order.
+Note that by default, results are shell escaped, and sorted alphabetically,
+and never include validation target paths.
+
+Options:
+  -h, --help          Print this message.
+  -0, --print0        Use \0, instead of \n as a line terminator.
+  -E, --no-shell-escape   Do not shell escape the result.
+  -d, --dependency-order  Sort results by dependency order.
+`)
+			return 1
+		default:
+			newArgs = append(newArgs, args[i])
+		}
+	}
+
+	nodes, err := n.CollectTargetsFromArgs(newArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+
+	collector := NewInputsCollector()
+	for _, node := range nodes {
+		collector.VisitNode(node)
+	}
+
+	inputs := collector.GetInputsAsStrings(shellEscape)
+	if !dependencyOrder {
+		sort.Strings(inputs)
+	}
+
+	if print0 {
+		for _, input := range inputs {
+			fmt.Print(input)
+			fmt.Print("\x00")
+		}
+	} else {
+		for _, input := range inputs {
+			fmt.Println(input)
+		}
+	}
+	return 0
+}
+
+// ToolMultiInputs 为每个目标输出一行，包含目标名、分隔符和输入名。
+func (n *NinjaMain) ToolMultiInputs(options *Options, args []string) int {
+	// 解析选项
+	terminator := byte('\n')
+	delimiter := "\t"
+
+	var newArgs []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-0", "--print0":
+			terminator = 0
+		case "-d", "--delimiter":
+			if i+1 >= len(args) {
+				fmt.Fprintf(os.Stderr, "ninja: missing argument for %s\n", args[i])
+				return 1
+			}
+			delimiter = args[i+1]
+			i++
+		case "-h", "--help":
+			fmt.Printf(`Usage: ninja -t multi-inputs [options] [targets]
+
+Print one or more sets of inputs required to build targets, sorted in dependency order.
+The tool works like inputs tool but with addition of the target for each line.
+The output will be a series of lines with the following elements:
+<target> <delimiter> <input> <terminator>
+Note that a given input may appear for several targets if it is used by more than one targets.
+
+Options:
+  -h, --help                   Print this message.
+  -d, --delimiter=DELIM        Use DELIM instead of TAB for field delimiter.
+  -0, --print0                 Use \0, instead of \n as a line terminator.
+`)
+			return 1
+		default:
+			newArgs = append(newArgs, args[i])
+		}
+	}
+
+	nodes, err := n.CollectTargetsFromArgs(newArgs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+
+	for _, node := range nodes {
+		collector := NewInputsCollector()
+		collector.VisitNode(node)
+		inputs := collector.GetInputsAsStrings(false) // 不转义，保持原始路径
+		for _, input := range inputs {
+			fmt.Printf("%s%s%s", node.Path, delimiter, input)
+			if terminator == 0 {
+				fmt.Printf("%c", terminator)
+			} else {
+				fmt.Println()
+			}
+		}
+	}
+	return 0
+}
+
+// ToolClean 清理构建产物。
+func (n *NinjaMain) ToolClean(options *Options, args []string) int {
+	// 解析选项
+	generator := false
+	cleanRules := false
+	var targets []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-g":
+			generator = true
+		case "-r":
+			cleanRules = true
+		case "-h":
+			fmt.Println(`usage: ninja -t clean [options] [targets]
+
+options:
+  -g     also clean files marked as ninja generator output
+  -r     interpret targets as a list of rules to clean instead`)
+			return 1
+		default:
+			targets = append(targets, args[i])
+		}
+	}
+
+	if cleanRules && len(targets) == 0 {
+		fmt.Fprintln(os.Stderr, "ninja: expected a rule to clean")
+		return 1
+	}
+
+	cleaner := NewCleaner(n.state_, n.config_, n.disk_interface_)
+	if len(targets) > 0 {
+		if cleanRules {
+			return cleaner.CleanRules(targets)
+		}
+		return cleaner.CleanTargets(targets)
+	}
+	return cleaner.CleanAll(generator)
+}
+
+// ToolCleanDead 清理不再由当前 manifest 生成的旧输出。
+func (n *NinjaMain) ToolCleanDead(options *Options, args []string) int {
+	cleaner := NewCleaner(n.state_, n.config_, n.disk_interface_)
+	return cleaner.CleanDead(n.build_log_.Entries())
+}
+
+// EvaluateCommandMode 命令求值模式
+type EvaluateCommandMode int
+
+const (
+	ECM_NORMAL EvaluateCommandMode = iota
+	ECM_EXPAND_RSPFILE
+)
+
+// EvaluateCommandWithRspfile 返回边的命令，可选展开响应文件内容。
+func EvaluateCommandWithRspfile(edge *builder.Edge, mode EvaluateCommandMode) string {
+	command := edge.EvaluateCommand(false) // 不含 rspfile 内容
+	if mode == ECM_NORMAL {
+		return command
+	}
+
+	rspfile := edge.GetUnescapedRspfile()
+	if rspfile == "" {
+		return command
+	}
+
+	// 查找 rspfile 在命令中的位置（需考虑 @rspfile、-f rspfile、--option-file=rspfile 三种模式）
+	idx := strings.Index(command, rspfile)
+	if idx == -1 || idx == 0 {
+		return command
+	}
+	// 检查前一个字符
+	prevChar := command[idx-1]
+	if prevChar != '@' && !strings.Contains(command[idx-14:idx], "--option-file=") && !strings.Contains(command[idx-3:idx], "-f ") {
+		return command
+	}
+
+	rspContent := edge.GetBinding("rspfile_content")
+	// 将换行符替换为空格（响应文件内容中换行表示参数分隔）
+	rspContent = strings.ReplaceAll(rspContent, "\n", " ")
+
+	switch {
+	case prevChar == '@':
+		// @rspfile 形式
+		return command[:idx-1] + rspContent + command[idx+len(rspfile):]
+	case strings.Contains(command[idx-14:idx], "--option-file="):
+		// --option-file=rspfile 形式
+		return command[:idx-14] + rspContent + command[idx+len(rspfile):]
+	case strings.Contains(command[idx-3:idx], "-f "):
+		// -f rspfile 形式
+		return command[:idx-3] + rspContent + command[idx+len(rspfile):]
+	default:
+		return command
+	}
+}
+
+// PrintCompdbObjectsForEdge 输出一个边对应的编译数据库条目（JSON 格式）。
+func PrintCompdbObjectsForEdge(directory string, edge *builder.Edge, evalMode EvaluateCommandMode) {
+	command := EvaluateCommandWithRspfile(edge, evalMode)
+	first := true
+
+	for _, input := range edge.Inputs {
+		if !first {
+			fmt.Print(",")
+		}
+		fmt.Printf("\n  {\n    \"directory\": \"")
+		PrintJSONString(directory)
+		fmt.Printf("\",\n    \"command\": \"")
+		PrintJSONString(command)
+		fmt.Printf("\",\n    \"file\": \"")
+		PrintJSONString(input.Path)
+		fmt.Printf("\",\n    \"output\": \"")
+		PrintJSONString(edge.Outputs[0].Path)
+		fmt.Printf("\"\n  }")
+		first = false
+	}
+}
+
+// ToolCompilationDatabase 生成 JSON 编译数据库。
+func (n *NinjaMain) ToolCompilationDatabase(options *Options, args []string) int {
+	// 解析选项
+	evalMode := ECM_NORMAL
+	var rules []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-x":
+			evalMode = ECM_EXPAND_RSPFILE
+		case "-h":
+			fmt.Println(`usage: ninja -t compdb [options] [rules]
+
+options:
+  -x     expand @rspfile style response file invocations`)
+			return 1
+		default:
+			rules = append(rules, args[i])
+		}
+	}
+
+	directory, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: failed to get working directory: %v\n", err)
+		return 1
+	}
+
+	fmt.Print("[")
+	first := true
+	for _, edge := range n.state_.Edges {
+		if len(edge.Inputs) == 0 {
+			continue
+		}
+		if len(rules) == 0 {
+			if !first {
+				fmt.Print(",")
+			}
+			PrintCompdbObjectsForEdge(directory, edge, evalMode)
+			first = false
+		} else {
+			for _, ruleName := range rules {
+				if edge.Rule.Name == ruleName {
+					if !first {
+						fmt.Print(",")
+					}
+					PrintCompdbObjectsForEdge(directory, edge, evalMode)
+					first = false
+					break
+				}
+			}
+		}
+	}
+	fmt.Println("\n]")
+	return 0
+}
+
+// ToolRecompact 重新压缩内部日志文件（ninja_log 和 ninja_deps）。
+func (n *NinjaMain) ToolRecompact(options *Options, args []string) int {
+	if !n.EnsureBuildDirExists() {
+		return 1
+	}
+	if !n.OpenBuildLog(true) || !n.OpenDepsLog(true) {
+		return 1
+	}
+	return 0
+}
+
+// ToolRestat 重新统计构建日志中指定输出文件的 mtime。
+func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
+	// 解析选项
+	buildDir := n.build_dir_ // 使用结构体已有的 build_dir 字段
+	var outputs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--builddir" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: --builddir requires an argument")
+				return 1
+			}
+			buildDir = args[i+1]
+			i++
+		} else if args[i] == "-h" || args[i] == "--help" {
+			fmt.Println("usage: ninja -t restat [--builddir=DIR] [outputs]")
+			return 1
+		} else {
+			outputs = append(outputs, args[i])
+		}
+	}
+
+	logPath := ".ninja_log"
+	if buildDir != "" {
+		logPath = buildDir + "/" + logPath
+	}
+
+	// 加载构建日志
+	if err := n.build_log_.Load(logPath); err != nil {
+		// 如果文件不存在，忽略
+		if os.IsNotExist(err) {
+			return 0
+		}
+		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
+		return 1
+	}
+
+	// 调用 Restat 更新记录
+	if err := n.build_log_.Restat(logPath, n.disk_interface_, outputs); err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: failed restat: %v\n", err)
+		return 1
+	}
+
+	// 如果不是 dry run，重新打开日志文件用于写入
+	if !n.config_.DryRun {
+		if err := n.build_log_.OpenForWrite(logPath, n); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
+			return 1
+		}
+	}
+
 	return 0
 }
 
