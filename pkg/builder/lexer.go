@@ -180,7 +180,7 @@ func (l *Lexer) ReadToken() Token {
 		goto done
 	}
 done:
-	startPos = l.pos
+	// startPos = l.pos
 	l.lastStart = startPos
 	l.lastEnd = l.pos
 	if tokenType != T_NEWLINE && tokenType != T_EOF {
