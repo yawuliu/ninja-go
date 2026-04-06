@@ -47,6 +47,162 @@ type NinjaMain struct {
 	start_time_millis_ int64
 }
 
+// RebuildManifest 如果必要则重新构建清单文件。
+// 返回 true 表示清单已被重建。
+func (n *NinjaMain) RebuildManifest(inputFile string, status builder.Status) (bool, error) {
+	path := inputFile
+	if path == "" {
+		return false, fmt.Errorf("empty path")
+	}
+	norm, _ := util.CanonicalizePath(path)
+	node := n.state_.LookupNode(norm)
+	if node == nil {
+		return false, nil
+	}
+
+	builder := builder.NewBuilder(&n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
+	if err := builder.AddTarget(node); err != nil {
+		return false, err
+	}
+
+	if builder.AlreadyUpToDate() {
+		return false, nil // 没有重建
+	}
+
+	if _, err := builder.Build(); err != nil {
+		return false, err
+	}
+
+	// 只有当节点现在变脏时才认为清单被重建（可能被 restat 清理）
+	if !node.Dirty {
+		// 重置状态以避免问题（如 https://github.com/ninja-build/ninja/issues/874）
+		n.state_.Reset()
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// ParsePreviousElapsedTimes 从构建日志中加载每条边上次构建的耗时，用于 ETA 预测。
+func (n *NinjaMain) ParsePreviousElapsedTimes() {
+	for _, edge := range n.state_.Edges {
+		for _, out := range edge.Outputs {
+			logEntry := n.build_log_.LookupByOutput(out.Path)
+			if logEntry == nil {
+				continue // 可能该边的其他输出有记录，继续检查下一个输出
+			}
+			edge.PrevElapsedTimeMillis = logEntry.EndTime - logEntry.StartTime
+			break // 只要找到一个输出有记录即可，继续下一条边
+		}
+	}
+}
+
+// CollectTarget 将命令行路径转换为 Node，支持特殊语法 "foo.cc^"（取第一个输出）。
+func (n *NinjaMain) CollectTarget(cpath string) (*builder.Node, error) {
+	path := cpath
+	if path == "" {
+		return nil, fmt.Errorf("empty path")
+	}
+	norm, slashBits := util.CanonicalizePath(path)
+
+	// 特殊语法：以 '^' 结尾表示取该节点的第一个输出
+	firstDependent := false
+	if len(norm) > 0 && norm[len(norm)-1] == '^' {
+		norm = norm[:len(norm)-1]
+		firstDependent = true
+	}
+
+	node := n.state_.LookupNode(norm)
+	if node != nil {
+		if firstDependent {
+			if len(node.OutEdges) == 0 {
+				// 没有出边，尝试从 deps log 中查找反向依赖
+				revNode := n.deps_log_.GetFirstReverseDepsNode(node)
+				if revNode == nil {
+					return nil, fmt.Errorf("'%s' has no out edge", norm)
+				}
+				node = revNode
+			} else {
+				edge := node.OutEdges[0]
+				if len(edge.Outputs) == 0 {
+					// 不应发生，防御性代码
+					return nil, fmt.Errorf("edge has no outputs")
+				}
+				node = edge.Outputs[0]
+			}
+		}
+		return node, nil
+	}
+
+	// 节点不存在，构建错误信息
+	decanon := util.PathDecanonicalized(norm, slashBits)
+	errMsg := fmt.Sprintf("unknown target '%s'", decanon)
+	if norm == "clean" {
+		errMsg += ", did you mean 'ninja -t clean'?"
+	} else if norm == "help" {
+		errMsg += ", did you mean 'ninja -h'?"
+	} else {
+		suggestion := n.state_.SpellcheckNode(norm)
+		if suggestion != nil {
+			errMsg += fmt.Sprintf(", did you mean '%s'?", suggestion.Path)
+		}
+	}
+	return nil, fmt.Errorf("%s", errMsg)
+}
+
+// CollectTargetsFromArgs 将命令行参数转换为 Node 列表，如果无参数则使用默认目标。
+func (n *NinjaMain) CollectTargetsFromArgs(args []string) ([]*builder.Node, error) {
+	if len(args) == 0 {
+		defaults := n.state_.DefaultNodes()
+		if len(defaults) == 0 {
+			return nil, fmt.Errorf("no default nodes specified")
+		}
+		return defaults, nil
+	}
+
+	var targets []*builder.Node
+	for _, arg := range args {
+		node, err := n.CollectTarget(arg)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, node)
+	}
+	return targets, nil
+}
+
+// / Command-line options.
+type Options struct {
+	/// Build file to load.
+	input_file string
+
+	/// Directory to change into before running.
+	working_dir string
+
+	/// Tool to run rather than building.
+	tool *Tool
+
+	/// Whether phony cycles should warn or print an error.
+	phony_cycle_should_err bool
+}
+
+// ToolGraph 输出 graphviz dot 文件（用于可视化依赖图）。
+func (n *NinjaMain) ToolGraph(options *Options, args []string) int {
+	nodes, err := n.CollectTargetsFromArgs(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		return 1
+	}
+
+	graph := graphviz.NewGraph(n.state_, n.disk_interface_)
+	graph.Start()
+	for _, node := range nodes {
+		graph.AddTarget(node)
+	}
+	graph.Finish()
+	return 0
+}
+
 func realMain() int {
 	// 构建配置
 	config := builder.DefaultBuildConfig()
