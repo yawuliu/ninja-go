@@ -29,6 +29,9 @@ type Edge struct {
 	Mark                 VisitMark // 0 none, 1 in stack, 2 done
 	/// A Jobserver slot instance. Invalid by default.
 	jobSlot JobserverSlot
+	// Historical info: how long did this edge take last time,
+	// as per .ninja_log, if known? Defaults to -1 if unknown.
+	PrevElapsedTimeMillis int64 // -1;
 }
 
 func (e *Edge) AllInputsReady() bool {

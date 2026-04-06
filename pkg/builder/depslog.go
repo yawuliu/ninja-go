@@ -457,3 +457,17 @@ func (dl *DepsLog) ensureCapacity(id int) {
 		dl.nodes = append(dl.nodes, make([]*Node, id+1-len(dl.nodes))...)
 	}
 }
+
+// / Used for tests.
+func (dl *DepsLog) Nodes() []*Node { return dl.nodes }
+
+func (dl *DepsLog) Deps() []*Deps { return dl.deps }
+
+// IsDepsEntryLiveFor 判断节点的依赖记录是否应该保留。
+// 节点必须有入边，且该边的 "deps" 绑定非空。
+func IsDepsEntryLiveFor(node *Node) bool {
+	if node.InEdge == nil {
+		return false
+	}
+	return node.InEdge.GetBinding("deps") != ""
+}

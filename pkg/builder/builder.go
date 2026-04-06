@@ -413,3 +413,8 @@ func (b *Builder) Cleanup() {
 		b.disk.Remove(b.lockFilePath)
 	}
 }
+
+// / Set Jobserver client instance for this builder.
+func (b *Builder) SetJobserverClient(jobserver_client JobserverClient) {
+	b.jobserver_ = jobserver_client
+}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"hash/fnv"
+	"ninja-go/pkg/util"
 	"os"
 	"strconv"
 	"strings"
@@ -19,11 +20,6 @@ const (
 // BuildLogUser 接口，用于判断某个输出是否已死亡（用于 recompact）
 type BuildLogUser interface {
 	IsPathDead(path string) bool
-}
-
-// DiskInterface 用于获取文件状态（便于测试）
-type DiskInterface interface {
-	Stat(path string) (os.FileInfo, error)
 }
 
 // LogEntry 表示一条构建记录
@@ -274,7 +270,7 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser) error {
 }
 
 // Restat 更新日志中某些输出的 mtime（用于 restat 规则）
-func (bl *BuildLog) Restat(path string, disk DiskInterface, outputs []string) error {
+func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string) error {
 	bl.Close()
 	tempPath := path + ".restat"
 	f, err := os.Create(tempPath)
@@ -313,3 +309,5 @@ func (bl *BuildLog) Restat(path string, disk DiskInterface, outputs []string) er
 	}
 	return os.Rename(tempPath, path)
 }
+
+func (bl *BuildLog) Entries() map[string]*LogEntry { return bl.entries }

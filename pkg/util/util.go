@@ -387,3 +387,23 @@ func DirName(path string) string {
 func MakeDir(path string) error {
 	return os.Mkdir(path, 0755)
 }
+
+// PathDecanonicalized 根据 slash_bits 位掩码将路径中的正斜杠恢复为反斜杠（仅 Windows）。
+// 在非 Windows 平台上，直接返回原路径。
+func PathDecanonicalized(path string, slashBits uint64) string {
+	if runtime.GOOS != "windows" {
+		return path
+	}
+	// 复制为可修改的字节切片
+	buf := []byte(path)
+	mask := uint64(1)
+	for i := 0; i < len(buf); i++ {
+		if buf[i] == '/' {
+			if slashBits&mask != 0 {
+				buf[i] = '\\'
+			}
+			mask <<= 1
+		}
+	}
+	return string(buf)
+}

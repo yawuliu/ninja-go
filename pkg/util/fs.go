@@ -21,4 +21,5 @@ type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	Truncate(name string, size int64) error
 	MakeDirs(path string) error
+	AllowStatCache(allow bool) bool
 }

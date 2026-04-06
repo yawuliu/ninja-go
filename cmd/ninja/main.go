@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"ninja-go/pkg/builder"
+	"ninja-go/pkg/graphviz"
 	"ninja-go/pkg/util"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -19,10 +21,6 @@ var (
 	g_keep_rsp               bool
 	g_experimental_statcache = true
 )
-
-func main() {
-	os.Exit(realMain())
-}
 
 const kNinjaVersion = "1.14.0.git"
 
@@ -35,7 +33,7 @@ type NinjaMain struct {
 	config_ *builder.BuildConfig
 
 	/// Loaded state (rules, nodes).
-	state_ builder.State
+	state_ *builder.State
 
 	/// Functions for accessing the disk.
 	disk_interface_ util.FileSystem
@@ -61,7 +59,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, status builder.Status) (bo
 		return false, nil
 	}
 
-	builder := builder.NewBuilder(&n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
+	builder := builder.NewBuilder(n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
 	if err := builder.AddTarget(node); err != nil {
 		return false, err
 	}
@@ -172,21 +170,6 @@ func (n *NinjaMain) CollectTargetsFromArgs(args []string) ([]*builder.Node, erro
 	return targets, nil
 }
 
-// / Command-line options.
-type Options struct {
-	/// Build file to load.
-	input_file string
-
-	/// Directory to change into before running.
-	working_dir string
-
-	/// Tool to run rather than building.
-	tool *Tool
-
-	/// Whether phony cycles should warn or print an error.
-	phony_cycle_should_err bool
-}
-
 // ToolGraph 输出 graphviz dot 文件（用于可视化依赖图）。
 func (n *NinjaMain) ToolGraph(options *Options, args []string) int {
 	nodes, err := n.CollectTargetsFromArgs(args)
@@ -195,7 +178,7 @@ func (n *NinjaMain) ToolGraph(options *Options, args []string) int {
 		return 1
 	}
 
-	graph := graphviz.NewGraph(n.state_, n.disk_interface_)
+	graph := graphviz.NewGraphViz(n.state_, n.disk_interface_)
 	graph.Start()
 	for _, node := range nodes {
 		graph.AddTarget(node)
@@ -335,7 +318,7 @@ func (n *NinjaMain) ToolMSVC(options *Options, args []string) int {
 	// 由于 Go 没有直接等价物，这里假设 MSVCHelperMain 是一个外部函数，
 	// 接收完整的命令行参数切片并返回退出码。
 	// 实际使用时可能需要重新构造参数列表。
-	return MSVCHelperMain(append([]string{"msvc"}, args...))
+	return builder.MSVCHelperMain(append([]string{"msvc"}, args...))
 }
 
 // ToolDeps 显示依赖日志中的依赖关系。
@@ -371,7 +354,7 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.Path, err)
 		}
 		status := "VALID"
-		if mtime.IsZero() || mtime.ModTime().UnixNano() > deps.Mtime {
+		if mtime.ModTime().IsZero() || mtime.ModTime().UnixNano() > deps.Mtime {
 			status = "STALE"
 		}
 		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
@@ -392,9 +375,9 @@ func (n *NinjaMain) ToolMissingDeps(options *Options, args []string) int {
 		return 1
 	}
 
-	disk := disk.NewRealDiskInterface()
-	printer := missingdeps.NewPrinter()
-	scanner := missingdeps.NewScanner(printer, n.depsLog, n.state_, disk)
+	disk := builder.NewRealFileSystem()
+	printer := builder.NewPrinter()
+	scanner := builder.NewScanner(printer, n.deps_log_, n.state_, disk)
 
 	for _, node := range nodes {
 		scanner.ProcessNode(node)
@@ -433,7 +416,7 @@ func (n *NinjaMain) ToolTargets(options *Options, args []string) int {
 			ToolTargetsListAll(n.state_)
 			return 0
 		default:
-			suggestion := util.SpellcheckString(mode, "rule", "depth", "all")
+			suggestion := util.SpellcheckString(mode, []string{"rule", "depth", "all"})
 			if suggestion != "" {
 				fmt.Fprintf(os.Stderr, "ninja: unknown target tool mode '%s', did you mean '%s'?\n", mode, suggestion)
 			} else {
@@ -602,7 +585,7 @@ Options:
 		return 1
 	}
 
-	collector := NewInputsCollector()
+	collector := builder.NewInputsCollector()
 	for _, node := range nodes {
 		collector.VisitNode(node)
 	}
@@ -670,7 +653,7 @@ Options:
 	}
 
 	for _, node := range nodes {
-		collector := NewInputsCollector()
+		collector := builder.NewInputsCollector()
 		collector.VisitNode(node)
 		inputs := collector.GetInputsAsStrings(false) // 不转义，保持原始路径
 		for _, input := range inputs {
@@ -714,7 +697,7 @@ options:
 		return 1
 	}
 
-	cleaner := NewCleaner(n.state_, n.config_, n.disk_interface_)
+	cleaner := builder.NewCleaner(n.state_, n.config_, n.disk_interface_)
 	if len(targets) > 0 {
 		if cleanRules {
 			return cleaner.CleanRules(targets)
@@ -726,7 +709,7 @@ options:
 
 // ToolCleanDead 清理不再由当前 manifest 生成的旧输出。
 func (n *NinjaMain) ToolCleanDead(options *Options, args []string) int {
-	cleaner := NewCleaner(n.state_, n.config_, n.disk_interface_)
+	cleaner := builder.NewCleaner(n.state_, n.config_, n.disk_interface_)
 	return cleaner.CleanDead(n.build_log_.Entries())
 }
 
@@ -790,13 +773,13 @@ func PrintCompdbObjectsForEdge(directory string, edge *builder.Edge, evalMode Ev
 			fmt.Print(",")
 		}
 		fmt.Printf("\n  {\n    \"directory\": \"")
-		PrintJSONString(directory)
+		util.PrintJSONString(directory)
 		fmt.Printf("\",\n    \"command\": \"")
-		PrintJSONString(command)
+		util.PrintJSONString(command)
 		fmt.Printf("\",\n    \"file\": \"")
-		PrintJSONString(input.Path)
+		util.PrintJSONString(input.Path)
 		fmt.Printf("\",\n    \"output\": \"")
-		PrintJSONString(edge.Outputs[0].Path)
+		util.PrintJSONString(edge.Outputs[0].Path)
 		fmt.Printf("\"\n  }")
 		first = false
 	}
@@ -868,6 +851,121 @@ func (n *NinjaMain) ToolRecompact(options *Options, args []string) int {
 	return 0
 }
 
+// CompdbTargetsAction 动作类型
+type CompdbTargetsAction int
+
+const (
+	ActionDisplayHelpAndExit CompdbTargetsAction = iota
+	ActionEmitCommands
+)
+
+// CompdbTargets 解析 compdb-targets 子工具的参数
+type CompdbTargets struct {
+	Action   CompdbTargetsAction
+	EvalMode EvaluateCommandMode
+	Targets  []string
+}
+
+// CreateFromArgs 从命令行参数创建 CompdbTargets 实例
+func CreateCompdbTargetsFromArgs(args []string) *CompdbTargets {
+	// 模拟 getopt 解析 -h 和 -x
+	ret := &CompdbTargets{
+		Action:   ActionEmitCommands,
+		EvalMode: ECM_NORMAL,
+	}
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-x":
+			ret.EvalMode = ECM_EXPAND_RSPFILE
+		case "-h":
+			ret.Action = ActionDisplayHelpAndExit
+			return ret
+		default:
+			positional = append(positional, args[i])
+		}
+	}
+	if len(positional) == 0 {
+		fmt.Fprintln(os.Stderr, "compdb-targets expects the name of at least one target")
+		ret.Action = ActionDisplayHelpAndExit
+	} else {
+		ret.Targets = positional
+	}
+	return ret
+}
+
+// PrintCompdb 输出 JSON 编译数据库（用于 compdb-targets）
+func PrintCompdb(directory string, edges []*builder.Edge, evalMode EvaluateCommandMode) {
+	fmt.Print("[")
+	first := true
+	for _, edge := range edges {
+		if edge.IsPhony() || len(edge.Inputs) == 0 {
+			continue
+		}
+		if !first {
+			fmt.Print(",")
+		}
+		PrintCompdbObjectsForEdge(directory, edge, evalMode)
+		first = false
+	}
+	fmt.Println("\n]")
+}
+
+// ToolCompilationDatabaseForTargets 为指定目标生成编译数据库。
+func (n *NinjaMain) ToolCompilationDatabaseForTargets(options *Options, args []string) int {
+	compdb := CreateCompdbTargetsFromArgs(args)
+
+	switch compdb.Action {
+	case ActionDisplayHelpAndExit:
+		fmt.Println(`usage: ninja -t compdb [-hx] target [targets]
+
+options:
+  -h     display this help message
+  -x     expand @rspfile style response file invocations`)
+		return 1
+
+	case ActionEmitCommands:
+		collector := builder.NewCommandCollector()
+		for _, targetArg := range compdb.Targets {
+			node, err := n.CollectTarget(targetArg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+				return 1
+			}
+			if node.InEdge == nil {
+				fmt.Fprintf(os.Stderr, "ninja: '%s' is not a target (i.e. it is not an output of any `build` statement)\n", node.Path)
+				return 1
+			}
+			collector.CollectFrom(node)
+		}
+
+		directory, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: failed to get working directory: %v\n", err)
+			return 1
+		}
+		PrintCompdb(directory, collector.InEdges(), compdb.EvalMode)
+	}
+	return 0
+}
+
+// ToolUrtle 打印乌龟图案（彩蛋）。
+func (n *NinjaMain) ToolUrtle(options *Options, args []string) int {
+	urtle := "xx"
+	count := 0
+	for _, ch := range urtle {
+		if ch >= '0' && ch <= '9' {
+			count = count*10 + int(ch-'0')
+		} else {
+			for i := 0; i < max(count, 1); i++ {
+				fmt.Printf("%c", ch)
+			}
+			count = 0
+		}
+	}
+	return 0
+}
+
 // ToolRestat 重新统计构建日志中指定输出文件的 mtime。
 func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	// 解析选项
@@ -921,267 +1019,631 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	return 0
 }
 
-func realMain() int {
-	// 构建配置
-	config := builder.DefaultBuildConfig()
-	options := struct {
-		inputFile           string
-		workingDir          string
-		tool                string
-		phonyCycleShouldErr bool
-	}{
-		inputFile: "build.ninja",
+type When int
+
+const (
+	RUN_AFTER_FLAGS When = iota
+	RUN_AFTER_LOAD
+	RUN_AFTER_LOGS
+)
+
+// Tool 定义子工具
+type Tool struct {
+	name string
+	desc string
+	when When
+	f    func(*NinjaMain, *Options, []string) int
+}
+
+// 工具列表（对应 C++ 的 kTools）
+var kTools = []Tool{
+	{"browse", "browse dependency graph in a web browser", RUN_AFTER_LOAD, (*NinjaMain).ToolBrowse},
+	{"clean", "clean built files", RUN_AFTER_LOAD, (*NinjaMain).ToolClean},
+	{"commands", "list all commands required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolCommands},
+	{"inputs", "list all inputs required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolInputs},
+	{"multi-inputs", "print one or more sets of inputs required to build targets", RUN_AFTER_LOAD, (*NinjaMain).ToolMultiInputs},
+	{"deps", "show dependencies stored in the deps log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
+	{"missingdeps", "check deps log dependencies on generated files", RUN_AFTER_LOGS, (*NinjaMain).ToolMissingDeps},
+	{"graph", "output graphviz dot file for targets", RUN_AFTER_LOAD, (*NinjaMain).ToolGraph},
+	{"query", "show inputs/outputs for a path", RUN_AFTER_LOGS, (*NinjaMain).ToolQuery},
+	{"targets", "list targets by their rule or depth in the DAG", RUN_AFTER_LOAD, (*NinjaMain).ToolTargets},
+	{"compdb", "dump JSON compilation database to stdout", RUN_AFTER_LOAD, (*NinjaMain).ToolCompilationDatabase},
+	{"compdb-targets", "dump JSON compilation database for a given list of targets to stdout", RUN_AFTER_LOAD, (*NinjaMain).ToolCompilationDatabaseForTargets},
+	{"recompact", "recompacts ninja-internal data structures", RUN_AFTER_LOAD, (*NinjaMain).ToolRecompact},
+	{"restat", "restats all outputs in the build log", RUN_AFTER_FLAGS, (*NinjaMain).ToolRestat},
+	{"rules", "list all rules", RUN_AFTER_LOAD, (*NinjaMain).ToolRules},
+	{"cleandead", "clean built files that are no longer produced by the manifest", RUN_AFTER_LOGS, (*NinjaMain).ToolCleanDead},
+	{"urtle", "", RUN_AFTER_FLAGS, (*NinjaMain).ToolUrtle},
+}
+
+// ChooseTool 查找工具，如果工具名为 "list" 则打印列表并返回 nil，
+// 如果找不到则报错并退出程序。
+func ChooseTool(toolName string) *Tool {
+	if toolName == "list" {
+		fmt.Println("ninja subtools:")
+		for _, tool := range kTools {
+			if tool.desc != "" {
+				fmt.Printf("%11s  %s\n", tool.name, tool.desc)
+			}
+		}
+		return nil
+	}
+	for _, tool := range kTools {
+		if tool.name == toolName {
+			return &tool
+		}
+	}
+	// 拼写检查（简化）
+	fmt.Fprintf(os.Stderr, "ninja: unknown tool '%s'\n", toolName)
+	os.Exit(1)
+	return nil
+}
+
+// debugEnable 启用调试模式。返回 false 表示 Ninja 应退出，true 表示继续。
+func debugEnable(name string) bool {
+	switch name {
+	case "list":
+		fmt.Println(`debugging modes:
+  stats        print operation counts/timing info
+  explain      explain what caused a command to execute
+  keepdepfile  don't delete depfiles after they're read by ninja
+  keeprsp      don't delete @response files on success
+  nostatcache  don't batch stat() calls per directory and cache them
+multiple modes can be enabled via -d FOO -d BAR`)
+		return false
+	case "stats":
+		g_metrics = &builder.Metrics{}
+		return true
+	case "explain":
+		g_explaining = true
+		return true
+	case "keepdepfile":
+		g_keep_depfile = true
+		return true
+	case "keeprsp":
+		g_keep_rsp = true
+		return true
+	case "nostatcache":
+		g_experimental_statcache = false
+		return true
+	default:
+		suggestion := util.SpellcheckString(name, []string{"stats", "explain", "keepdepfile", "keeprsp", "nostatcache"})
+		if suggestion != "" {
+			fmt.Fprintf(os.Stderr, "ninja: unknown debug setting '%s', did you mean '%s'?\n", name, suggestion)
+		} else {
+			fmt.Fprintf(os.Stderr, "ninja: unknown debug setting '%s'\n", name)
+		}
+		return false
+	}
+}
+
+// / Command-line options.
+type Options struct {
+	/// Build file to load.
+	input_file string
+
+	/// Directory to change into before running.
+	working_dir string
+
+	/// Tool to run rather than building.
+	tool *Tool
+
+	/// Whether phony cycles should warn or print an error.
+	phony_cycle_should_err bool
+}
+
+// warningEnable 设置警告标志。返回 false 表示 Ninja 应退出，true 表示继续。
+func warningEnable(name string, options *Options) bool {
+	switch name {
+	case "list":
+		fmt.Println(`warning flags:
+  phonycycle={err,warn}  phony build statement references itself`)
+		return false
+	case "phonycycle=err":
+		options.phony_cycle_should_err = true
+		return true
+	case "phonycycle=warn":
+		options.phony_cycle_should_err = false
+		return true
+	case "dupbuild=err", "dupbuild=warn":
+		fmt.Fprintf(os.Stderr, "ninja: warning: deprecated warning 'dupbuild'\n")
+		return true
+	case "depfilemulti=err", "depfilemulti=warn":
+		fmt.Fprintf(os.Stderr, "ninja: warning: deprecated warning 'depfilemulti'\n")
+		return true
+	default:
+		suggestion := util.SpellcheckString(name, []string{"phonycycle=err", "phonycycle=warn"})
+		if suggestion != "" {
+			fmt.Fprintf(os.Stderr, "ninja: unknown warning flag '%s', did you mean '%s'?\n", name, suggestion)
+		} else {
+			fmt.Fprintf(os.Stderr, "ninja: unknown warning flag '%s'\n", name)
+		}
+		return false
+	}
+}
+
+// OpenBuildLog 加载并可选地重新压实构建日志，然后在非 dry-run 模式下打开写入。
+func (n *NinjaMain) OpenBuildLog(recompactOnly bool) bool {
+	logPath := ".ninja_log"
+	if n.build_dir_ != "" {
+		logPath = n.build_dir_ + "/" + logPath
 	}
 
-	// 自定义 flag 解析（因为需要支持 -d, -w 等多次出现）
-	args := os.Args[1:]
-	var positionalArgs []string
-	// 手动解析，支持 -t tool 后的参数
+	// 加载日志
+	err := n.build_log_.Load(logPath)
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
+		return false
+	}
+	// 如果 Load 返回了警告（例如版本过旧），这里假设错误信息已经输出，不再处理
+
+	if recompactOnly {
+		if os.IsNotExist(err) {
+			return true
+		}
+		if err := n.build_log_.Recompact(logPath, n); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: failed recompaction: %v\n", err)
+			return false
+		}
+		return true
+	}
+
+	if !n.config_.DryRun {
+		if err := n.build_log_.OpenForWrite(logPath, n); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
+			return false
+		}
+	}
+	return true
+}
+
+// OpenDepsLog 加载并可选地重新压实依赖日志，然后在非 dry-run 模式下打开写入。
+func (n *NinjaMain) OpenDepsLog(recompactOnly bool) bool {
+	path := ".ninja_deps"
+	if n.build_dir_ != "" {
+		path = n.build_dir_ + "/" + path
+	}
+
+	// 加载日志
+	err := n.deps_log_.Load(n.state_) // path,
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "ninja: loading deps log %s: %v\n", path, err)
+		return false
+	}
+	// 忽略警告（假设已输出）
+
+	if recompactOnly {
+		if os.IsNotExist(err) {
+			return true
+		}
+		if err := n.deps_log_.Recompact(path); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: failed recompaction: %v\n", err)
+			return false
+		}
+		return true
+	}
+
+	if !n.config_.DryRun {
+		if err := n.deps_log_.OpenForWrite(path); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: opening deps log: %v\n", err)
+			return false
+		}
+	}
+	return true
+}
+
+// DumpMetrics 打印性能指标和哈希表负载信息。
+func (n *NinjaMain) DumpMetrics() {
+	if g_metrics != nil {
+		g_metrics.Report()
+	}
+	fmt.Println()
+	// Go 的 map 没有 bucket_count 方法，仅输出条目数。
+	fmt.Printf("path->node hash load %.2f (%d entries)\n",
+		float64(len(n.state_.Paths)), len(n.state_.Paths))
+}
+
+// EnsureBuildDirExists 确保构建目录存在，若需要则创建它。
+func (n *NinjaMain) EnsureBuildDirExists() bool {
+	n.build_dir_ = n.state_.Bindings.LookupVariable("builddir")
+	if n.build_dir_ != "" && !n.config_.DryRun {
+		// 创建目录（如果不存在）
+		if err := os.MkdirAll(n.build_dir_, 0755); err != nil && !os.IsExist(err) {
+			fmt.Fprintf(os.Stderr, "ninja: creating build directory %s: %v\n", n.build_dir_, err)
+			return false
+		}
+	}
+	return true
+}
+
+// SetupJobserverClient 根据 MAKEFLAGS 环境变量创建 jobserver 客户端。
+// 返回客户端（可能为 nil）以及错误（如果存在）。
+func (n *NinjaMain) SetupJobserverClient(status builder.Status) builder.JobserverClient {
+	// 如果是 dry-run 或明确指定了并行数，则忽略 jobserver
+	if n.config_.DisableJobserverClient {
+		return nil
+	}
+
+	makeflags := os.Getenv("MAKEFLAGS")
+	if makeflags == "" {
+		return nil
+	}
+
+	config, err := builder.ParseNativeMakeFlagsValue(makeflags)
+	if err != nil {
+		if n.config_.Verbosity > builder.VerbosityQuiet {
+			status.Warning("Ignoring jobserver: %v [%s]", err, makeflags)
+		}
+		return nil
+	}
+	if config.Mode == builder.ModeNone {
+		return nil
+	}
+
+	if n.config_.Verbosity > builder.VerbosityNoStatusUpdate {
+		status.Info("Jobserver mode detected: %s", makeflags)
+	}
+
+	client, err := builder.CreateClient(config)
+	if err != nil {
+		if n.config_.Verbosity > builder.VerbosityQuiet {
+			status.Error("Could not initialize jobserver: %v", err)
+		}
+		return nil
+	}
+	return client
+}
+
+// RunBuild 执行构建流程，返回退出状态码。
+func (n *NinjaMain) RunBuild(args []string, status builder.Status) builder.ExitStatus {
+	// 收集目标节点
+	targets, err := n.CollectTargetsFromArgs(args)
+	if err != nil {
+		status.Error("%v", err)
+		return builder.ExitFailure
+	}
+
+	// 允许 stat 缓存（根据调试标志）
+	n.disk_interface_.AllowStatCache(g_experimental_statcache)
+
+	// 设置 jobserver 客户端（如果需要）
+	jobserverClient := n.SetupJobserverClient(status)
+
+	// 创建 Builder
+	ibuilder := builder.NewBuilder(n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
+	if jobserverClient != nil {
+		ibuilder.SetJobserverClient(jobserverClient)
+	}
+
+	// 添加目标到构建计划
+	for _, target := range targets {
+		if err := ibuilder.AddTarget(target); err != nil {
+			status.Error("%v", err)
+			return builder.ExitFailure
+		}
+	}
+
+	// 禁用 stat 缓存，避免 restat 规则看到过时的时间戳
+	n.disk_interface_.AllowStatCache(false)
+
+	// 检查是否已是最新
+	if ibuilder.AlreadyUpToDate() {
+		if n.config_.Verbosity != builder.VerbosityNoStatusUpdate {
+			status.Info("no work to do.")
+		}
+		return builder.ExitSuccess
+	}
+
+	// 执行构建
+	exitStatus, buildErr := ibuilder.Build()
+	if exitStatus != builder.ExitSuccess {
+		if buildErr != nil {
+			status.Info("build stopped: %v.", buildErr)
+			if strings.Contains(buildErr.Error(), "interrupted by user") {
+				return builder.ExitInterrupted
+			}
+		}
+	}
+	return exitStatus
+}
+
+// DeferGuessParallelism 延迟猜测并行度的辅助结构。
+type DeferGuessParallelism struct {
+	needGuess bool
+	config    *builder.BuildConfig
+}
+
+// NewDeferGuessParallelism 创建实例，needGuess 初始为 true。
+func NewDeferGuessParallelism(config *builder.BuildConfig) *DeferGuessParallelism {
+	return &DeferGuessParallelism{
+		needGuess: true,
+		config:    config,
+	}
+}
+
+// Refresh 如果 needGuess 为 true，则设置 config.Parallelism 并标记为 false。
+func (d *DeferGuessParallelism) Refresh() {
+	if d.needGuess {
+		d.needGuess = false
+		d.config.Parallelism = guessParallelism()
+	}
+}
+
+// Close 在 defer 中调用，类似于析构函数。
+func (d *DeferGuessParallelism) Close() {
+	d.Refresh()
+}
+
+// readFlags 解析命令行参数，返回退出码（-1 表示继续，0 表示正常退出，1 表示错误）和剩余参数。
+func readFlags(args []string, options *Options, config *builder.BuildConfig) (int, []string) {
+	deferGuess := NewDeferGuessParallelism(config)
+	defer deferGuess.Close()
+
+	// 模拟 getopt_long 的选项处理
+	var remaining []string
 	i := 0
-	for i < len(args) {
+	for i < len(args) && options.tool == nil {
 		arg := args[i]
-		switch {
-		case arg == "-h" || arg == "--help":
-			usage(config)
-			return 0
-		case arg == "--version":
+		if arg == "--help" || arg == "-h" {
+			deferGuess.Refresh()
+			usage(*config)
+			return 0, nil
+		} else if arg == "--version" {
 			fmt.Println(kNinjaVersion)
-			return 0
-		case arg == "-v" || arg == "--verbose":
+			return 0, nil
+		} else if arg == "-v" || arg == "--verbose" {
 			config.Verbosity = builder.VerbosityVerbose
-		case arg == "--quiet":
+		} else if arg == "--quiet" {
 			config.Verbosity = builder.VerbosityNoStatusUpdate
-		case arg == "-n":
+		} else if arg == "-n" {
 			config.DryRun = true
 			config.DisableJobserverClient = true
-		case arg == "-d":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -d requires an argument\n")
-				return 1
+		} else if strings.HasPrefix(arg, "-d") {
+			// 支持 -d MODE 或 -dMODE
+			mode := strings.TrimPrefix(arg, "-d")
+			if mode == "" {
+				i++
+				if i >= len(args) {
+					fmt.Fprintln(os.Stderr, "ninja: -d requires an argument")
+					return 1, nil
+				}
+				mode = args[i]
 			}
-			mode := args[i+1]
 			if !debugEnable(mode) {
-				return 1
+				return 1, nil
 			}
+		} else if strings.HasPrefix(arg, "-w") {
+			warn := strings.TrimPrefix(arg, "-w")
+			if warn == "" {
+				i++
+				if i >= len(args) {
+					fmt.Fprintln(os.Stderr, "ninja: -w requires an argument")
+					return 1, nil
+				}
+				warn = args[i]
+			}
+			if !warningEnable(warn, options) {
+				return 1, nil
+			}
+		} else if arg == "-C" {
 			i++
-		case arg == "-w":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -w requires an argument\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -C requires a directory")
+				return 1, nil
 			}
-			warning := args[i+1]
-			if !warningEnable(warning, &options) {
-				return 1
-			}
+			options.working_dir = args[i]
+		} else if arg == "-f" {
 			i++
-		case arg == "-C":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -C requires a directory\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -f requires a file")
+				return 1, nil
 			}
-			options.workingDir = args[i+1]
+			options.input_file = args[i]
+		} else if arg == "-j" {
 			i++
-		case arg == "-f":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -f requires a file\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -j requires a number")
+				return 1, nil
 			}
-			options.inputFile = args[i+1]
-			i++
-		case arg == "-j":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -j requires a number\n")
-				return 1
+			value, err := strconv.ParseInt(args[i], 10, 0)
+			if err != nil || value < 0 {
+				fmt.Fprintln(os.Stderr, "ninja: invalid -j parameter")
+				return 1, nil
 			}
-			val, err := strconv.Atoi(args[i+1])
-			if err != nil || val < 0 {
-				fmt.Fprintf(os.Stderr, "ninja: invalid -j parameter\n")
-				return 1
-			}
-			if val == 0 {
+			if value == 0 {
 				config.Parallelism = int(^uint(0) >> 1) // MaxInt
 			} else {
-				config.Parallelism = val
+				config.Parallelism = int(value)
 			}
 			config.DisableJobserverClient = true
+			deferGuess.needGuess = false
+		} else if arg == "-k" {
 			i++
-		case arg == "-k":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -k requires a number\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -k requires a number")
+				return 1, nil
 			}
-			val, err := strconv.Atoi(args[i+1])
-			if err != nil || val < 0 {
-				fmt.Fprintf(os.Stderr, "ninja: invalid -k parameter\n")
-				return 1
+			value, err := strconv.ParseInt(args[i], 10, 0)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "ninja: -k parameter not numeric; did you mean -k 0?")
+				return 1, nil
 			}
-			if val == 0 {
+			if value == 0 {
 				config.FailuresAllowed = int(^uint(0) >> 1)
 			} else {
-				config.FailuresAllowed = val
+				config.FailuresAllowed = int(value)
 			}
+		} else if arg == "-l" {
 			i++
-		case arg == "-l":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -l requires a number\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -l requires a number")
+				return 1, nil
 			}
-			val, err := strconv.ParseFloat(args[i+1], 64)
+			value, err := strconv.ParseFloat(args[i], 64)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "ninja: invalid -l parameter\n")
-				return 1
+				fmt.Fprintln(os.Stderr, "ninja: -l parameter not numeric: did you mean -l 0.0?")
+				return 1, nil
 			}
-			config.MaxLoadAverage = val
+			config.MaxLoadAverage = value
+		} else if arg == "-t" {
 			i++
-		case arg == "-t":
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "ninja: -t requires a tool name\n")
-				return 1
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "ninja: -t requires a tool name")
+				return 1, nil
 			}
-			options.tool = args[i+1]
-			i++
-			// 剩余参数全部作为工具的参数
-			positionalArgs = args[i+1:]
-			i = len(args) // 结束循环
-		default:
-			if strings.HasPrefix(arg, "-") {
-				fmt.Fprintf(os.Stderr, "ninja: unknown option %s\n", arg)
-				return 1
+			toolName := args[i]
+			options.tool = ChooseTool(toolName)
+			if options.tool == nil {
+				return 0, nil
 			}
-			positionalArgs = append(positionalArgs, arg)
+			// 工具后的所有参数都保留给工具本身
+			remaining = append(remaining, args[i+1:]...)
+			i = len(args) // 停止解析
+			break
+		} else if strings.HasPrefix(arg, "-") {
+			fmt.Fprintf(os.Stderr, "ninja: unknown option %s\n", arg)
+			return 1, nil
+		} else {
+			// 非选项参数，视为目标，保留
+			remaining = append(remaining, arg)
 		}
 		i++
 	}
-
-	// 处理工具模式
-	if options.tool != "" {
-		// 工具会在加载状态后运行，但有些工具需要提前运行
-		// 简化：所有工具都先加载状态
-		// 具体工具实现后续补充
-		fmt.Fprintf(os.Stderr, "ninja: tool '%s' not implemented yet\n", options.tool)
-		return 1
+	// 如果还没有遇到 -t，则剩余参数就是 remaining
+	if options.tool == nil {
+		remaining = append(remaining, args[i:]...)
 	}
+	return -1, remaining
+}
 
-	// 改变工作目录
-	if options.workingDir != "" {
-		if err := os.Chdir(options.workingDir); err != nil {
-			fmt.Fprintf(os.Stderr, "ninja: chdir to '%s': %v\n", options.workingDir, err)
-			return 1
-		}
+// realMain 是程序的主入口，负责解析参数、执行子工具或主构建流程。
+// 返回退出码（0 成功，非零失败）。
+func realMain() int {
+	config := builder.DefaultBuildConfig()
+	options := &Options{
+		input_file: "build.ninja",
 	}
 
-	// 加载构建文件
-	state := builder.NewState()
-	diskInterface := builder.NewRealFileSystem()
-	parserOpts := builder.ManifestParserOptions{
-		PhonyCycleAction: builder.PhonyCycleActionWarn,
-	}
-	if options.phonyCycleShouldErr {
-		parserOpts.PhonyCycleAction = builder.PhonyCycleActionError
-	}
-	manifestParser := builder.NewManifestParser(state, diskInterface, parserOpts)
-	if err := manifestParser.Load(options.inputFile, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
-		return 1
-	}
+	// 设置 stdout 为行缓冲（Go 默认就是行缓冲，无需额外设置）
+	ninjaCommand := os.Args[0]
 
-	// 确保构建目录存在
-	buildDir := state.Bindings.LookupVariable("builddir")
-	if buildDir != "" && !config.DryRun {
-		if err := diskInterface.MakeDirs(buildDir + "/."); err != nil && !os.IsExist(err) {
-			fmt.Fprintf(os.Stderr, "ninja: creating build directory %s: %v\n", buildDir, err)
-			return 1
-		}
-	}
-
-	// 打开日志
-	log_path := ".ninja_log"
-	if buildDir != "" {
-		log_path = buildDir + "/" + log_path
-	}
-	buildLog := builder.NewBuildLog(log_path)
-	if buildDir != "" {
-		buildLog = builder.NewBuildLog(buildDir + "/.ninja_log")
-	}
-	if err := buildLog.Load(log_path); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "ninja: loading build log: %v\n", err)
-		return 1
-	}
-	if !config.DryRun {
-		if err := buildLog.OpenForWrite(log_path, this); err != nil {
-			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
-			return 1
-		}
-		defer buildLog.Close()
-	}
-
-	path := ".ninja_deps"
-	if buildDir != "" {
-		path = buildDir + "/" + path
-	}
-	depsLog := builder.NewDepsLog(path)
-	if buildDir != "" {
-		depsLog = builder.NewDepsLog(buildDir + "/.ninja_deps")
-	}
-	if err := depsLog.Load(state); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "ninja: loading deps log: %v\n", err)
-		return 1
-	}
-	if !config.DryRun {
-		if err := depsLog.OpenForWrite(path); err != nil {
-			fmt.Fprintf(os.Stderr, "ninja: opening deps log: %v\n", err)
-			return 1
-		}
-		defer depsLog.Close()
-	}
-
-	// 准备构建目标
-	var targets []*builder.Node
-	if len(positionalArgs) == 0 {
-		defaults := state.DefaultNodes()
-		if len(defaults) == 0 {
-			fmt.Fprintf(os.Stderr, "ninja: defaults not found\n")
-			return 1
-		}
-		targets = defaults
-	} else {
-		for _, arg := range positionalArgs {
-			node := state.LookupNode(arg)
-			if node == nil {
-				fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", arg)
-				return 1
-			}
-			targets = append(targets, node)
-		}
+	// 解析参数
+	exitCode, remainingArgs := readFlags(os.Args[1:], options, &config)
+	if exitCode >= 0 {
+		return exitCode
 	}
 
 	// 创建状态输出
-	statusPrinter := builder.NewConsoleStatus(config)
-	start_time_millis_ := int64(0)
-	// 创建 Builder
-	b := builder.NewBuilder(state, &config, buildLog, depsLog, start_time_millis_, diskInterface, statusPrinter)
+	status := builder.NewConsoleStatus(config)
 
-	// 添加目标
-	for _, t := range targets {
-		if err := b.AddTarget(t); err != nil {
-			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+	// 切换工作目录
+	if options.working_dir != "" {
+		if options.tool == nil && config.Verbosity != builder.VerbosityNoStatusUpdate {
+			status.Info("Entering directory `%s'", options.working_dir)
+		}
+		if err := os.Chdir(options.working_dir); err != nil {
+			fmt.Fprintf(os.Stderr, "ninja: chdir to '%s' - %v\n", options.working_dir, err)
 			return 1
 		}
 	}
 
-	// 构建
-	if b.AlreadyUpToDate() {
-		if config.Verbosity != builder.VerbosityNoStatusUpdate {
-			fmt.Println("ninja: no work to do.")
+	// 如果工具需要在加载 manifest 前运行（RUN_AFTER_FLAGS）
+	if options.tool != nil {
+		if options.tool.when == RUN_AFTER_FLAGS {
+			ninja := &NinjaMain{
+				ninja_command_: ninjaCommand,
+				config_:        &config,
+				// 其他字段稍后初始化，但此类工具通常不需要完整 state
+			}
+			// 调用工具函数，传递剩余参数（工具本身不包含在 remainingArgs 中）
+			return options.tool.f(ninja, options, remainingArgs)
 		}
-		return 0
 	}
 
-	exitStatus, err := b.Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ninja: build stopped: %v.\n", err)
+	// 主循环：限制重建次数，防止无限循环
+	const kCycleLimit = 100
+	for cycle := 1; cycle <= kCycleLimit; cycle++ {
+		ninja := &NinjaMain{
+			ninja_command_:     ninjaCommand,
+			config_:            &config,
+			state_:             builder.NewState(),
+			disk_interface_:    builder.NewRealFileSystem(),
+			build_log_:         builder.NewBuildLog(".ninja_log"),
+			deps_log_:          builder.NewDepsLog(".ninja_deps"),
+			start_time_millis_: time.Now().UnixNano() / 1e6,
+		}
+
+		// 解析清单文件
+		parserOpts := builder.ManifestParserOptions{
+			PhonyCycleAction: builder.PhonyCycleActionWarn,
+		}
+		if options.phony_cycle_should_err {
+			parserOpts.PhonyCycleAction = builder.PhonyCycleActionError
+		}
+		manifestParser := builder.NewManifestParser(ninja.state_, ninja.disk_interface_, parserOpts)
+		if err := manifestParser.Load(options.input_file, nil); err != nil {
+			status.Error("%v", err)
+			return 1
+		}
+
+		// 如果工具需要在加载后运行（RUN_AFTER_LOAD）
+		if options.tool != nil {
+			if options.tool != nil && options.tool.when == RUN_AFTER_LOAD {
+				return options.tool.f(ninja, options, remainingArgs)
+			}
+		}
+
+		// 确保构建目录存在
+		if !ninja.EnsureBuildDirExists() {
+			return 1
+		}
+
+		// 打开日志
+		if !ninja.OpenBuildLog(false) || !ninja.OpenDepsLog(false) {
+			return 1
+		}
+
+		// 如果工具需要在日志加载后运行（RUN_AFTER_LOGS）
+		if options.tool != nil {
+			if options.tool != nil && options.tool.when == RUN_AFTER_LOGS {
+				return options.tool.f(ninja, options, remainingArgs)
+			}
+		}
+
+		// 尝试重建清单文件
+		rebuilt, err := ninja.RebuildManifest(options.input_file, status)
+		if err != nil {
+			status.Error("rebuilding '%s': %v", options.input_file, err)
+			return 1
+		}
+		if rebuilt {
+			if config.DryRun {
+				return 0
+			}
+			// 清单已更新，重新开始循环
+			continue
+		}
+
+		// 加载上次构建耗时信息
+		ninja.ParsePreviousElapsedTimes()
+
+		// 执行主构建
+		exitStatus := ninja.RunBuild(remainingArgs, status)
+		if g_metrics != nil {
+			ninja.DumpMetrics()
+		}
+		return int(exitStatus)
 	}
-	return int(exitStatus)
+
+	status.Error("manifest '%s' still dirty after %d tries, perhaps system time is not set",
+		options.input_file, kCycleLimit)
+	return 1
+}
+
+func main() {
+	// Go 没有类似 __try/__except 的异常处理，直接调用 realMain。
+	// 如果需要捕获 panic，可以 defer recover，但一般不必要。
+	os.Exit(realMain())
 }
 
 func usage(config builder.BuildConfig) {
@@ -1218,58 +1680,4 @@ func guessParallelism() int {
 		return 3
 	}
 	return n + 2
-}
-
-func debugEnable(mode string) bool {
-	switch mode {
-	case "list":
-		fmt.Println(`debugging modes:
-  stats        print operation counts/timing info
-  explain      explain what caused a command to execute
-  keepdepfile  don't delete depfiles after they're read by ninja
-  keeprsp      don't delete @response files on success
-  nostatcache  don't batch stat() calls per directory and cache them`)
-		return false
-	case "stats":
-		g_metrics = &builder.Metrics{}
-		return true
-	case "explain":
-		g_explaining = true
-		return true
-	case "keepdepfile":
-		g_keep_depfile = true
-		return true
-	case "keeprsp":
-		g_keep_rsp = true
-		return true
-	case "nostatcache":
-		g_experimental_statcache = false
-		return true
-	default:
-		fmt.Fprintf(os.Stderr, "ninja: unknown debug setting '%s'\n", mode)
-		return false
-	}
-}
-
-func warningEnable(name string, options *struct {
-	inputFile           string
-	workingDir          string
-	tool                string
-	phonyCycleShouldErr bool
-}) bool {
-	switch {
-	case name == "list":
-		fmt.Println(`warning flags:
-  phonycycle={err,warn}  phony build statement references itself`)
-		return false
-	case name == "phonycycle=err":
-		options.phonyCycleShouldErr = true
-		return true
-	case name == "phonycycle=warn":
-		options.phonyCycleShouldErr = false
-		return true
-	default:
-		fmt.Fprintf(os.Stderr, "ninja: unknown warning flag '%s'\n", name)
-		return false
-	}
 }
