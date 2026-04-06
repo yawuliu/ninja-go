@@ -21,6 +21,10 @@ func NewParser(state *graph.State) *Parser {
 	return &Parser{state: state, scope: make(map[string]string)}
 }
 
+func (p *Parser) ParseString(content string) error {
+	return p.ParseReader(strings.NewReader(content), "<string>")
+}
+
 func (p *Parser) ParseFile(path string) error {
 	f, err := os.Open(path)
 	if err != nil {

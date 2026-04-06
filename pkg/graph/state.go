@@ -3,6 +3,7 @@ package graph
 import (
 	"ninja-go/pkg/util"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -40,6 +41,51 @@ type Edge struct {
 	DyndepFile    *Node
 	Pool          *Pool
 	// Deps          string // 新增：deps = gcc 或 msvc
+	ImplicitOuts int // 隐式输出数量
+}
+
+func (e *Edge) EvaluateCommand() string {
+	// 展开命令中的 $in, $out 等变量
+	// 可以复用 builder.expandCommand 的逻辑，但这里需要独立实现
+	cmd := e.Rule.Command
+	// 简单替换（实际应更复杂，支持转义等）
+	inPaths := paths(e.Inputs)
+	outPaths := paths(e.Outputs)
+	cmd = strings.ReplaceAll(cmd, "$in", strings.Join(inPaths, " "))
+	cmd = strings.ReplaceAll(cmd, "$out", strings.Join(outPaths, " "))
+	if e.Rule.Depfile != "" {
+		depfile := strings.ReplaceAll(e.Rule.Depfile, "$out", e.Outputs[0].Path)
+		cmd = strings.ReplaceAll(cmd, "$depfile", depfile)
+	}
+	cmd = strings.ReplaceAll(cmd, "$$", "$")
+	return cmd
+}
+
+func (e *Edge) GetBinding(key string) string {
+	// 先查 Edge 自身的 binding（如果有），否则查 Rule 的 binding
+	// 当前 Edge 没有独立的 binding map，需要扩展
+	// 简化：只返回 Rule 上的属性
+	switch key {
+	case "depfile":
+		return e.Rule.Depfile
+	case "dyndep":
+		return e.Rule.Dyndep
+	case "restat":
+		if e.Rule.Restat {
+			return "1"
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+func paths(nodes []*Node) []string {
+	res := make([]string, len(nodes))
+	for i, n := range nodes {
+		res[i] = n.Path
+	}
+	return res
 }
 
 type State struct {
@@ -122,4 +168,20 @@ func (s *State) LookupNode(path string) *Node {
 // GetNode 返回指定路径的节点，如果不存在则创建（与 AddNode 相同，但语义更清晰）
 func (s *State) GetNode(path string) *Node {
 	return s.AddNode(path)
+}
+
+func (s *State) RootNodes() []*Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var roots []*Node
+	for _, n := range s.Nodes {
+		// 如果节点没有入边（即没有其他节点依赖它？实际应为没有出边？）
+		// 根据 C++ 实现，RootNodes 返回那些不被任何边作为输出的节点（即源文件）
+		// 但 Ninja 中更常见的是返回没有被其他节点依赖的节点（即最终目标）
+		// 我们简化：返回所有没有 out_edges 的节点（即没有其他边以此节点为输入）
+		if len(n.OutEdges) == 0 {
+			roots = append(roots, n)
+		}
+	}
+	return roots
 }
