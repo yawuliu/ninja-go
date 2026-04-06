@@ -97,20 +97,24 @@ func (l *Lexer) EatWhitespace() {
 // ReadToken 读取下一个 token
 func (l *Lexer) ReadToken() Token {
 	// 跳过空白（不包括换行）
-	for l.currentChar() == ' ' || l.currentChar() == '\t' {
-		l.nextChar()
-	}
-	//startPos := l.pos
+	//for l.currentChar() == ' ' || l.currentChar() == '\t' {
+	//	l.nextChar()
+	//}
+	var tokenType Token
+	// var tokenValue string
+	startPos := l.pos
 	//startLine := l.line
 	//startCol := l.col
 
 	ch := l.currentChar()
 	switch ch {
 	case 0:
-		return T_EOF
+		tokenType = T_EOF
+		goto done
 	case '\n':
 		l.nextChar()
-		return T_NEWLINE
+		tokenType = T_NEWLINE
+		goto done
 	case '#':
 		// 注释直到行尾
 		for l.currentChar() != 0 && l.currentChar() != '\n' {
@@ -119,20 +123,29 @@ func (l *Lexer) ReadToken() Token {
 		return l.ReadToken() // 跳过注释，继续读下一个
 	case ':':
 		l.nextChar()
-		return T_COLON
+		tokenType = T_COLON
+		// tokenValue = ":"
+		goto done
 	case '=':
 		l.nextChar()
-		return T_EQUALS
+		tokenType = T_EQUALS
+		// tokenValue = "="
+		goto done
 	case '|':
 		l.nextChar()
 		if l.currentChar() == '|' {
 			l.nextChar()
-			return T_PIPE2
+			tokenType = T_PIPE2
+			// tokenValue = "||"
 		} else if l.currentChar() == '@' {
 			l.nextChar()
-			return T_PIPEAT
+			tokenType = T_PIPEAT
+			// tokenValue = "|@"
+		} else {
+			tokenType = T_PIPE
+			// tokenValue = "|"
 		}
-		return T_PIPE
+		goto done
 	default:
 		if unicode.IsLetter(ch) || ch == '_' {
 			// 标识符或关键字
@@ -143,25 +156,37 @@ func (l *Lexer) ReadToken() Token {
 			word := string(l.input[start:l.pos])
 			switch word {
 			case "build":
-				return T_BUILD
+				tokenType = T_BUILD
 			case "pool":
-				return T_POOL
+				tokenType = T_POOL
 			case "rule":
-				return T_RULE
+				tokenType = T_RULE
 			case "default":
-				return T_DEFAULT
+				tokenType = T_DEFAULT
 			case "include":
-				return T_INCLUDE
+				tokenType = T_INCLUDE
 			case "subninja":
-				return T_SUBNINJA
+				tokenType = T_SUBNINJA
 			default:
-				return T_IDENT
+				tokenType = T_IDENT
 			}
+			// tokenValue = word
+		} else {
+			// ch := l.currentChar()
+			l.nextChar()
+			tokenType = T_ERROR
+			// tokenValue = string(ch)
 		}
-		// 错误字符
-		l.nextChar()
-		return T_ERROR
+		goto done
 	}
+done:
+	startPos = l.pos
+	l.lastStart = startPos
+	l.lastEnd = l.pos
+	if tokenType != T_NEWLINE && tokenType != T_EOF {
+		l.EatWhitespace()
+	}
+	return tokenType // Token{Type: tokenType, Value: tokenValue, Line: startLine, Col: startCol}
 }
 
 // UnreadToken 回退到上一个 token（简单实现：将位置重置到 lastStart）
@@ -176,7 +201,7 @@ func (l *Lexer) UnreadToken() {
 func (l *Lexer) PeekToken(t Token) bool {
 	tok := l.ReadToken()
 	if tok == t {
-		l.UnreadToken()
+		// l.UnreadToken()
 		return true
 	}
 	l.UnreadToken()
