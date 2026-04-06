@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"ninja-go/pkg/util"
 	"strings"
 )
 
@@ -62,7 +63,11 @@ func (e *EdgeEnv) makePathList(nodes []*Node, sep byte) string {
 		path := n.Path // 实际应使用 PathDecanonicalized
 		if e.escapeInOut {
 			// 需要 shell 转义，这里调用 util.EscapeShell
-			parts = append(parts, util.EscapeShell(path))
+			if util.IsWindows() {
+				parts = append(parts, util.GetWin32EscapedString(path))
+			} else {
+				parts = append(parts, util.GetShellEscapedString(path))
+			}
 		} else {
 			parts = append(parts, path)
 		}

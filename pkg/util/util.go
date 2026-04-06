@@ -2,13 +2,9 @@ package util
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 )
@@ -36,7 +32,7 @@ func Info(msg string, args ...interface{}) {
 
 // CanonicalizePath 规范化路径，将连续的 '/' 合并，解析 '.' 和 '..'，
 // 并将 Windows 反斜杠转为正斜杠，同时记录反斜杠位置用于恢复。
-func CanonicalizePath(path string) (string, uint64) {
+/*func CanonicalizePath(path string) (string, uint64) {
 	if path == "" {
 		return "", 0
 	}
@@ -132,7 +128,7 @@ func CanonicalizePath(path string) (string, uint64) {
 		bit <<= 1
 	}
 	return string(buf[:newLen]), slashBits
-}
+}*/
 
 // IsPathSeparator 判断字符是否为路径分隔符。
 func IsPathSeparator(c byte) bool {
@@ -231,7 +227,7 @@ func ReadFile(path string) (string, error) {
 // SetCloseOnExec 设置文件描述符的 close-on-exec 标志（仅 Unix）。
 func SetCloseOnExec(f *os.File) {
 	if runtime.GOOS != "windows" {
-		syscall.CloseOnExec(f.Fd())
+		syscall.CloseOnExec(syscall.Handle(f.Fd()))
 	}
 }
 
