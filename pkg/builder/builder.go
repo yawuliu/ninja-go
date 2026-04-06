@@ -19,26 +19,28 @@ type Builder struct {
 	disk          util.FileSystem
 	plan          *Plan
 	status        Status
-	startTime     int64
 	exitCode      ExitStatus
 	explanations  *Explanations
 	scan          *DependencyScan
 	commandRunner CommandRunner
 	lockFilePath  string
 	jobserver_    JobserverClient
+	/// Time the build started.
+	startTimeMillis int64
 }
 
 func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
-	depsLog *DepsLog, disk_interface util.FileSystem, status Status, start_time_millis int64) *Builder {
+	depsLog *DepsLog, start_time_millis int64,
+	disk_interface util.FileSystem, status Status) *Builder {
 	b := &Builder{
-		state:        state,
-		config:       config,
-		buildLog:     buildLog,
-		depsLog:      depsLog,
-		disk:         disk_interface,
-		status:       status,
-		startTime:    start_time_millis,
-		lockFilePath: ".ninja_lock",
+		state:           state,
+		config:          config,
+		buildLog:        buildLog,
+		depsLog:         depsLog,
+		disk:            disk_interface,
+		status:          status,
+		startTimeMillis: start_time_millis,
+		lockFilePath:    ".ninja_lock",
 	}
 	b.lockFilePath = ".ninja_lock"
 	build_dir := state.Bindings.LookupVariable("builddir")
@@ -172,7 +174,7 @@ func (b *Builder) startEdge(edge *Edge) error {
 	if edge.IsPhony() {
 		return nil
 	}
-	start := (time.Now().UnixNano() - b.startTime) / 1e6
+	start := (time.Now().UnixNano() - b.startTimeMillis) / 1e6
 	b.status.BuildEdgeStarted(edge, start)
 
 	// 创建输出目录
@@ -196,64 +198,108 @@ func (b *Builder) startEdge(edge *Edge) error {
 	return nil
 }
 
+var g_keep_rsp = false
+
 func (b *Builder) finishCommand(result *CommandResult) error {
 	edge := result.Edge
-	start := result.StartTime // 需要从 runner 获取
-	end := (time.Now().UnixNano() - b.startTime) / 1e6
-	b.status.BuildEdgeFinished(edge, start, end, result.Status, result.Output)
 
-	if !result.Success() {
+	// 首先提取依赖（必须在命令输出被过滤前执行）
+	var depsNodes []*Node
+	depsType := edge.GetBinding("deps")
+	depsPrefix := edge.GetBinding("msvc_deps_prefix")
+	if depsType != "" {
+		extractErr := b.extractDeps(result, depsType, depsPrefix, &depsNodes)
+		if extractErr != nil && result.Status == ExitSuccess {
+			if result.Output != "" {
+				result.Output += "\n"
+			}
+			result.Output += extractErr.Error()
+			result.Status = ExitFailure
+		}
+	}
+
+	// 获取边的开始和结束时间
+	startMillis, ok := b.runningEdges[edge]
+	if !ok {
+		return fmt.Errorf("edge %v not found in running edges", edge)
+	}
+	endMillis := time.Now().UnixNano()/1e6 - b.startTimeMillis
+	delete(b.runningEdges, edge)
+
+	// 通知状态
+	b.status.BuildEdgeFinished(edge, startMillis.UnixMilli(), endMillis, result.Status, result.Output)
+
+	// 如果命令失败，直接标记边失败并返回
+	if result.Status != ExitSuccess {
 		return b.plan.EdgeFinished(edge, EdgeFailed)
 	}
 
-	// 处理 deps（msvc/gcc）
-	depsType := edge.GetBinding("deps")
-	depsPrefix := edge.GetBinding("msvc_deps_prefix")
-	if depsType != "" && !b.config.DryRun {
-		var depsNodes []*Node
-		if err := b.extractDeps(result, depsType, depsPrefix, &depsNodes); err != nil {
-			return err
-		}
-		for _, out := range edge.Outputs {
-			mtime, _ := b.disk.Stat(out.Path)
-			if err := b.depsLog.RecordDeps(out, mtime.UnixNano(), depsNodes); err != nil {
-				return err
-			}
-		}
-	}
+	// 处理 restat 和 generator 规则
+	recordMtime := int64(0)
+	if !b.config.DryRun {
+		restat := edge.GetBindingBool("restat")
+		generator := edge.GetBindingBool("generator")
+		nodeCleaned := false
+		recordMtime = edge.CommandStartTime
 
-	// restat 处理
-	restat := edge.GetBindingBool("restat")
-	generator := edge.GetBindingBool("generator")
-	recordMtime := edge.CommandStartTime
-	if recordMtime == 0 || restat || generator {
-		for _, out := range edge.Outputs {
-			info, err := b.disk.Stat(out.Path)
-			if err == nil && info.ModTime().UnixNano() > recordMtime {
-				recordMtime = info.ModTime().UnixNano()
-			}
-			if restat && out.Mtime == info.ModTime().UnixNano() {
-				if err := b.plan.CleanNode(b.scan, out); err != nil {
+		if recordMtime == 0 || restat || generator {
+			for _, out := range edge.Outputs {
+				newMtime, err := b.disk.Stat(out.Path)
+				if err != nil {
 					return err
+				}
+				if newMtime.ModTime().UnixNano() > recordMtime {
+					recordMtime = newMtime.ModTime().UnixNano()
+				}
+				if restat && out.Mtime == newMtime.ModTime().UnixNano() {
+					if err := b.plan.CleanNode(b.scan, out); err != nil {
+						return err
+					}
+					nodeCleaned = true
 				}
 			}
 		}
+		if nodeCleaned {
+			recordMtime = edge.CommandStartTime
+		}
 	}
 
+	// 标记边成功完成
 	if err := b.plan.EdgeFinished(edge, EdgeSucceeded); err != nil {
 		return err
 	}
 
-	// 记录 build log
-	if b.buildLog != nil {
-		b.buildLog.RecordCommand(edge, start, end)
+	// 删除响应文件
+	rspfile := edge.GetUnescapedRspfile()
+	if rspfile != "" && !g_keep_rsp {
+		if err := b.disk.Remove(rspfile); err != nil && !os.IsNotExist(err) {
+			// 忽略不存在的文件错误
+		}
 	}
 
-	// 删除响应文件
-	rspfile := edge.GetBinding("rspfile")
-	if rspfile != "" {
-		b.disk.Remove(rspfile)
+	// 记录构建日志
+	if b.buildLog != nil {
+		if err := b.buildLog.RecordCommand(edge, startMillis.UnixMilli(), endMillis, recordMtime); err != nil {
+			return fmt.Errorf("error writing to build log: %v", err)
+		}
 	}
+
+	// 记录依赖日志
+	if depsType != "" && !b.config.DryRun {
+		if len(edge.Outputs) == 0 {
+			return fmt.Errorf("edge with deps but no outputs")
+		}
+		for _, out := range edge.Outputs {
+			depsMtime, err := b.disk.Stat(out.Path)
+			if err != nil {
+				return err
+			}
+			if err := b.depsLog.RecordDeps(out, depsMtime.ModTime().UnixNano(), depsNodes); err != nil {
+				return fmt.Errorf("error writing to deps log: %v", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -323,7 +369,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 
 func (b *Builder) LoadDyndeps(node *Node) error {
 	// 加载 dyndep 信息
-	ddf, err := b.scan.LoadDyndeps(node)
+	err := b.scan.LoadDyndeps(node)
 	if err != nil {
 		return err
 	}
@@ -351,7 +397,7 @@ func (b *Builder) Cleanup() {
 					// 忽略 Stat 错误，仅记录
 					b.status.Error("%v", err)
 				}
-				if depfile != "" || out.Mtime != newMtime.UnixNano() {
+				if depfile != "" || out.Mtime != newMtime.ModTime().UnixNano() {
 					b.disk.Remove(out.Path)
 				}
 			}

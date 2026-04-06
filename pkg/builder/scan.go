@@ -140,8 +140,8 @@ func (s *DependencyScan) LoadDyndeps(node *Node) error {
 	return s.dyndepLoader.LoadDyndeps(node)
 }
 
-func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile) error {
-	return s.dyndepLoader.loadDyndeps(node, ddf)
+func (s *DependencyScan) LoadDyndeps2(node *Node) (error, *DyndepFile) {
+	return s.dyndepLoader.loadDyndeps(node)
 }
 
 func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {

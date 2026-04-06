@@ -8,12 +8,29 @@ import (
 
 // DyndepParser 解析 .dd 文件
 type DyndepParser struct {
+	fileReader util.FileSystem
 	lexer      *Lexer
 	state      *State
 	dyndepFile map[*Edge]*DyndepInfo // 对应 C++ 的 DyndepFile
 	env        *BindingEnv           // 当前作用域
 	filename   string
 }
+
+func (b *DyndepParser) Load(filename string, parent *Parser) error {
+	// 读取文件内容
+	content, err := b.fileReader.ReadFile(filename)
+	if err != nil {
+		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
+		if parent != nil {
+			parent.lexer.Error(errMsg)
+		}
+		return fmt.Errorf("%s", errMsg)
+	}
+	return b.Parse(filename, string(content))
+}
+
+// Verify that *UserCacher implements Cacher
+var _ Parser = (*DyndepParser)(nil)
 
 // NewDyndepParser 创建解析器
 func NewDyndepParser(state *State, dyndepFile map[*Edge]*DyndepInfo) *DyndepParser {
