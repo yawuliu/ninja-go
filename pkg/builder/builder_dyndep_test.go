@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"ninja-go/pkg/graph"
-	"ninja-go/pkg/parser"
 )
 
 func TestDyndepWithProto(t *testing.T) {
@@ -40,8 +38,8 @@ func TestDyndepWithProto(t *testing.T) {
 	}
 
 	// 创建状态并解析 build.ninja
-	state := graph.NewState()
-	p := parser.NewParser(state)
+	state := NewState()
+	p := NewParser(state)
 	err = p.ParseFile("build.ninja")
 	assert.NoError(t, err)
 

@@ -1,4 +1,4 @@
-package graph
+package builder
 
 type VisitMark int8
 
@@ -27,6 +27,8 @@ type Edge struct {
 	OrderOnlyDeps        int
 	ImplicitOuts         int
 	Mark                 VisitMark // 0 none, 1 in stack, 2 done
+	/// A Jobserver slot instance. Invalid by default.
+	jobSlot JobserverSlot
 }
 
 func (e *Edge) AllInputsReady() bool {

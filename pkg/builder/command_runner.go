@@ -1,18 +1,16 @@
 package builder
 
-import "ninja-go/pkg/graph"
-
 // CommandRunner 接口
 type CommandRunner interface {
 	CanRunMore() int
-	StartCommand(edge *graph.Edge) error
+	StartCommand(edge *Edge) error
 	WaitForCommand() (*CommandResult, error)
-	GetActiveEdges() []*graph.Edge
+	GetActiveEdges() []*Edge
 	Abort()
 }
 
 type CommandResult struct {
-	Edge      *graph.Edge
+	Edge      *Edge
 	Status    ExitStatus
 	Output    string
 	StartTime int64

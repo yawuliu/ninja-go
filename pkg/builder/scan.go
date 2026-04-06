@@ -1,35 +1,31 @@
-package graph
+package builder
 
 import (
 	"fmt"
-	"ninja-go/pkg/builder"
-	"ninja-go/pkg/buildlog"
-	"ninja-go/pkg/depslog"
-	"ninja-go/pkg/dyndep"
 	"ninja-go/pkg/util"
 	"strings"
 )
 
 type DependencyScan struct {
 	state           *State
-	buildLog        *buildlog.BuildLog
-	depsLog         *depslog.DepsLog
+	buildLog        *BuildLog
+	depsLog         *DepsLog
 	disk_interface_ util.FileSystem
 	depLoader       *ImplicitDepLoader
-	dyndepLoader    *dyndep.DyndepLoader
-	explanations_   *builder.OptionalExplanations
+	dyndepLoader    *DyndepLoader
+	explanations_   *OptionalExplanations
 }
 
-func NewDependencyScan(state *State, buildLog *buildlog.BuildLog, depsLog *depslog.DepsLog,
+func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 	disk_interface util.FileSystem,
-	depfile_parser_options *builder.DepfileParserOptions, explanations builder.Explanations) *DependencyScan {
+	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *DependencyScan {
 	return &DependencyScan{
 		state:           state,
 		buildLog:        buildLog,
 		depsLog:         depsLog,
 		disk_interface_: disk_interface,
 		depLoader:       NewImplicitDepLoader(state, depsLog, disk_interface, depfile_parser_options, explanations),
-		dyndepLoader:    dyndep.NewDyndepLoader(state, disk_interface),
+		dyndepLoader:    NewDyndepLoader(state, disk_interface),
 		explanations_:   explanations,
 	}
 }
@@ -95,14 +91,14 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 
 type ImplicitDepLoader struct {
 	state                *State
-	depsLog              *depslog.DepsLog
+	depsLog              *DepsLog
 	diskInterface        util.FileSystem
 	depfileParserOptions interface{} // 可忽略
 	explanations         interface{}
 }
 
-func NewImplicitDepLoader(state *State, depsLog *depslog.DepsLog, disk_interface util.FileSystem,
-	depfile_parser_options *builder.DepfileParserOptions, explanations *builder.Explanations) *ImplicitDepLoader {
+func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface util.FileSystem,
+	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
 		state:                state,
 		depsLog:              depsLog,
@@ -138,6 +134,14 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string) error {
 	// 读取文件并解析（调用 depfile parser）
 	// 这里略，需要集成 DepfileParser
 	return nil
+}
+
+func (s *DependencyScan) LoadDyndeps(node *Node) error {
+	return s.dyndepLoader.LoadDyndeps(node)
+}
+
+func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile) error {
+	return s.dyndepLoader.loadDyndeps(node, ddf)
 }
 
 func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {

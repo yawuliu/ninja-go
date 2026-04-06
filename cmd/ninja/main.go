@@ -7,8 +7,6 @@ import (
 	"runtime"
 
 	"ninja-go/pkg/builder"
-	"ninja-go/pkg/graph"
-	"ninja-go/pkg/parser"
 )
 
 func main() {
@@ -24,8 +22,8 @@ func main() {
 	}
 
 	// 1. 解析 .ninja 文件
-	state := graph.NewState()
-	p := parser.NewParser(state)
+	state := builder.NewState()
+	p := builder.NewParser(state)
 	if err := p.ParseFile(*buildFile); err != nil {
 		fmt.Fprintf(os.Stderr, "ninja: parse error: %v\n", err)
 		os.Exit(1)

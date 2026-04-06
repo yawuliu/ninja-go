@@ -1,7 +1,6 @@
-package parser
+package builder
 
 import (
-	"ninja-go/pkg/graph"
 	"testing"
 	"time"
 
@@ -38,8 +37,8 @@ func (fs *mockFS) Remove(path string) {
 }
 
 // 辅助：解析 manifest 并返回 state 和 scan（如果需要）
-func parseState(t *testing.T, content string) *graph.State {
-	state := graph.NewState()
+func parseState(t *testing.T, content string) *State {
+	state := NewState()
 	p := NewParser(state)
 	err := p.ParseString(content) // 假设有 ParseString 方法
 	require.NoError(t, err)

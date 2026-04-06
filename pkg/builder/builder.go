@@ -3,10 +3,6 @@ package builder
 import (
 	"errors"
 	"fmt"
-	"ninja-go/pkg/buildlog"
-	"ninja-go/pkg/depslog"
-	"ninja-go/pkg/graph"
-	"ninja-go/pkg/plan"
 	"ninja-go/pkg/util"
 	"os"
 	"path"
@@ -15,24 +11,25 @@ import (
 
 // Builder 主构建器
 type Builder struct {
-	state         *graph.State
+	state         *State
 	config        *BuildConfig
-	buildLog      *buildlog.BuildLog
-	depsLog       *depslog.DepsLog
-	runningEdges  map[*graph.Edge]time.Time
+	buildLog      *BuildLog
+	depsLog       *DepsLog
+	runningEdges  map[*Edge]time.Time
 	disk          util.FileSystem
-	plan          *plan.Plan
+	plan          *Plan
 	status        Status
 	startTime     int64
 	exitCode      ExitStatus
 	explanations  *Explanations
-	scan          *graph.DependencyScan
+	scan          *DependencyScan
 	commandRunner CommandRunner
 	lockFilePath  string
+	jobserver_    JobserverClient
 }
 
-func NewBuilder(state *graph.State, config *BuildConfig, buildLog *buildlog.BuildLog,
-	depsLog *depslog.DepsLog, disk_interface util.FileSystem, status Status, start_time_millis int64) *Builder {
+func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
+	depsLog *DepsLog, disk_interface util.FileSystem, status Status, start_time_millis int64) *Builder {
 	b := &Builder{
 		state:        state,
 		config:       config,
@@ -48,8 +45,8 @@ func NewBuilder(state *graph.State, config *BuildConfig, buildLog *buildlog.Buil
 	if build_dir != "" {
 		b.lockFilePath = path.Join(build_dir, b.lockFilePath)
 	}
-	b.plan = plan.NewPlan(b)
-	b.scan = graph.NewDependencyScan(state, buildLog, depsLog, disk_interface,
+	b.plan = NewPlan(b)
+	b.scan = NewDependencyScan(state, buildLog, depsLog, disk_interface,
 		config.DepfileParserOptions, b.explanations)
 	return b
 }
@@ -59,8 +56,8 @@ func (b *Builder) Destruct() {
 	b.status.SetExplanations(nil)
 }
 
-func (b *Builder) AddTarget(target *graph.Node) error {
-	var validationNodes []*graph.Node
+func (b *Builder) AddTarget(target *Node) error {
+	var validationNodes []*Node
 	if err := b.scan.RecomputeDirty(target, &validationNodes); err != nil {
 		return err
 	}
@@ -82,7 +79,7 @@ func (b *Builder) AlreadyUpToDate() bool {
 	return !b.plan.MoreToDo()
 }
 
-func (b *Builder) StartEdge(edge *graph.Edge) error {
+func (b *Builder) StartEdge(edge *Edge) error {
 	// 启动命令
 	return b.commandRunner.StartCommand(edge)
 }
@@ -97,7 +94,7 @@ func (b *Builder) Build() (ExitStatus, error) {
 		if b.config.DryRun {
 			b.commandRunner = NewDryRunCommandRunner()
 		} else {
-			b.commandRunner = NewRealCommandRunner(b.config.Parallelism)
+			b.commandRunner = NewRealCommandRunner(b.config, b.jobserver_)
 		}
 	}
 
@@ -122,7 +119,7 @@ func (b *Builder) Build() (ExitStatus, error) {
 					return ExitFailure, err
 				}
 				if edge.IsPhony() {
-					if err := b.plan.EdgeFinished(edge, plan.EdgeSucceeded); err != nil {
+					if err := b.plan.EdgeFinished(edge, EdgeSucceeded); err != nil {
 						b.Cleanup()
 						b.status.BuildFinished()
 						return ExitFailure, err
@@ -171,7 +168,7 @@ func (b *Builder) Build() (ExitStatus, error) {
 	return b.exitCode, nil
 }
 
-func (b *Builder) startEdge(edge *graph.Edge) error {
+func (b *Builder) startEdge(edge *Edge) error {
 	if edge.IsPhony() {
 		return nil
 	}
@@ -206,14 +203,15 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 	b.status.BuildEdgeFinished(edge, start, end, result.Status, result.Output)
 
 	if !result.Success() {
-		return b.plan.EdgeFinished(edge, plan.EdgeFailed)
+		return b.plan.EdgeFinished(edge, EdgeFailed)
 	}
 
 	// 处理 deps（msvc/gcc）
 	depsType := edge.GetBinding("deps")
+	depsPrefix := edge.GetBinding("msvc_deps_prefix")
 	if depsType != "" && !b.config.DryRun {
-		var depsNodes []*graph.Node
-		if err := b.extractDeps(result, depsType, &depsNodes); err != nil {
+		var depsNodes []*Node
+		if err := b.extractDeps(result, depsType, depsPrefix, &depsNodes); err != nil {
 			return err
 		}
 		for _, out := range edge.Outputs {
@@ -242,7 +240,7 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 		}
 	}
 
-	if err := b.plan.EdgeFinished(edge, plan.EdgeSucceeded); err != nil {
+	if err := b.plan.EdgeFinished(edge, EdgeSucceeded); err != nil {
 		return err
 	}
 
@@ -262,11 +260,11 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 // KeepDepfile 控制是否保留 depfile 文件（调试用）
 var g_keep_depfile = false
 
-func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string, depsNodes *[]*graph.Node) error {
+func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string, depsNodes *[]*Node) error {
 	switch depsType {
 	case "msvc":
 		parser := NewCLParser()
-		filteredOutput, includes, err := parser.Parse(result.Output, depsPrefix, b.workingDir)
+		filteredOutput, includes, err := parser.Parse(result.Output, depsPrefix)
 		if err != nil {
 			return err
 		}
@@ -323,7 +321,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 	}
 }
 
-func (b *Builder) LoadDyndeps(node *graph.Node) error {
+func (b *Builder) LoadDyndeps(node *Node) error {
 	// 加载 dyndep 信息
 	ddf, err := b.scan.LoadDyndeps(node)
 	if err != nil {

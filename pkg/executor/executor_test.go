@@ -1,15 +1,15 @@
 package executor
 
 import (
+	"ninja-go/pkg/builder"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"ninja-go/pkg/graph"
 )
 
 func TestExecutorRunNoEdges(t *testing.T) {
 	exec := NewExecutor(2)
-	err := exec.Run([]*graph.Edge{}, nil)
+	err := exec.Run([]*builder.Edge{}, nil)
 	assert.NoError(t, err)
 }
 

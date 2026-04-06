@@ -1,4 +1,4 @@
-package graph
+package builder
 
 import (
 	"strings"
@@ -48,7 +48,7 @@ func (es *EvalString) Clear() {
 	es.singleToken = ""
 }
 
-func (es *EvalString) Evaluate(env *BindingEnv) string {
+func (es *EvalString) Evaluate(env Env) string {
 	if len(es.fragments) == 0 {
 		return es.singleToken
 	}

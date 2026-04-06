@@ -1,4 +1,4 @@
-package graph
+package builder
 
 import (
 	"ninja-go/pkg/util"

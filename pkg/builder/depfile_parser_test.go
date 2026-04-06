@@ -5,20 +5,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"ninja-go/pkg/graph"
 )
 
 // 辅助函数：创建 Builder 实例并调用 parseDepfile
-func parseDepfileContent(t *testing.T, content string, outputPath string) (*graph.Edge, *graph.State) {
+func parseDepfileContent(t *testing.T, content string, outputPath string) (*Edge, *State) {
 	fs := newMockFileSystem()
 	fs.WriteFile(outputPath+".d", []byte(content), 0644)
 
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cc", Depfile: "$out.d"}
-	edge := &graph.Edge{Rule: rule}
+	state := NewState()
+	rule := &Rule{Name: "cc", Depfile: "$out.d"}
+	edge := &Edge{Rule: rule}
 	outNode := state.AddNode(outputPath)
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Outputs = []*Node{outNode}
 	outNode.Edge = edge
 	state.Edges = append(state.Edges, edge)
 
@@ -262,11 +260,11 @@ func TestDepfileParser_MissingColon(t *testing.T) {
 	content := "foo.o foo.c\n"
 	fs := newMockFileSystem()
 	fs.WriteFile("foo.o.d", []byte(content), 0644)
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cc", Depfile: "$out.d"}
-	edge := &graph.Edge{Rule: rule}
+	state := NewState()
+	rule := &Rule{Name: "cc", Depfile: "$out.d"}
+	edge := &Edge{Rule: rule}
 	outNode := state.AddNode("foo.o")
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Outputs = []*Node{outNode}
 	outNode.Edge = edge
 	state.Edges = append(state.Edges, edge)
 

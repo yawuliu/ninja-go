@@ -1,9 +1,9 @@
-package parser
+package builder
 
 import (
 	"fmt"
-	"ninja-go/pkg/graph"
 	"ninja-go/pkg/util"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -20,24 +20,24 @@ type ManifestParserOptions struct {
 }
 
 type ManifestParser struct {
-	state       *graph.State
+	state       *State
 	fileReader  util.FileSystem
 	options     ManifestParserOptions
 	quiet       bool
-	env         *graph.BindingEnv
+	env         *BindingEnv
 	subparser   *ManifestParser
-	ins         []*graph.EvalString
-	outs        []*graph.EvalString
-	validations []*graph.EvalString
+	ins         []*EvalString
+	outs        []*EvalString
+	validations []*EvalString
 	lexer       *Lexer
 }
 
-func NewManifestParser(state *graph.State, fileReader util.FileSystem, options ManifestParserOptions) *ManifestParser {
+func NewManifestParser(state *State, fileReader util.FileSystem, options ManifestParserOptions) *ManifestParser {
 	return &ManifestParser{
 		state:      state,
 		fileReader: fileReader,
 		options:    options,
-		env:        graph.NewBindingEnv(nil),
+		env:        NewBindingEnv(nil),
 	}
 }
 
@@ -58,7 +58,7 @@ func (p *ManifestParser) Parse(filename, input string) error {
 				return err
 			}
 		case T_BUILD:
-			if err := p.parseEdge(); err != nil {
+			if err := p.ParseEdge(); err != nil {
 				return err
 			}
 		case T_RULE:
@@ -66,12 +66,12 @@ func (p *ManifestParser) Parse(filename, input string) error {
 				return err
 			}
 		case T_DEFAULT:
-			if err := p.parseDefault(); err != nil {
+			if err := p.ParseDefault(); err != nil {
 				return err
 			}
 		case T_IDENT:
 			p.lexer.UnreadToken()
-			key, val, err := p.parseLet()
+			key, val, err := p.ParseLet()
 			if err != nil {
 				return err
 			}
@@ -112,7 +112,7 @@ func (p *ManifestParser) parsePool() error {
 	}
 	depth := -1
 	for p.lexer.PeekToken(T_INDENT) {
-		key, val, err := p.parseLet()
+		key, val, err := p.ParseLet()
 		if err != nil {
 			return err
 		}
@@ -130,57 +130,54 @@ func (p *ManifestParser) parsePool() error {
 	if depth < 0 {
 		return p.lexer.Error("expected 'depth =' line")
 	}
-	p.state.AddPool(&graph.Pool{Name: name, Depth: depth})
+	p.state.AddPool(&Pool{Name: name, Depth: depth})
 	return nil
 }
 
 func (p *ManifestParser) parseRule() error {
 	name, err := p.lexer.ReadIdent()
 	if err != nil {
-		return err
+		return p.lexer.Error("expected rule name")
 	}
+
 	if err := p.expectToken(T_NEWLINE); err != nil {
 		return err
 	}
-	if p.env.LookupRule(name) != nil {
+
+	if p.env.LookupRuleCurrentScope(name) != nil {
 		return p.lexer.Error("duplicate rule '" + name + "'")
 	}
-	rule := &graph.Rule{Name: name}
+
+	rule := NewRule(name)
+
 	for p.lexer.PeekToken(T_INDENT) {
-		key, val, err := p.parseLet()
+		key, value, err := p.ParseLet()
 		if err != nil {
 			return err
 		}
-		switch key {
-		case "command", "depfile", "dyndep", "pool", "rspfile", "rspfile_content":
-			// 存储到 rule 的绑定（需要 Rule 有 Bindings map）
-			// 简化：直接设置字段
-			if key == "command" {
-				rule.Command = val.Evaluate(p.env)
-			} else if key == "depfile" {
-				rule.Depfile = val.Evaluate(p.env)
-			} else if key == "dyndep" {
-				rule.Dyndep = val.Evaluate(p.env)
-			} else if key == "pool" {
-				rule.Pool = val.Evaluate(p.env)
-			}
-			// rspfile 等暂忽略
-		case "restat":
-			rule.Restat = true
-		case "generator":
-			rule.Generator = true
-		default:
+
+		if IsReservedBinding(key) {
+			rule.AddBinding(key, value)
+		} else {
 			return p.lexer.Error("unexpected variable '" + key + "'")
 		}
 	}
-	if rule.Command == "" {
+
+	rspfile := rule.GetBinding("rspfile")
+	rspfileContent := rule.GetBinding("rspfile_content")
+	if (rspfile == nil) != (rspfileContent == nil) {
+		return p.lexer.Error("rspfile and rspfile_content need to be both specified")
+	}
+
+	if rule.GetBinding("command") == nil {
 		return p.lexer.Error("expected 'command =' line")
 	}
+
 	p.env.AddRule(rule)
 	return nil
 }
 
-func (p *ManifestParser) parseLet() (string, *graph.EvalString, error) {
+func (p *ManifestParser) ParseLet() (string, *EvalString, error) {
 	key, err := p.lexer.ReadIdent()
 	if err != nil {
 		return "", nil, err
@@ -195,12 +192,14 @@ func (p *ManifestParser) parseLet() (string, *graph.EvalString, error) {
 	return key, val, nil
 }
 
-func (p *ManifestParser) parseEdge() error {
-	p.outs = nil
-	p.ins = nil
-	p.validations = nil
+// ParseEdge 解析 build 语句，创建 Edge 并添加到 State。
+func (p *ManifestParser) ParseEdge() error {
+	// 清空临时存储（复用切片）
+	p.outs = p.outs[:0]
+	p.ins = p.ins[:0]
+	p.validations = p.validations[:0]
 
-	// 读取显式输出
+	// 1. 解析显式输出（可多个，以空格分隔）
 	for {
 		out, err := p.lexer.ReadPath()
 		if err != nil {
@@ -211,7 +210,8 @@ func (p *ManifestParser) parseEdge() error {
 		}
 		p.outs = append(p.outs, out)
 	}
-	// 隐式输出（如果有 |）
+
+	// 2. 解析隐式输出（如果有 '|'）
 	implicitOuts := 0
 	if p.lexer.PeekToken(T_PIPE) {
 		for {
@@ -226,21 +226,27 @@ func (p *ManifestParser) parseEdge() error {
 			implicitOuts++
 		}
 	}
+
 	if len(p.outs) == 0 {
 		return p.lexer.Error("expected path")
 	}
+
+	// 3. 期望冒号
 	if err := p.expectToken(T_COLON); err != nil {
 		return err
 	}
+
+	// 4. 规则名
 	ruleName, err := p.lexer.ReadIdent()
 	if err != nil {
-		return err
+		return p.lexer.Error("expected build command name")
 	}
 	rule := p.env.LookupRule(ruleName)
 	if rule == nil {
 		return p.lexer.Error("unknown build rule '" + ruleName + "'")
 	}
-	// 显式输入
+
+	// 5. 解析显式输入
 	for {
 		in, err := p.lexer.ReadPath()
 		if err != nil {
@@ -251,7 +257,8 @@ func (p *ManifestParser) parseEdge() error {
 		}
 		p.ins = append(p.ins, in)
 	}
-	// 隐式输入（|）
+
+	// 6. 隐式输入（'|' 后）
 	implicit := 0
 	if p.lexer.PeekToken(T_PIPE) {
 		for {
@@ -266,7 +273,8 @@ func (p *ManifestParser) parseEdge() error {
 			implicit++
 		}
 	}
-	// order-only 输入（||）
+
+	// 7. order-only 输入（'||' 后）
 	orderOnly := 0
 	if p.lexer.PeekToken(T_PIPE2) {
 		for {
@@ -281,7 +289,8 @@ func (p *ManifestParser) parseEdge() error {
 			orderOnly++
 		}
 	}
-	// 验证边（|@）
+
+	// 8. 验证边（'|@' 后）
 	if p.lexer.PeekToken(T_PIPEAT) {
 		for {
 			val, err := p.lexer.ReadPath()
@@ -294,81 +303,113 @@ func (p *ManifestParser) parseEdge() error {
 			p.validations = append(p.validations, val)
 		}
 	}
+
+	// 9. 期望换行
 	if err := p.expectToken(T_NEWLINE); err != nil {
 		return err
 	}
-	// 处理缩进块（绑定）
-	env := p.env
-	if p.lexer.PeekToken(T_INDENT) {
-		env = graph.NewBindingEnv(p.env)
-		for p.lexer.PeekToken(T_INDENT) {
-			key, val, err := p.parseLet()
-			if err != nil {
-				return err
-			}
-			env.AddBinding(key, val.Evaluate(p.env))
-		}
+
+	// 10. 缩进内的变量绑定（为边创建独立作用域）
+	hasIndent := p.lexer.PeekToken(T_INDENT)
+	var env *BindingEnv
+	if hasIndent {
+		env = NewBindingEnv(p.env)
+	} else {
+		env = p.env
 	}
-	// 创建 Edge
+	for hasIndent {
+		key, val, err := p.ParseLet()
+		if err != nil {
+			return err
+		}
+		// 求值并添加到边的环境（值在全局环境求值，然后存入边的环境）
+		evaluated := val.Evaluate(p.env)
+		env.AddBinding(key, evaluated)
+		hasIndent = p.lexer.PeekToken(T_INDENT)
+	}
+
+	// 11. 创建 Edge
 	edge := p.state.AddEdge(rule)
 	edge.Env = env
-	// 处理 pool
-	if poolName := edge.GetBinding("pool"); poolName != "" {
+
+	// 12. 处理 pool
+	poolName := edge.GetBinding("pool")
+	if poolName != "" {
 		pool := p.state.LookupPool(poolName)
 		if pool == nil {
 			return p.lexer.Error("unknown pool name '" + poolName + "'")
 		}
 		edge.Pool = pool
 	}
-	// 添加输出节点
-	for i, outEval := range p.outs {
+
+	// 13. 添加输出节点
+	for _, outEval := range p.outs {
 		path := outEval.Evaluate(env)
 		if path == "" {
 			return p.lexer.Error("empty path")
 		}
-		node := p.state.AddNode(path)
-		node.Generated = true
-		node.Edge = edge
-		edge.Outputs = append(edge.Outputs, node)
-		if i >= len(p.outs)-implicitOuts {
-			// 隐式输出
-			edge.ImplicitOuts++
+		norm, slashBits := util.CanonicalizePath(path)
+		if err := p.state.AddOut(edge, norm, slashBits); err != nil {
+			return p.lexer.Error(err.Error())
 		}
 	}
-	// 添加输入节点
-	totalInputs := len(p.ins)
-	for i, inEval := range p.ins {
+
+	// 如果所有输出都已由其他边生成，则丢弃此边（例如重复定义）
+	if len(edge.Outputs) == 0 {
+		// 从 state 中移除边（简单实现：从切片末尾删除）
+		p.state.Edges = p.state.Edges[:len(p.state.Edges)-1]
+		return nil
+	}
+	edge.ImplicitOuts = implicitOuts
+
+	// 14. 添加输入节点
+	for _, inEval := range p.ins {
 		path := inEval.Evaluate(env)
 		if path == "" {
 			return p.lexer.Error("empty path")
 		}
-		node := p.state.AddNode(path)
-		edge.Inputs = append(edge.Inputs, node)
-		if i >= totalInputs-orderOnly {
-			edge.OrderOnlyDeps++
-		} else if i >= totalInputs-orderOnly-implicit {
-			edge.ImplicitDeps++
-		}
+		norm, slashBits := util.CanonicalizePath(path)
+		p.state.AddIn(edge, norm, slashBits)
 	}
-	// 添加验证节点
+	edge.ImplicitDeps = implicit
+	edge.OrderOnlyDeps = orderOnly
+
+	// 15. 添加验证节点
 	for _, valEval := range p.validations {
 		path := valEval.Evaluate(env)
 		if path == "" {
 			return p.lexer.Error("empty path")
 		}
-		node := p.state.AddNode(path)
-		edge.Validations = append(edge.Validations, node)
+		norm, slashBits := util.CanonicalizePath(path)
+		p.state.AddValidation(edge, norm, slashBits)
 	}
-	// 处理 dyndep
-	dyndep := edge.GetBinding("dyndep")
-	if dyndep != "" {
-		dyndepNode := p.state.LookupNode(dyndep)
-		if dyndepNode == nil {
-			return p.lexer.Error("dyndep '" + dyndep + "' is not an input")
+
+	// 16. 处理 phony 自引用（兼容旧 CMake）
+	if p.options.PhonyCycleAction == PhonyCycleActionWarn && edge.MaybePhonyCycleDiagnostic() {
+		outNode := edge.Outputs[0]
+		// 从输入中移除自引用的节点
+		newInputs := make([]*Node, 0, len(edge.Inputs))
+		for _, in := range edge.Inputs {
+			if in != outNode {
+				newInputs = append(newInputs, in)
+			}
 		}
+		if len(newInputs) != len(edge.Inputs) {
+			edge.Inputs = newInputs
+			if !p.quiet {
+				fmt.Fprintf(os.Stderr, "ninja: warning: phony target '%s' names itself as an input; ignoring [-w phonycycle=warn]\n", outNode.Path)
+			}
+		}
+	}
+
+	// 17. 处理 dyndep 绑定
+	dyndep := edge.GetUnescapedDyndep()
+	if dyndep != "" {
+		norm, slashBits := util.CanonicalizePath(dyndep)
+		dyndepNode := p.state.GetNode(norm, slashBits)
 		edge.DyndepFile = dyndepNode
 		dyndepNode.DyndepPending = true
-		// 确保 dyndep 在输入中
+		// 验证 dyndep 节点必须是边的输入之一
 		found := false
 		for _, in := range edge.Inputs {
 			if in == dyndepNode {
@@ -380,39 +421,50 @@ func (p *ManifestParser) parseEdge() error {
 			return p.lexer.Error("dyndep '" + dyndep + "' is not an input")
 		}
 	}
-	// 处理 phony 自引用（兼容旧 CMake）
-	if p.options.PhonyCycleAction == PhonyCycleActionWarn && rule.Name == "phony" && len(edge.Outputs) == 1 {
-		out := edge.Outputs[0]
-		newInputs := make([]*graph.Node, 0, len(edge.Inputs))
-		for _, in := range edge.Inputs {
-			if in != out {
-				newInputs = append(newInputs, in)
-			} else if !p.quiet {
-				fmt.Printf("warning: phony target '%s' names itself as an input; ignoring\n", out.Path)
-			}
-		}
-		edge.Inputs = newInputs
-	}
+
 	return nil
 }
 
-func (p *ManifestParser) parseDefault() error {
+// ParseDefault 解析 default 语句，将默认目标添加到 State 中。
+func (p *ManifestParser) ParseDefault() error {
+	// 读取第一个路径
+	eval, err := p.lexer.ReadPath()
+	if err != nil {
+		return err
+	}
+	if eval.Empty() {
+		return p.lexer.Error("expected target name")
+	}
+
 	for {
-		eval, err := p.lexer.ReadPath()
-		if err != nil {
-			return err
-		}
-		if eval.Empty() {
-			break
-		}
+		// 求值路径（在当前环境中展开变量）
 		path := eval.Evaluate(p.env)
 		if path == "" {
 			return p.lexer.Error("empty path")
 		}
-		node := p.state.AddNode(path)
-		p.state.Defaults = append(p.state.Defaults, node)
+		// 规范化路径（slash_bits 在默认目标中不使用，因为只做查找）
+		norm, _ := util.CanonicalizePath(path)
+		if err := p.state.AddDefault(norm); err != nil {
+			return p.lexer.Error(err.Error())
+		}
+
+		// 尝试读取下一个路径
+		eval.Clear()
+		next, err := p.lexer.ReadPath()
+		if err != nil {
+			return err
+		}
+		if next.Empty() {
+			break
+		}
+		eval = next
 	}
-	return p.expectToken(T_NEWLINE)
+
+	// 期望换行
+	if err := p.expectToken(T_NEWLINE); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ManifestParser) parseFileInclude(newScope bool) error {
@@ -428,7 +480,7 @@ func (p *ManifestParser) parseFileInclude(newScope bool) error {
 		p.subparser = NewManifestParser(p.state, p.fileReader, p.options)
 	}
 	if newScope {
-		p.subparser.env = graph.NewBindingEnv(p.env)
+		p.subparser.env = NewBindingEnv(p.env)
 	} else {
 		p.subparser.env = p.env
 	}

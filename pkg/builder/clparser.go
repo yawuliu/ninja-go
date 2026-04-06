@@ -64,7 +64,7 @@ func FilterInputFilename(filename string) bool {
 //	filteredOutput: 过滤后的输出（保留非相关行）
 //	includes: 规范化后的包含文件路径列表
 //	error: 错误信息
-func (p *CLParser) Parse(output, depsPrefix, currentDir string) (string, []string, error) {
+func (p *CLParser) Parse(output, depsPrefix string) (string, []string, error) {
 	p.includes = make(map[string]bool)
 	var filtered strings.Builder
 	lines := strings.Split(output, "\n")

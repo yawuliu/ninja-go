@@ -1,8 +1,7 @@
-package dyndep
+package builder
 
 import (
 	"fmt"
-	"ninja-go/pkg/graph"
 	"ninja-go/pkg/util"
 )
 
@@ -10,18 +9,18 @@ import (
 type DyndepInfo struct {
 	Used            bool
 	Restat          bool
-	ImplicitInputs  []*graph.Node
-	ImplicitOutputs []*graph.Node
+	ImplicitInputs  []*Node
+	ImplicitOutputs []*Node
 }
 
 // DyndepLoader 对应 C++ 的 DyndepLoader
 type DyndepLoader struct {
-	state *graph.State
+	state *State
 	fs    util.FileSystem // 文件读取接口
 	// explanations 可选
 }
 
-func NewDyndepLoader(state *graph.State, fs util.FileSystem) *DyndepLoader {
+func NewDyndepLoader(state *State, fs util.FileSystem) *DyndepLoader {
 	return &DyndepLoader{
 		state: state,
 		fs:    fs,
@@ -29,14 +28,14 @@ func NewDyndepLoader(state *graph.State, fs util.FileSystem) *DyndepLoader {
 }
 
 // LoadDyndeps 加载 dyndep 文件，更新图
-func (l *DyndepLoader) LoadDyndeps(node *graph.Node) error {
+func (l *DyndepLoader) LoadDyndeps(node *Node) error {
 	return l.loadDyndeps(node, nil)
 }
 
 // loadDyndeps 内部实现，可传入已有的 DyndepFile 映射
-func (l *DyndepLoader) loadDyndeps(node *graph.Node, ddf map[*graph.Edge]*DyndepInfo) error {
+func (l *DyndepLoader) loadDyndeps(node *Node, ddf DyndepFile) error {
 	if ddf == nil {
-		ddf = make(map[*graph.Edge]*DyndepInfo)
+		ddf = make(DyndepFile)
 	}
 	// 读取文件内容
 	data, err := l.fs.ReadFile(node.Path)
@@ -56,7 +55,7 @@ func (l *DyndepLoader) loadDyndeps(node *graph.Node, ddf map[*graph.Edge]*Dyndep
 }
 
 // UpdateEdge 更新边，对应 C++ 的 UpdateEdge
-func (l *DyndepLoader) UpdateEdge(edge *graph.Edge, info *DyndepInfo) error {
+func (l *DyndepLoader) UpdateEdge(edge *Edge, info *DyndepInfo) error {
 	if info.Restat {
 		edge.Rule.Restat = true
 	}

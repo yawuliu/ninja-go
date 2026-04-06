@@ -1,16 +1,16 @@
-package graph
+package builder
 
 // Rule 构建规则
 type Rule struct {
 	Name     string
-	Bindings map[string]EvalString
+	Bindings map[string]*EvalString
 	Phony    bool
 }
 
 func NewRule(name string) *Rule {
 	return &Rule{
 		Name:     name,
-		Bindings: make(map[string]EvalString),
+		Bindings: make(map[string]*EvalString),
 	}
 }
 
@@ -24,13 +24,13 @@ func (r *Rule) IsPhony() bool {
 	return r.Phony
 }
 
-func (r *Rule) AddBinding(key string, val EvalString) {
+func (r *Rule) AddBinding(key string, val *EvalString) {
 	r.Bindings[key] = val
 }
 
 func (r *Rule) GetBinding(key string) *EvalString {
 	if val, ok := r.Bindings[key]; ok {
-		return &val
+		return val
 	}
 	return nil
 }

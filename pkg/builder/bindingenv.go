@@ -1,4 +1,9 @@
-package graph
+package builder
+
+// Env 变量查找接口
+type Env interface {
+	LookupVariable(varName string) string
+}
 
 type BindingEnv struct {
 	parent *BindingEnv

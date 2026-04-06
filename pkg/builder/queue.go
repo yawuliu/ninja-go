@@ -1,4 +1,4 @@
-package graph
+package builder
 
 type EdgePriorityQueue struct {
 	edges []*Edge

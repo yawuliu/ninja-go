@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"ninja-go/pkg/graph"
 )
 
 // mockCommandRunner 模拟命令执行
@@ -196,13 +194,13 @@ func TestNoWork(t *testing.T) {
 	fs.WriteFile("in1", []byte("hello"), 0644)
 	fs.WriteFile("out", []byte("hello"), 0644)
 
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cat", Command: "cat $in > $out"}
-	edge := &graph.Edge{Rule: rule}
-	edge.Inputs = []*graph.Node{state.AddNode("in1")}
-	edge.Outputs = []*graph.Node{state.AddNode("out")}
+	state := NewState()
+	rule := &Rule{Name: "cat", Command: "cat $in > $out"}
+	edge := &Edge{Rule: rule}
+	edge.Inputs = []*Node{state.AddNode("in1")}
+	edge.Outputs = []*Node{state.AddNode("out")}
 	state.Edges = append(state.Edges, edge)
-	state.Defaults = []*graph.Node{state.AddNode("out")}
+	state.Defaults = []*Node{state.AddNode("out")}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	err := builder.Build([]string{"default"})
@@ -216,19 +214,19 @@ func TestOneStep(t *testing.T) {
 	fs := newMockFileSystem()
 	fs.WriteFile("in1", []byte("hello"), 0644)
 
-	state := graph.NewState()
+	state := NewState()
 	//rule := &graph.Rule{Name: "cat", Command: "cat $in > $out"}
-	rule := &graph.Rule{Name: "copy", Command: "cmd /c copy $in $out"} // Windows
-	edge := &graph.Edge{Rule: rule}
+	rule := &Rule{Name: "copy", Command: "cmd /c copy $in $out"} // Windows
+	edge := &Edge{Rule: rule}
 	inNode := state.AddNode("in1")
 	outNode := state.AddNode("out")
-	edge.Inputs = []*graph.Node{inNode}
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Inputs = []*Node{inNode}
+	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
 	outNode.Edge = edge
 	outNode.Generated = true
 	state.Edges = append(state.Edges, edge)
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	err := builder.Build([]string{"default"})
@@ -242,26 +240,26 @@ func TestTwoStep(t *testing.T) {
 	fs := newMockFileSystem()
 	fs.WriteFile("in1", []byte("hello"), 0644)
 
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
+	state := NewState()
+	rule := &Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
 	// edge1: cat1 <- in1
-	edge1 := &graph.Edge{Rule: rule}
+	edge1 := &Edge{Rule: rule}
 	in1Node := state.AddNode("in1")
 	cat1Node := state.AddNode("cat1")
 	outNode := state.AddNode("out")
-	edge1.Inputs = []*graph.Node{in1Node}
-	edge1.Outputs = []*graph.Node{cat1Node}
+	edge1.Inputs = []*Node{in1Node}
+	edge1.Outputs = []*Node{cat1Node}
 	// edge2: out <- cat1
-	edge2 := &graph.Edge{Rule: rule}
-	edge2.Inputs = []*graph.Node{cat1Node}
-	edge2.Outputs = []*graph.Node{outNode}
+	edge2 := &Edge{Rule: rule}
+	edge2.Inputs = []*Node{cat1Node}
+	edge2.Outputs = []*Node{outNode}
 	state.Edges = append(state.Edges, edge1, edge2)
 	// 关键：设置输出节点的生成边
 	cat1Node.Edge = edge1
 	cat1Node.Generated = true
 	outNode.Edge = edge2
 	outNode.Generated = true
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	err := builder.Build([]string{"default"})
@@ -276,18 +274,18 @@ func TestMissingInput(t *testing.T) {
 	fs := newMockFileSystem()
 	// 不创建 in1
 
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
-	edge := &graph.Edge{Rule: rule}
+	state := NewState()
+	rule := &Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
+	edge := &Edge{Rule: rule}
 	inNode := state.AddNode("in1")
 	outNode := state.AddNode("out")
-	edge.Inputs = []*graph.Node{inNode}
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Inputs = []*Node{inNode}
+	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
 	outNode.Edge = edge
 	outNode.Generated = true
 	state.Edges = append(state.Edges, edge)
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	err := builder.Build([]string{"default"})
@@ -300,22 +298,22 @@ func TestDepFileOK(t *testing.T) {
 	fs.WriteFile("foo.c", []byte(""), 0644)
 	fs.WriteFile("foo.o.d", []byte("foo.o: bar.h\n"), 0644)
 
-	state := graph.NewState()
-	rule := &graph.Rule{
+	state := NewState()
+	rule := &Rule{
 		Name:    "cc",
 		Command: "cc $in",
 		Depfile: "$out.d",
 	}
-	edge := &graph.Edge{Rule: rule}
+	edge := &Edge{Rule: rule}
 	inNode := state.AddNode("foo.c")
 	outNode := state.AddNode("foo.o")
-	edge.Inputs = []*graph.Node{inNode}
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Inputs = []*Node{inNode}
+	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
 	outNode.Edge = edge
 	outNode.Generated = true
 	state.Edges = append(state.Edges, edge)
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	// 需要 builder.parseDepfile 被调用，这里通过构建触发
@@ -338,26 +336,26 @@ func TestPhony(t *testing.T) {
 	fs := newMockFileSystem()
 	fs.WriteFile("in1", []byte("hello"), 0644)
 
-	state := graph.NewState()
-	ruleCat := &graph.Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
-	edge1 := &graph.Edge{Rule: ruleCat}
+	state := NewState()
+	ruleCat := &Rule{Name: "cat", Command: "cmd /c copy $in $out"} // "cat $in > $out"
+	edge1 := &Edge{Rule: ruleCat}
 	in1Node := state.AddNode("in1")
 	outNode := state.AddNode("out")
 	allNode := state.AddNode("all")
-	edge1.Inputs = []*graph.Node{in1Node}
-	edge1.Outputs = []*graph.Node{outNode}
+	edge1.Inputs = []*Node{in1Node}
+	edge1.Outputs = []*Node{outNode}
 	// phony 规则
-	phonyRule := &graph.Rule{Name: "phony"}
-	edge2 := &graph.Edge{Rule: phonyRule}
-	edge2.Inputs = []*graph.Node{outNode}
-	edge2.Outputs = []*graph.Node{allNode}
+	phonyRule := &Rule{Name: "phony"}
+	edge2 := &Edge{Rule: phonyRule}
+	edge2.Inputs = []*Node{outNode}
+	edge2.Outputs = []*Node{allNode}
 	//
 	outNode.Edge = edge1
 	outNode.Generated = true
 	allNode.Edge = edge2
 	allNode.Generated = true
 	state.Edges = append(state.Edges, edge1, edge2)
-	state.Defaults = []*graph.Node{allNode}
+	state.Defaults = []*Node{allNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
 	err := builder.Build([]string{"default"})
@@ -372,18 +370,18 @@ func TestFail(t *testing.T) {
 	fs := newMockFileSystem()
 	fs.WriteFile("in1", []byte("hello"), 0644)
 
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "fail", Command: "fail"}
-	edge := &graph.Edge{Rule: rule}
+	state := NewState()
+	rule := &Rule{Name: "fail", Command: "fail"}
+	edge := &Edge{Rule: rule}
 	inNode := state.AddNode("in1")
 	outNode := state.AddNode("out")
-	edge.Inputs = []*graph.Node{inNode}
-	edge.Outputs = []*graph.Node{outNode}
+	edge.Inputs = []*Node{inNode}
+	edge.Outputs = []*Node{outNode}
 	//
 	outNode.Edge = edge
 	outNode.Generated = true
 	state.Edges = append(state.Edges, edge)
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	mockRunner := newMockCommandRunner(fs)
 	mockRunner.failCommand["fail"] = true
@@ -427,31 +425,31 @@ build out | out.imp: dyndep | in.imp
 	fs.WriteFile("in", []byte(""), 0644)
 	fs.WriteFile("in.imp", []byte(""), 0644) // 手动创建隐式依赖文件
 
-	state := graph.NewState()
-	ruleCp := &graph.Rule{Name: "cp", Command: "cp $in $out"}
-	ruleTouch := &graph.Rule{Name: "touch", Command: "touch $out"}
+	state := NewState()
+	ruleCp := &Rule{Name: "cp", Command: "cp $in $out"}
+	ruleTouch := &Rule{Name: "touch", Command: "touch $out"}
 
 	// 边：生成 dd 文件
-	edgeDd := &graph.Edge{Rule: ruleCp}
+	edgeDd := &Edge{Rule: ruleCp}
 	ddNode := state.AddNode("dd")
 	ddInNode := state.AddNode("dd-in")
-	edgeDd.Inputs = []*graph.Node{ddInNode}
-	edgeDd.Outputs = []*graph.Node{ddNode}
+	edgeDd.Inputs = []*Node{ddInNode}
+	edgeDd.Outputs = []*Node{ddNode}
 	ddNode.Edge = edgeDd
 	ddNode.Generated = true
 	state.Edges = append(state.Edges, edgeDd)
 
 	// 边：out 最初没有规则，将由 dyndep 动态添加隐式输入/输出
 	// 注意：实际使用时，out 的边应已在解析 build.ninja 时存在，这里为了测试，先创建空边
-	edgeOut := &graph.Edge{Rule: ruleTouch}
+	edgeOut := &Edge{Rule: ruleTouch}
 	outNode := state.AddNode("out")
-	edgeOut.Outputs = []*graph.Node{outNode}
+	edgeOut.Outputs = []*Node{outNode}
 	edgeOut.DyndepFile = ddNode
 	outNode.Edge = edgeOut
 	outNode.Generated = true
 	state.Edges = append(state.Edges, edgeOut)
 
-	state.Defaults = []*graph.Node{outNode}
+	state.Defaults = []*Node{outNode}
 
 	mockRunner := newMockCommandRunner(fs)
 	builder := NewBuilder(state, 1, mockRunner, fs)

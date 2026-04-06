@@ -1,4 +1,4 @@
-package depslog
+package builder
 
 import (
 	"os"
@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"ninja-go/pkg/graph"
 )
 
 func tempFile(t *testing.T) string {
@@ -19,7 +17,7 @@ func tempFile(t *testing.T) string {
 // TestWriteRead 对应 C++ DepsLogTest.WriteRead
 func TestWriteRead(t *testing.T) {
 	logPath := tempFile(t)
-	state := graph.NewState()
+	state := NewState()
 	outNode := state.AddNode("out.o")
 	fooNode := state.AddNode("foo.h")
 	barNode := state.AddNode("bar.h")
@@ -28,7 +26,7 @@ func TestWriteRead(t *testing.T) {
 	err := log1.OpenForWrite()
 	require.NoError(t, err)
 
-	deps1 := []*graph.Node{fooNode, barNode}
+	deps1 := []*Node{fooNode, barNode}
 	log1.RecordDeps(outNode, 1, deps1)
 
 	// 验证记录已添加
@@ -43,7 +41,7 @@ func TestWriteRead(t *testing.T) {
 	require.NoError(t, err)
 
 	// 加载
-	state2 := graph.NewState()
+	state2 := NewState()
 	log2 := NewDepsLog(logPath)
 	err = log2.Load(state2)
 	require.NoError(t, err)
@@ -63,9 +61,9 @@ func TestWriteRead(t *testing.T) {
 func TestLotsOfDeps(t *testing.T) {
 	logPath := tempFile(t)
 	const numDeps = 100000
-	state1 := graph.NewState()
+	state1 := NewState()
 	outNode := state1.AddNode("out.o")
-	var deps []*graph.Node
+	var deps []*Node
 	for i := 0; i < numDeps; i++ {
 		name := filepath.Join("dir", "file%d.h")
 		node := state1.AddNode(name)
@@ -79,7 +77,7 @@ func TestLotsOfDeps(t *testing.T) {
 	err = log1.Close()
 	require.NoError(t, err)
 
-	state2 := graph.NewState()
+	state2 := NewState()
 	log2 := NewDepsLog(logPath)
 	err = log2.Load(state2)
 	require.NoError(t, err)
@@ -96,7 +94,7 @@ func TestDoubleEntry(t *testing.T) {
 	logPath := tempFile(t)
 
 	// 第一次写入
-	state := graph.NewState()
+	state := NewState()
 	outNode := state.AddNode("out.o")
 	fooNode := state.AddNode("foo.h")
 	barNode := state.AddNode("bar.h")
@@ -104,7 +102,7 @@ func TestDoubleEntry(t *testing.T) {
 	log1 := NewDepsLog(logPath)
 	err := log1.OpenForWrite()
 	require.NoError(t, err)
-	log1.RecordDeps(outNode, 1, []*graph.Node{fooNode, barNode})
+	log1.RecordDeps(outNode, 1, []*Node{fooNode, barNode})
 	err = log1.Close()
 	require.NoError(t, err)
 
@@ -113,7 +111,7 @@ func TestDoubleEntry(t *testing.T) {
 	size1 := info.Size()
 
 	// 第二次加载并写入相同依赖
-	state2 := graph.NewState()
+	state2 := NewState()
 	log2 := NewDepsLog(logPath)
 	err = log2.Load(state2)
 	require.NoError(t, err)
@@ -122,7 +120,7 @@ func TestDoubleEntry(t *testing.T) {
 	outNode2 := state2.LookupNode("out.o")
 	fooNode2 := state2.LookupNode("foo.h")
 	barNode2 := state2.LookupNode("bar.h")
-	log2.RecordDeps(outNode2, 1, []*graph.Node{fooNode2, barNode2})
+	log2.RecordDeps(outNode2, 1, []*Node{fooNode2, barNode2})
 	err = log2.Close()
 	require.NoError(t, err)
 
@@ -136,13 +134,13 @@ func TestRecompact(t *testing.T) {
 	logPath := tempFile(t)
 
 	// 创建初始状态，包含两个节点
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cc", Command: "cc -c $in -o $out"}
+	state := NewState()
+	rule := &Rule{Name: "cc", Command: "cc -c $in -o $out"}
 	// 为节点设置 in_edge，以便 IsDepsEntryLiveFor 判断存活
 	out1 := state.AddNode("out.o")
-	out1.Edge = &graph.Edge{Rule: rule}
+	out1.Edge = &Edge{Rule: rule}
 	out2 := state.AddNode("other_out.o")
-	out2.Edge = &graph.Edge{Rule: rule}
+	out2.Edge = &Edge{Rule: rule}
 	foo := state.AddNode("foo.h")
 	bar := state.AddNode("bar.h")
 	baz := state.AddNode("baz.h")
@@ -150,8 +148,8 @@ func TestRecompact(t *testing.T) {
 	log1 := NewDepsLog(logPath)
 	err := log1.OpenForWrite()
 	require.NoError(t, err)
-	log1.RecordDeps(out1, 1, []*graph.Node{foo, bar})
-	log1.RecordDeps(out2, 1, []*graph.Node{foo, baz})
+	log1.RecordDeps(out1, 1, []*Node{foo, bar})
+	log1.RecordDeps(out2, 1, []*Node{foo, baz})
 	err = log1.Close()
 	require.NoError(t, err)
 
@@ -167,7 +165,7 @@ func TestRecompact(t *testing.T) {
 	require.NoError(t, err)
 	out1_2 := state.GetNode("out.o")
 	foo_2 := state.GetNode("foo.h")
-	log2.RecordDeps(out1_2, 1, []*graph.Node{foo_2})
+	log2.RecordDeps(out1_2, 1, []*Node{foo_2})
 	err = log2.Close()
 	require.NoError(t, err)
 
@@ -219,7 +217,7 @@ func TestInvalidHeader(t *testing.T) {
 		err := os.WriteFile(logPath, []byte(header), 0644)
 		require.NoError(t, err)
 
-		state := graph.NewState()
+		state := NewState()
 		log := NewDepsLog(logPath)
 		err = log.Load(state)
 		require.NoError(t, err)
@@ -240,7 +238,7 @@ func TestTruncated(t *testing.T) {
 	logPath := tempFile(t)
 
 	// 创建包含两个记录的日志
-	state := graph.NewState()
+	state := NewState()
 	out1 := state.AddNode("out.o")
 	foo1 := state.AddNode("foo.h")
 	bar1 := state.AddNode("bar.h")
@@ -250,8 +248,8 @@ func TestTruncated(t *testing.T) {
 	log1 := NewDepsLog(logPath)
 	err := log1.OpenForWrite()
 	require.NoError(t, err)
-	log1.RecordDeps(out1, 1, []*graph.Node{foo1, bar1})
-	log1.RecordDeps(out2, 2, []*graph.Node{foo1, bar2})
+	log1.RecordDeps(out1, 1, []*Node{foo1, bar1})
+	log1.RecordDeps(out2, 2, []*Node{foo1, bar2})
 	err = log1.Close()
 	require.NoError(t, err)
 
@@ -272,7 +270,7 @@ func TestTruncated(t *testing.T) {
 		err := os.Truncate(logPath, size)
 		require.NoError(t, err)
 
-		state := graph.NewState()
+		state := NewState()
 		log2 := NewDepsLog(logPath)
 		err = log2.Load(state)
 		// 可能成功或返回错误，但不应该 panic
@@ -280,7 +278,7 @@ func TestTruncated(t *testing.T) {
 	}
 	// 测试 size=0 的情况
 	os.Truncate(logPath, 0)
-	state = graph.NewState()
+	state = NewState()
 	log2 := NewDepsLog(logPath)
 	err = log2.Load(state)
 	_ = err
@@ -293,7 +291,7 @@ func TestTruncatedRecovery(t *testing.T) {
 	logPath := tempFile(t)
 
 	// 创建两个记录
-	state := graph.NewState()
+	state := NewState()
 	out1 := state.AddNode("out.o")
 	foo1 := state.AddNode("foo.h")
 	bar1 := state.AddNode("bar.h")
@@ -303,8 +301,8 @@ func TestTruncatedRecovery(t *testing.T) {
 	log1 := NewDepsLog(logPath)
 	err := log1.OpenForWrite()
 	require.NoError(t, err)
-	log1.RecordDeps(out1, 1, []*graph.Node{foo1, bar1})
-	log1.RecordDeps(out2, 2, []*graph.Node{foo1, bar2})
+	log1.RecordDeps(out1, 1, []*Node{foo1, bar1})
+	log1.RecordDeps(out2, 2, []*Node{foo1, bar2})
 	err = log1.Close()
 	require.NoError(t, err)
 
@@ -315,7 +313,7 @@ func TestTruncatedRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 加载并追加新记录
-	state2 := graph.NewState()
+	state2 := NewState()
 	log2 := NewDepsLog(logPath)
 	err = log2.Load(state2)
 	// 应返回错误（"premature end of file; recovering"），但 C++ 中 LOAD_SUCCESS 且 err 非空
@@ -337,12 +335,12 @@ func TestTruncatedRecovery(t *testing.T) {
 	if bar2Node == nil {
 		bar2Node = state2.AddNode("bar2.h")
 	}
-	log2.RecordDeps(out2Node, 3, []*graph.Node{foo1Node, bar2Node})
+	log2.RecordDeps(out2Node, 3, []*Node{foo1Node, bar2Node})
 	err = log2.Close()
 	require.NoError(t, err)
 
 	// 第三次加载，验证记录存在
-	state3 := graph.NewState()
+	state3 := NewState()
 	log3 := NewDepsLog(logPath)
 	err = log3.Load(state3)
 	require.NoError(t, err)
@@ -356,7 +354,7 @@ func TestTruncatedRecovery(t *testing.T) {
 // TestReverseDepsNodes 对应 C++ DepsLogTest.ReverseDepsNodes
 func TestReverseDepsNodes(t *testing.T) {
 	logPath := tempFile(t)
-	state := graph.NewState()
+	state := NewState()
 	out := state.AddNode("out.o")
 	out2 := state.AddNode("out2.o")
 	foo := state.AddNode("foo.h")
@@ -366,8 +364,8 @@ func TestReverseDepsNodes(t *testing.T) {
 	log := NewDepsLog(logPath)
 	err := log.OpenForWrite()
 	require.NoError(t, err)
-	log.RecordDeps(out, 1, []*graph.Node{foo, bar})
-	log.RecordDeps(out2, 2, []*graph.Node{foo, bar2})
+	log.RecordDeps(out, 1, []*Node{foo, bar})
+	log.RecordDeps(out2, 2, []*Node{foo, bar2})
 	err = log.Close()
 	require.NoError(t, err)
 

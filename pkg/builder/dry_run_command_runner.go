@@ -2,13 +2,21 @@ package builder
 
 import (
 	"container/list"
-	"ninja-go/pkg/graph"
 )
 
 // DryRunCommandRunner 是一个不实际运行命令的 CommandRunner，用于干运行模式。
 type DryRunCommandRunner struct {
 	finished *list.List // 存储已“完成”的 Edge
 }
+
+// Verify that *UserCacher implements Cacher
+var _ CommandRunner = (*DryRunCommandRunner)(nil)
+
+func (r *DryRunCommandRunner) GetActiveEdges() []*Edge {
+	return []*Edge{}
+}
+
+func (r *DryRunCommandRunner) Abort() {}
 
 // NewDryRunCommandRunner 创建干运行命令执行器
 func NewDryRunCommandRunner() *DryRunCommandRunner {
@@ -24,7 +32,7 @@ func (r *DryRunCommandRunner) CanRunMore() int {
 }
 
 // StartCommand 模拟启动命令：将 edge 放入完成队列
-func (r *DryRunCommandRunner) StartCommand(edge *graph.Edge) error {
+func (r *DryRunCommandRunner) StartCommand(edge *Edge) error {
 	r.finished.PushBack(edge)
 	return nil
 }
@@ -36,7 +44,7 @@ func (r *DryRunCommandRunner) WaitForCommand() (*CommandResult, error) {
 	}
 	front := r.finished.Front()
 	r.finished.Remove(front)
-	edge := front.Value.(*graph.Edge)
+	edge := front.Value.(*Edge)
 	return &CommandResult{
 		Edge:   edge,
 		Status: ExitSuccess,

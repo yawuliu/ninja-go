@@ -1,4 +1,4 @@
-package buildlog
+package builder
 
 import (
 	"bytes"
@@ -11,8 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"ninja-go/pkg/graph"
 )
 
 type mockFile struct {
@@ -243,10 +241,10 @@ func TestDoubleEntry(t *testing.T) {
 func TestTruncate(t *testing.T) {
 	fs := newMockFileSystem()
 	logPath := tempFile(t)
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cat"}
-	edge1 := &graph.Edge{Rule: rule, Outputs: []*graph.Node{state.AddNode("out")}}
-	edge2 := &graph.Edge{Rule: rule, Outputs: []*graph.Node{state.AddNode("mid")}}
+	state := NewState()
+	rule := &Rule{Name: "cat"}
+	edge1 := &Edge{Rule: rule, Outputs: []*Node{state.AddNode("out")}}
+	edge2 := &Edge{Rule: rule, Outputs: []*Node{state.AddNode("mid")}}
 
 	log1 := NewBuildLog(logPath)
 	err := log1.OpenForWrite(fs)
@@ -423,10 +421,10 @@ func TestVeryLongInputLine(t *testing.T) {
 func TestMultiTargetEdge(t *testing.T) {
 	fs := newMockFileSystem()
 	logPath := tempFile(t)
-	state := graph.NewState()
-	rule := &graph.Rule{Name: "cat"}
-	edge := &graph.Edge{Rule: rule}
-	edge.Outputs = []*graph.Node{
+	state := NewState()
+	rule := &Rule{Name: "cat"}
+	edge := &Edge{Rule: rule}
+	edge.Outputs = []*Node{
 		state.AddNode("out"),
 		state.AddNode("out.d"),
 	}

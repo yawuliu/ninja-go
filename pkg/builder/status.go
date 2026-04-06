@@ -2,7 +2,6 @@ package builder
 
 import (
 	"fmt"
-	"ninja-go/pkg/graph"
 	"os"
 )
 
@@ -10,10 +9,10 @@ import (
 
 // Status 接口
 type Status interface {
-	EdgeAddedToPlan(edge *graph.Edge)
-	EdgeRemovedFromPlan(edge *graph.Edge)
-	BuildEdgeStarted(edge *graph.Edge, startTimeMillis int64)
-	BuildEdgeFinished(edge *graph.Edge, startTimeMillis, endTimeMillis int64, exitCode ExitStatus, output string)
+	EdgeAddedToPlan(edge *Edge)
+	EdgeRemovedFromPlan(edge *Edge)
+	BuildEdgeStarted(edge *Edge, startTimeMillis int64)
+	BuildEdgeFinished(edge *Edge, startTimeMillis, endTimeMillis int64, exitCode ExitStatus, output string)
 	BuildStarted()
 	BuildFinished()
 	SetExplanations(expl *Explanations)
@@ -33,17 +32,17 @@ func NewStatus(config BuildConfig) Status {
 	return &ConsoleStatus{config: config}
 }
 
-func (s *ConsoleStatus) EdgeAddedToPlan(edge *graph.Edge) {
+func (s *ConsoleStatus) EdgeAddedToPlan(edge *Edge) {
 	if s.config.Verbosity >= VerbosityNormal {
 		// 可显示边缘加入计划的信息，通常不输出
 	}
 }
 
-func (s *ConsoleStatus) EdgeRemovedFromPlan(edge *graph.Edge) {
+func (s *ConsoleStatus) EdgeRemovedFromPlan(edge *Edge) {
 	// 通常不需要输出
 }
 
-func (s *ConsoleStatus) BuildEdgeStarted(edge *graph.Edge, startTimeMillis int64) {
+func (s *ConsoleStatus) BuildEdgeStarted(edge *Edge, startTimeMillis int64) {
 	if s.config.Verbosity >= VerbosityNormal {
 		// 输出 "[N/N] 命令..."，这里简化
 		cmd := edge.EvaluateCommand(false)
@@ -52,7 +51,7 @@ func (s *ConsoleStatus) BuildEdgeStarted(edge *graph.Edge, startTimeMillis int64
 	}
 }
 
-func (s *ConsoleStatus) BuildEdgeFinished(edge *graph.Edge, startTimeMillis, endTimeMillis int64, exitCode ExitStatus, output string) {
+func (s *ConsoleStatus) BuildEdgeFinished(edge *Edge, startTimeMillis, endTimeMillis int64, exitCode ExitStatus, output string) {
 	if exitCode != ExitSuccess && output != "" {
 		// 输出错误输出
 		fmt.Print(output)

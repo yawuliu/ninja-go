@@ -1,9 +1,7 @@
-package plan
+package builder
 
 import (
 	"fmt"
-	"ninja-go/pkg/builder"
-	"ninja-go/pkg/graph"
 )
 
 type Want int
@@ -22,36 +20,36 @@ const (
 )
 
 type Plan struct {
-	builder      *builder.Builder
-	want         map[*graph.Edge]Want
-	ready        *graph.EdgePriorityQueue
+	builder      *Builder
+	want         map[*Edge]Want
+	ready        *EdgePriorityQueue
 	commandEdges int
 	wantedEdges  int
-	targets      []*graph.Node
+	targets      []*Node
 }
 
-func NewPlan(builder *builder.Builder) *Plan {
+func NewPlan(builder *Builder) *Plan {
 	return &Plan{
 		builder: builder,
-		want:    make(map[*graph.Edge]Want),
-		ready:   &graph.EdgePriorityQueue{},
+		want:    make(map[*Edge]Want),
+		ready:   &EdgePriorityQueue{},
 	}
 }
 
 func (p *Plan) Reset() {
-	p.want = make(map[*graph.Edge]Want)
+	p.want = make(map[*Edge]Want)
 	p.ready.Clear()
 	p.commandEdges = 0
 	p.wantedEdges = 0
 	p.targets = nil
 }
 
-func (p *Plan) AddTarget(target *graph.Node) error {
+func (p *Plan) AddTarget(target *Node) error {
 	p.targets = append(p.targets, target)
 	return p.addSubTarget(target, nil, nil)
 }
 
-func (p *Plan) addSubTarget(node *graph.Node, dependent *graph.Node, dyndepWalk map[*graph.Edge]bool) error {
+func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bool) error {
 	edge := node.InEdge
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
@@ -100,7 +98,7 @@ func (p *Plan) addSubTarget(node *graph.Node, dependent *graph.Node, dyndepWalk 
 	return nil
 }
 
-func (p *Plan) edgeWanted(edge *graph.Edge) {
+func (p *Plan) edgeWanted(edge *Edge) {
 	p.wantedEdges++
 	if !edge.IsPhony() {
 		p.commandEdges++
@@ -110,7 +108,7 @@ func (p *Plan) edgeWanted(edge *graph.Edge) {
 	}
 }
 
-func (p *Plan) FindWork() *graph.Edge {
+func (p *Plan) FindWork() *Edge {
 	if p.ready.Len() == 0 {
 		return nil
 	}
@@ -120,7 +118,7 @@ func (p *Plan) FindWork() *graph.Edge {
 	return work
 }
 
-func (p *Plan) EdgeFinished(edge *graph.Edge, result EdgeResult) error {
+func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult) error {
 	e, exists := p.want[edge]
 	if !exists {
 		return nil
@@ -150,7 +148,7 @@ func (p *Plan) EdgeFinished(edge *graph.Edge, result EdgeResult) error {
 	return nil
 }
 
-func (p *Plan) nodeFinished(node *graph.Node) error {
+func (p *Plan) nodeFinished(node *Node) error {
 	// 若此节点提供 dyndep 信息，则加载
 	if node.DyndepPending {
 		if p.builder == nil {
@@ -171,7 +169,7 @@ func (p *Plan) nodeFinished(node *graph.Node) error {
 	return nil
 }
 
-func (p *Plan) edgeMaybeReady(edge *graph.Edge, want Want) error {
+func (p *Plan) edgeMaybeReady(edge *Edge, want Want) error {
 	if edge.AllInputsReady() {
 		if want != WantNothing {
 			p.scheduleWork(edge)
@@ -184,7 +182,7 @@ func (p *Plan) edgeMaybeReady(edge *graph.Edge, want Want) error {
 	return nil
 }
 
-func (p *Plan) scheduleWork(edge *graph.Edge) {
+func (p *Plan) scheduleWork(edge *Edge) {
 	e, exists := p.want[edge]
 	if !exists || e != WantToStart {
 		return
@@ -207,10 +205,10 @@ func (p *Plan) PrepareQueue() {
 
 func (p *Plan) computeCriticalPath() {
 	// 拓扑排序
-	visited := make(map[*graph.Edge]bool)
-	sorted := make([]*graph.Edge, 0)
-	var dfs func(edge *graph.Edge)
-	dfs = func(edge *graph.Edge) {
+	visited := make(map[*Edge]bool)
+	sorted := make([]*Edge, 0)
+	var dfs func(edge *Edge)
+	dfs = func(edge *Edge) {
 		if visited[edge] {
 			return
 		}
@@ -254,7 +252,7 @@ func (p *Plan) computeCriticalPath() {
 
 func (p *Plan) scheduleInitialEdges() {
 	p.ready.Clear()
-	pools := make(map[*graph.Pool]bool)
+	pools := make(map[*Pool]bool)
 	for edge, want := range p.want {
 		if want == WantToStart && edge.AllInputsReady() {
 			pool := edge.Pool
