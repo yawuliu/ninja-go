@@ -13,7 +13,7 @@ type DyndepParser struct {
 	lexer      *parser.Lexer
 	state      *graph.State
 	dyndepFile map[*graph.Edge]*DyndepInfo // 对应 C++ 的 DyndepFile
-	env        *parser.BindingEnv          // 当前作用域
+	env        *graph.BindingEnv           // 当前作用域
 	filename   string
 }
 
@@ -22,7 +22,7 @@ func NewDyndepParser(state *graph.State, dyndepFile map[*graph.Edge]*DyndepInfo)
 	return &DyndepParser{
 		state:      state,
 		dyndepFile: dyndepFile,
-		env:        parser.NewBindingEnv(nil),
+		env:        graph.NewBindingEnv(nil),
 	}
 }
 

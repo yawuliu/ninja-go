@@ -1,6 +1,9 @@
 package parser
 
-import "strings"
+import (
+	"ninja-go/pkg/graph"
+	"strings"
+)
 
 type EvalFragment struct {
 	IsSpecial bool // true 表示变量名，false 表示文本
@@ -8,63 +11,90 @@ type EvalFragment struct {
 }
 
 type EvalString struct {
-	frags []EvalFragment
+	fragments []EvalFragment
+	// 优化：如果只有一个普通文本片段，直接存储在此
+	singleToken string
 }
 
-func (es *EvalString) AddText(s string) {
-	if s == "" {
-		return
+func (es *EvalString) AddText(text string) {
+	if len(es.fragments) == 0 && es.singleToken == "" {
+		es.singleToken = text
+	} else if len(es.fragments) > 0 && es.fragments[len(es.fragments)-1].IsSpecial == false {
+		// 合并相邻的文本片段
+		es.fragments[len(es.fragments)-1].Text += text
+	} else {
+		if es.singleToken != "" {
+			// 从单 token 转为多片段
+			es.fragments = append(es.fragments, EvalFragment{Text: es.singleToken, IsSpecial: false})
+			es.singleToken = ""
+		}
+		es.fragments = append(es.fragments, EvalFragment{Text: text, IsSpecial: false})
 	}
-	es.frags = append(es.frags, EvalFragment{IsSpecial: false, Text: s})
 }
 
 func (es *EvalString) AddSpecial(name string) {
-	es.frags = append(es.frags, EvalFragment{IsSpecial: true, Text: name})
+	if es.singleToken != "" {
+		es.fragments = append(es.fragments, EvalFragment{Text: es.singleToken, IsSpecial: false})
+		es.singleToken = ""
+	}
+	es.fragments = append(es.fragments, EvalFragment{Text: name, IsSpecial: true})
 }
 
 func (es *EvalString) Empty() bool {
-	return len(es.frags) == 0
+	return len(es.fragments) == 0 && es.singleToken == ""
 }
 
-func (es *EvalString) Evaluate(env *BindingEnv) string {
+func (es *EvalString) Clear() {
+	es.fragments = nil
+	es.singleToken = ""
+}
+
+func (es *EvalString) Evaluate(env *graph.BindingEnv) string {
+	if len(es.fragments) == 0 {
+		return es.singleToken
+	}
 	var sb strings.Builder
-	for _, f := range es.frags {
-		if f.IsSpecial {
-			sb.WriteString(env.LookupVariable(f.Text))
+	for _, frag := range es.fragments {
+		if frag.IsSpecial {
+			sb.WriteString(env.LookupVariable(frag.Text))
 		} else {
-			sb.WriteString(f.Text)
+			sb.WriteString(frag.Text)
 		}
 	}
 	return sb.String()
 }
 
-type BindingEnv struct {
-	parent *BindingEnv
-	vars   map[string]string
-}
-
-func NewBindingEnv(parent *BindingEnv) *BindingEnv {
-	return &BindingEnv{
-		parent: parent,
-		vars:   make(map[string]string),
+// Unparse 返回未展开的原始字符串表示（用于调试）
+func (es *EvalString) Unparse() string {
+	if len(es.fragments) == 0 {
+		return es.singleToken
 	}
-}
-
-func (e *BindingEnv) AddBinding(key, value string) {
-	e.vars[key] = value
-}
-
-func (e *BindingEnv) LookupVariable(name string) string {
-	if val, ok := e.vars[name]; ok {
-		return val
+	var sb strings.Builder
+	for _, frag := range es.fragments {
+		if frag.IsSpecial {
+			sb.WriteString("${")
+			sb.WriteString(frag.Text)
+			sb.WriteString("}")
+		} else {
+			sb.WriteString(frag.Text)
+		}
 	}
-	if e.parent != nil {
-		return e.parent.LookupVariable(name)
-	}
-	return ""
+	return sb.String()
 }
 
-func (e *BindingEnv) LookupRule(name string) interface{} {
-	// 暂未实现规则查找，可后续扩展
-	return nil
+// Serialize 返回序列化形式（用于测试）
+func (es *EvalString) Serialize() string {
+	if len(es.fragments) == 0 && es.singleToken != "" {
+		return "[" + es.singleToken + "]"
+	}
+	var sb strings.Builder
+	for _, frag := range es.fragments {
+		sb.WriteString("[")
+		if frag.IsSpecial {
+			sb.WriteString("$")
+		}
+		sb.WriteString(frag.Text)
+		sb.WriteString("]")
+	}
+	return sb.String()
 }

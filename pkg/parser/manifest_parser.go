@@ -24,7 +24,7 @@ type ManifestParser struct {
 	fileReader  util.FileSystem
 	options     ManifestParserOptions
 	quiet       bool
-	env         *BindingEnv
+	env         *graph.BindingEnv
 	subparser   *ManifestParser
 	ins         []*EvalString
 	outs        []*EvalString
@@ -37,7 +37,7 @@ func NewManifestParser(state *graph.State, fileReader util.FileSystem, options M
 		state:      state,
 		fileReader: fileReader,
 		options:    options,
-		env:        NewBindingEnv(nil),
+		env:        graph.NewBindingEnv(nil),
 	}
 }
 
@@ -300,7 +300,7 @@ func (p *ManifestParser) parseEdge() error {
 	// 处理缩进块（绑定）
 	env := p.env
 	if p.lexer.PeekToken(T_INDENT) {
-		env = NewBindingEnv(p.env)
+		env = graph.NewBindingEnv(p.env)
 		for p.lexer.PeekToken(T_INDENT) {
 			key, val, err := p.parseLet()
 			if err != nil {
@@ -428,7 +428,7 @@ func (p *ManifestParser) parseFileInclude(newScope bool) error {
 		p.subparser = NewManifestParser(p.state, p.fileReader, p.options)
 	}
 	if newScope {
-		p.subparser.env = NewBindingEnv(p.env)
+		p.subparser.env = graph.NewBindingEnv(p.env)
 	} else {
 		p.subparser.env = p.env
 	}
