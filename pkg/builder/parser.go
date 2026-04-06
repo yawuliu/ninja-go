@@ -17,7 +17,7 @@ type Parser interface {
 type BaseParser struct {
 	State      interface{} // 实际类型为 *graph.State，但为避免循环依赖使用 interface{}
 	FileReader util.FileSystem
-	Lexer      *Lexer
+	lexer      *Lexer
 }
 
 // NewBaseParser 创建基础解析器
@@ -25,7 +25,7 @@ func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
 	return &BaseParser{
 		State:      state,
 		FileReader: fileReader,
-		Lexer:      &Lexer{},
+		lexer:      &Lexer{},
 	}
 }
 
@@ -36,7 +36,7 @@ func (b *BaseParser) Load(filename string, parent *BaseParser) error {
 	if err != nil {
 		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
 		if parent != nil {
-			parent.Lexer.Error(errMsg)
+			parent.lexer.Error(errMsg)
 		}
 		return fmt.Errorf("%s", errMsg)
 	}
@@ -45,13 +45,13 @@ func (b *BaseParser) Load(filename string, parent *BaseParser) error {
 
 // ExpectToken 期望下一个 token 为指定类型，否则返回错误
 func (b *BaseParser) ExpectToken(expected Token) error {
-	tok := b.Lexer.ReadToken()
+	tok := b.lexer.ReadToken()
 	if tok != expected {
 		msg := fmt.Sprintf("expected %s, got %s%s",
 			TokenName(expected),
 			TokenName(tok),
 			TokenErrorHint(expected))
-		return b.Lexer.Error(msg)
+		return b.lexer.Error(msg)
 	}
 	return nil
 }

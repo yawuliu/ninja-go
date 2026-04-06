@@ -369,7 +369,8 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 
 func (b *Builder) LoadDyndeps(node *Node) error {
 	// 加载 dyndep 信息
-	err := b.scan.LoadDyndeps(node)
+	var ddf DyndepFile
+	err := b.scan.LoadDyndeps2(node, &ddf)
 	if err != nil {
 		return err
 	}

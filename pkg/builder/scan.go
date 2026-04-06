@@ -140,8 +140,8 @@ func (s *DependencyScan) LoadDyndeps(node *Node) error {
 	return s.dyndepLoader.LoadDyndeps(node)
 }
 
-func (s *DependencyScan) LoadDyndeps2(node *Node) (error, *DyndepFile) {
-	return s.dyndepLoader.loadDyndeps(node)
+func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile) error {
+	return s.dyndepLoader.loadDyndeps(node, ddf)
 }
 
 func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {
@@ -183,4 +183,91 @@ func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {
 	}
 
 	return fmt.Errorf("%s", msg.String())
+}
+
+func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node) (bool, error) {
+	command := edge.EvaluateCommand(true)
+	for _, out := range edge.Outputs {
+		dirty, err := s.RecomputeOutputDirty(edge, mostRecentInput, command, out)
+		if err != nil {
+			return false, err
+		}
+		if dirty {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// RecomputeOutputDirty 判断单个输出节点是否需要重新构建（是否脏）。
+// 参数 edge 是产生该输出的边，mostRecentInput 是最近修改的输入节点，
+// command 是边的完整命令（用于比较命令哈希），output 是输出节点。
+// 返回 true 表示需要重新构建，false 表示 clean。
+func (s *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node, command string, output *Node) (bool, error) {
+	// 处理 phony 边
+	if edge.IsPhony() {
+		// phony 边不写入任何输出。只有当没有输入、没有验证边且输出文件不存在时，才标记为脏。
+		if len(edge.Inputs) == 0 && len(edge.Validations) == 0 && !output.IsExists() {
+			s.explanations_.Record(output, "output %s of phony edge with no inputs doesn't exist", output.Path)
+			return true, nil
+		}
+		// 用最新输入的时间戳更新 phony 节点的 mtime（供下游使用）
+		if mostRecentInput != nil {
+			output.UpdatePhonyMtime(mostRecentInput.Mtime)
+		}
+		return false, nil
+	}
+
+	// 如果输出文件不存在，标记为脏
+	if !output.IsExists() {
+		s.explanations_.Record(output, "output %s doesn't exist", output.Path)
+		return true, nil
+	}
+
+	// 如果是 restat 规则，可能之前已经清理过输出，并且将命令开始时间记录在日志中。
+	// restat 规则不检查输出的实际 mtime，而是比较日志中的记录 mtime 与最新输入的 mtime。
+	var entry *LogEntry
+	usedRestat := false
+	if edge.GetBindingBool("restat") && s.buildLog != nil {
+		entry = s.buildLog.LookupByOutput(output.Path)
+		if entry != nil {
+			usedRestat = true
+		}
+	}
+
+	// 如果不是 restat 规则，且输出比最新输入旧，则标记脏
+	if !usedRestat && mostRecentInput != nil && output.Mtime < mostRecentInput.Mtime {
+		s.explanations_.Record(output,
+			"output %s older than most recent input %s (%d vs %d)",
+			output.Path, mostRecentInput.Path, output.Mtime, mostRecentInput.Mtime)
+		return true, nil
+	}
+
+	// 使用 build log 进行进一步检查
+	if s.buildLog != nil {
+		generator := edge.GetBindingBool("generator")
+		if entry == nil {
+			entry = s.buildLog.LookupByOutput(output.Path)
+		}
+		if entry != nil {
+			// 如果命令哈希发生变化（且不是 generator 规则），则标记脏
+			if !generator && HashCommand(command) != entry.CommandHash {
+				s.explanations_.Record(output, "command line changed for %s", output.Path)
+				return true, nil
+			}
+			// 如果日志中的 mtime 比最新输入旧，则标记脏（即使磁盘上的 mtime 更新）
+			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime {
+				s.explanations_.Record(output,
+					"recorded mtime of %s older than most recent input %s (%d vs %d)",
+					output.Path, mostRecentInput.Path, entry.Mtime, mostRecentInput.Mtime)
+				return true, nil
+			}
+		} else if !generator {
+			// 没有日志记录且不是 generator 规则，则标记脏
+			s.explanations_.Record(output, "command line not found in log for %s", output.Path)
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

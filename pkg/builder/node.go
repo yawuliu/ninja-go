@@ -106,3 +106,13 @@ func (n *Node) LoadMtime(fs util.FileSystem) error {
 func (n *Node) IsDirty() bool {
 	return n.Dirty
 }
+
+// UpdatePhonyMtime 更新 phony 节点的 mtime。
+// 如果节点不存在（即磁盘上没有该文件），则将其 mtime 设置为当前 mtime 和已有 mtime 中的较大值。
+func (n *Node) UpdatePhonyMtime(mtime int64) {
+	if !n.IsExists() {
+		if mtime > n.Mtime {
+			n.Mtime = mtime
+		}
+	}
+}

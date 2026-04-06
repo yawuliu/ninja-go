@@ -28,13 +28,13 @@ func NewDyndepLoader(state *State, diskInterface util.FileSystem) *DyndepLoader 
 }
 
 // LoadDyndeps 加载 dyndep 文件，更新图
-func (l *DyndepLoader) LoadDyndeps(node *Node) (error, *DyndepFile) {
-	ddf := make(DyndepFile)
-	return l.loadDyndeps(node, ddf)
+func (l *DyndepLoader) LoadDyndeps(node *Node) error {
+	var ddf DyndepFile
+	return l.loadDyndeps(node, &ddf)
 }
 
 // loadDyndeps 内部实现，可传入已有的 DyndepFile 映射
-func (l *DyndepLoader) loadDyndeps(node *Node) (error, *DyndepFile) {
+func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile) error {
 	// 标记不再等待 dyndep
 	node.DyndepPending = false
 
@@ -53,19 +53,19 @@ func (l *DyndepLoader) loadDyndeps(node *Node) (error, *DyndepFile) {
 		if edge.DyndepFile != node {
 			continue
 		}
-		dyndeps, ok := ddf[edge]
+		dyndeps, ok := (*ddf)[edge]
 		if !ok {
 			return fmt.Errorf("'%s' not mentioned in its dyndep file '%s'",
 				edge.Outputs[0].Path, node.Path)
 		}
 		dyndeps.Used = true
-		if err := l.updateEdge(edge, dyndeps); err != nil {
+		if err := l.UpdateEdge(edge, dyndeps); err != nil {
 			return err
 		}
 	}
 
 	// 拒绝 dyndep 文件中多余的边
-	for edge, dyndeps := range ddf {
+	for edge, dyndeps := range *ddf {
 		if !dyndeps.Used {
 			return fmt.Errorf("dyndep file '%s' mentions output '%s' whose build statement does not have a dyndep binding for the file",
 				node.Path, edge.Outputs[0].Path)
@@ -113,11 +113,7 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
 }
 
 // loadDyndepFile 读取文件内容并调用解析器。
-func (l *DyndepLoader) loadDyndepFile(node *Node) (error, *DyndepFile) {
-	content, err := l.diskInterface.ReadFile(node.Path)
-	if err != nil {
-		return fmt.Errorf("reading dyndep file '%s': %v", node.Path, err), nil
-	}
-	parser := NewDyndepParser(l.state, l, ddf)
-	return parser.Load(node.Path, content)
+func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile) error {
+	parser := NewDyndepParser(l.state, l.diskInterface, ddf)
+	return parser.Load(node.Path)
 }

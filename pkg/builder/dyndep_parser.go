@@ -11,12 +11,12 @@ type DyndepParser struct {
 	fileReader util.FileSystem
 	lexer      *Lexer
 	state      *State
-	dyndepFile map[*Edge]*DyndepInfo // 对应 C++ 的 DyndepFile
-	env        *BindingEnv           // 当前作用域
+	dyndepFile *DyndepFile // 对应 C++ 的 DyndepFile
+	env        *BindingEnv // 当前作用域
 	filename   string
 }
 
-func (b *DyndepParser) Load(filename string, parent *Parser) error {
+func (b *DyndepParser) Load(filename string, parent *BaseParser) error {
 	// 读取文件内容
 	content, err := b.fileReader.ReadFile(filename)
 	if err != nil {
@@ -33,9 +33,10 @@ func (b *DyndepParser) Load(filename string, parent *Parser) error {
 var _ Parser = (*DyndepParser)(nil)
 
 // NewDyndepParser 创建解析器
-func NewDyndepParser(state *State, dyndepFile map[*Edge]*DyndepInfo) *DyndepParser {
+func NewDyndepParser(state *State, file_reader util.FileSystem, dyndepFile *DyndepFile) *DyndepParser {
 	return &DyndepParser{
 		state:      state,
+		fileReader: file_reader,
 		dyndepFile: dyndepFile,
 		env:        NewBindingEnv(nil),
 	}
@@ -136,11 +137,11 @@ func (p *DyndepParser) parseEdge() error {
 	edge := node.InEdge
 
 	// 检查重复
-	if _, ok := p.dyndepFile[edge]; ok {
+	if _, ok := (*p.dyndepFile)[edge]; ok {
 		return p.lexer.Error("multiple statements for '" + norm + "'")
 	}
 	info := &DyndepInfo{}
-	p.dyndepFile[edge] = info
+	(*p.dyndepFile)[edge] = info
 
 	// 2. 禁止显式输出
 	out, err := p.lexer.ReadPath()

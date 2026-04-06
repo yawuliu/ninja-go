@@ -82,7 +82,7 @@ func (p *CLParser) Parse(output, depsPrefix string) (string, []string, error) {
 				// 使用 IncludesNormalize 的简化：先转换为绝对路径再规范化
 				// 这里简化：直接规范化（相对路径基于当前目录）
 				// 实际应使用 IncludesNormalize 的 Relativize 逻辑
-				abs, err := filepath.Abs(filepath.Join(currentDir, include))
+				abs, err := filepath.Abs(include)
 				if err != nil {
 					return "", nil, fmt.Errorf("normalizing include path: %v", err)
 				}
