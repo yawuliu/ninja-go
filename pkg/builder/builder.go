@@ -20,7 +20,7 @@ type Builder struct {
 	plan          *Plan
 	status        Status
 	exitCode      ExitStatus
-	explanations  *Explanations
+	explanations  *OptionalExplanations
 	scan          *DependencyScan
 	commandRunner CommandRunner
 	lockFilePath  string

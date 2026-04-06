@@ -140,7 +140,7 @@ func (p *DyndepParser) parseEdge() error {
 	if _, ok := (*p.dyndepFile)[edge]; ok {
 		return p.lexer.Error("multiple statements for '" + norm + "'")
 	}
-	info := &DyndepInfo{}
+	info := &Dyndeps{}
 	(*p.dyndepFile)[edge] = info
 
 	// 2. 禁止显式输出

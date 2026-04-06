@@ -18,7 +18,7 @@ type DependencyScan struct {
 
 func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 	disk_interface util.FileSystem,
-	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *DependencyScan {
+	depfile_parser_options *DepfileParserOptions, explanations *OptionalExplanations) *DependencyScan {
 	return &DependencyScan{
 		state:           state,
 		buildLog:        buildLog,
@@ -98,7 +98,7 @@ type ImplicitDepLoader struct {
 }
 
 func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface util.FileSystem,
-	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *ImplicitDepLoader {
+	depfile_parser_options *DepfileParserOptions, explanations *OptionalExplanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
 		state:                state,
 		depsLog:              depsLog,

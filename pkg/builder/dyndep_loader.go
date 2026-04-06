@@ -76,28 +76,33 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile) error {
 
 // UpdateEdge 更新边，对应 C++ 的 UpdateEdge
 func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
-	// 添加 restat 绑定
+	// 添加 restat 绑定（如果 dyndep 中指定了 restat = 1）
 	if dyndeps.Restat {
-		// 假设 edge.Env 存在，且可以添加绑定
+		// 确保边有自己的 BindingEnv（通常在解析时已创建）
 		if edge.Env == nil {
 			edge.Env = NewBindingEnv(nil)
 		}
 		edge.Env.AddBinding("restat", "1")
 	}
 
-	// 添加隐式输出
+	// 添加隐式输出到边的输出列表末尾
+	edge.Outputs = append(edge.Outputs, dyndeps.ImplicitOutputs...)
+	edge.ImplicitOuts += len(dyndeps.ImplicitOutputs)
+
+	// 为每个隐式输出设置产生它的边（如果已经被其他边产生，则报错）
 	for _, out := range dyndeps.ImplicitOutputs {
 		if out.InEdge != nil {
 			return fmt.Errorf("multiple rules generate %s", out.Path)
 		}
-		out.InEdge = edge
-		out.Generated = true
-		edge.Outputs = append(edge.Outputs, out)
+		out.set_in_edge(edge)
 	}
-	edge.ImplicitOuts += len(dyndeps.ImplicitOutputs)
 
-	// 添加隐式输入（插入到 order-only 依赖之前）
+	// 添加隐式输入：插入到现有输入列表的末尾（order-only 依赖之前）
+	// 计算插入位置：当前输入长度减去 order-only 依赖数量
 	insertPos := len(edge.Inputs) - edge.OrderOnlyDeps
+	if insertPos < 0 {
+		insertPos = 0
+	}
 	newInputs := make([]*Node, 0, len(edge.Inputs)+len(dyndeps.ImplicitInputs))
 	newInputs = append(newInputs, edge.Inputs[:insertPos]...)
 	newInputs = append(newInputs, dyndeps.ImplicitInputs...)
@@ -105,15 +110,16 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
 	edge.Inputs = newInputs
 	edge.ImplicitDeps += len(dyndeps.ImplicitInputs)
 
-	// 添加反向边
+	// 为每个隐式输入添加反向边（该边依赖于这些输入）
 	for _, in := range dyndeps.ImplicitInputs {
 		in.AddOutEdge(edge)
 	}
+
 	return nil
 }
 
 // loadDyndepFile 读取文件内容并调用解析器。
 func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile) error {
 	parser := NewDyndepParser(l.state, l.diskInterface, ddf)
-	return parser.Load(node.Path)
+	return parser.Load(node.Path, nil)
 }

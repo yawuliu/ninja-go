@@ -48,7 +48,7 @@ type OptionalExplanations struct {
 }
 
 // Verify that *UserCacher implements Cacher
-var _ *Explanations = (*OptionalExplanations)(nil)
+// var _ *Explanations = (*OptionalExplanations)(nil)
 
 // NewOptionalExplanations 创建可选的 Explanations 包装器
 func NewOptionalExplanations(expl *Explanations) OptionalExplanations {
