@@ -1,7 +1,5 @@
 package graph
 
-import "container/heap"
-
 type EdgePriorityQueue struct {
 	edges []*Edge
 }
