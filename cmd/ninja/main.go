@@ -23,6 +23,8 @@ func main() {
 	os.Exit(realMain())
 }
 
+const kNinjaVersion = "1.14.0.git"
+
 func realMain() int {
 	// 构建配置
 	config := builder.DefaultBuildConfig()
@@ -47,7 +49,7 @@ func realMain() int {
 			usage(config)
 			return 0
 		case arg == "--version":
-			fmt.Println(util.NinjaVersion)
+			fmt.Println(kNinjaVersion)
 			return 0
 		case arg == "-v" || arg == "--verbose":
 			config.Verbosity = builder.VerbosityVerbose
@@ -232,9 +234,9 @@ func realMain() int {
 	// 准备构建目标
 	var targets []*builder.Node
 	if len(positionalArgs) == 0 {
-		defaults, err := state.DefaultNodes()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
+		defaults := state.DefaultNodes()
+		if len(defaults) == 0 {
+			fmt.Fprintf(os.Stderr, "ninja: defaults not found\n")
 			return 1
 		}
 		targets = defaults
@@ -300,7 +302,7 @@ options:
   -t TOOL  run a subtool (use '-t list' to list subtools)
     terminates toplevel options; further flags are passed to the tool
   -w FLAG  adjust warnings (use '-w list' to list warnings)
-`, util.NinjaVersion, guessParallelism())
+`, kNinjaVersion, guessParallelism())
 }
 
 func guessParallelism() int {
