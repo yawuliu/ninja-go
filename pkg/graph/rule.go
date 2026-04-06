@@ -1,20 +1,16 @@
 package graph
 
-import (
-	"ninja-go/pkg/parser"
-)
-
 // Rule 构建规则
 type Rule struct {
 	Name     string
-	Bindings map[string]parser.EvalString
+	Bindings map[string]EvalString
 	Phony    bool
 }
 
 func NewRule(name string) *Rule {
 	return &Rule{
 		Name:     name,
-		Bindings: make(map[string]parser.EvalString),
+		Bindings: make(map[string]EvalString),
 	}
 }
 
@@ -28,11 +24,11 @@ func (r *Rule) IsPhony() bool {
 	return r.Phony
 }
 
-func (r *Rule) AddBinding(key string, val parser.EvalString) {
+func (r *Rule) AddBinding(key string, val EvalString) {
 	r.Bindings[key] = val
 }
 
-func (r *Rule) GetBinding(key string) *parser.EvalString {
+func (r *Rule) GetBinding(key string) *EvalString {
 	if val, ok := r.Bindings[key]; ok {
 		return &val
 	}

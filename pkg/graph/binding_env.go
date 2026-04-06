@@ -1,7 +1,5 @@
 package graph
 
-import "ninja-go/pkg/parser"
-
 type BindingEnv struct {
 	parent *BindingEnv
 	vars   map[string]string
@@ -57,7 +55,7 @@ func (e *BindingEnv) GetRules() map[string]*Rule {
 }
 
 // LookupWithFallback 用于边中的变量查找：先查边自身绑定，再查规则绑定的求值结果，最后查父作用域
-func (e *BindingEnv) LookupWithFallback(varName string, eval *parser.EvalString, env Env) string {
+func (e *BindingEnv) LookupWithFallback(varName string, eval *EvalString, env Env) string {
 	if val, ok := e.vars[varName]; ok {
 		return val
 	}

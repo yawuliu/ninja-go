@@ -1,0 +1,39 @@
+package builder
+
+import (
+	"ninja-go/pkg/util"
+	"os"
+)
+
+// RealFileSystem 真实文件系统
+type RealFileSystem struct{}
+
+func (fs *RealFileSystem) Open(path string) (util.File, error) {
+	return os.Open(path)
+}
+func (fs *RealFileSystem) Create(path string) (util.File, error) {
+	return os.Create(path)
+}
+func (fs *RealFileSystem) Truncate(name string, size int64) error {
+	return os.Truncate(name, size)
+}
+
+func (fs *RealFileSystem) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(path)
+}
+
+func (fs *RealFileSystem) ReadFile(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func (fs *RealFileSystem) WriteFile(path string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(path, data, perm)
+}
+
+func (fs *RealFileSystem) Remove(path string) error {
+	return os.Remove(path)
+}
+
+func (fs *RealFileSystem) MkdirAll(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
+}

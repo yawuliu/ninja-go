@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"ninja-go/pkg/builder"
 	"ninja-go/pkg/buildlog"
 	"ninja-go/pkg/depslog"
 	"ninja-go/pkg/dyndep"
@@ -10,21 +11,26 @@ import (
 )
 
 type DependencyScan struct {
-	state        *State
-	buildLog     *buildlog.BuildLog
-	depsLog      *depslog.DepsLog
-	disk         util.FileSystem
-	depLoader    *ImplicitDepLoader
-	dyndepLoader *dyndep.DyndepLoader
+	state           *State
+	buildLog        *buildlog.BuildLog
+	depsLog         *depslog.DepsLog
+	disk_interface_ util.FileSystem
+	depLoader       *ImplicitDepLoader
+	dyndepLoader    *dyndep.DyndepLoader
+	explanations_   *builder.OptionalExplanations
 }
 
-func NewDependencyScan(state *State, buildLog *buildlog.BuildLog, depsLog *depslog.DepsLog, fs util.FileSystem) *DependencyScan {
+func NewDependencyScan(state *State, buildLog *buildlog.BuildLog, depsLog *depslog.DepsLog,
+	disk_interface util.FileSystem,
+	depfile_parser_options *builder.DepfileParserOptions, explanations builder.Explanations) *DependencyScan {
 	return &DependencyScan{
-		state:     state,
-		buildLog:  buildLog,
-		depsLog:   depsLog,
-		disk:      fs,
-		depLoader: NewImplicitDepLoader(state, depsLog, fs),
+		state:           state,
+		buildLog:        buildLog,
+		depsLog:         depsLog,
+		disk_interface_: disk_interface,
+		depLoader:       NewImplicitDepLoader(state, depsLog, disk_interface, depfile_parser_options, explanations),
+		dyndepLoader:    dyndep.NewDyndepLoader(state, disk_interface),
+		explanations_:   explanations,
 	}
 }
 
@@ -95,11 +101,14 @@ type ImplicitDepLoader struct {
 	explanations         interface{}
 }
 
-func NewImplicitDepLoader(state *State, depsLog *depslog.DepsLog, fs util.FileSystem) *ImplicitDepLoader {
+func NewImplicitDepLoader(state *State, depsLog *depslog.DepsLog, disk_interface util.FileSystem,
+	depfile_parser_options *builder.DepfileParserOptions, explanations *builder.Explanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
-		state:         state,
-		depsLog:       depsLog,
-		diskInterface: fs,
+		state:                state,
+		depsLog:              depsLog,
+		diskInterface:        disk_interface,
+		depfileParserOptions: depfile_parser_options,
+		explanations:         explanations,
 	}
 }
 

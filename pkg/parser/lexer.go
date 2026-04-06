@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"ninja-go/pkg/graph"
 	"unicode"
 )
 
@@ -207,18 +208,18 @@ func (l *Lexer) ReadIdent() (string, error) {
 }
 
 // ReadPath 读取路径字符串
-func (l *Lexer) ReadPath() (*EvalString, error) {
+func (l *Lexer) ReadPath() (*graph.EvalString, error) {
 	return l.readEvalString(true)
 }
 
 // ReadVarValue 读取变量值字符串
-func (l *Lexer) ReadVarValue() (*EvalString, error) {
+func (l *Lexer) ReadVarValue() (*graph.EvalString, error) {
 	return l.readEvalString(false)
 }
 
 // readEvalString 核心读取方法
-func (l *Lexer) readEvalString(path bool) (*EvalString, error) {
-	eval := &EvalString{}
+func (l *Lexer) readEvalString(path bool) (*graph.EvalString, error) {
+	eval := &graph.EvalString{}
 	for {
 		start := l.pos
 		ch := l.currentChar()
@@ -265,7 +266,7 @@ func (l *Lexer) readEvalString(path bool) (*EvalString, error) {
 }
 
 // handleDollar 处理 $ 转义序列
-func (l *Lexer) handleDollar(eval *EvalString, path bool) error {
+func (l *Lexer) handleDollar(eval *graph.EvalString, path bool) error {
 	ch := l.currentChar()
 	if ch == 0 {
 		return l.Error("unexpected EOF after $")

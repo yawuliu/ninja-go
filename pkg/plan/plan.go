@@ -1,52 +1,182 @@
 package plan
 
 import (
-	"errors"
-	"ninja-go/pkg/buildlog"
+	"fmt"
+	"ninja-go/pkg/builder"
 	"ninja-go/pkg/graph"
-	"ninja-go/pkg/util"
+)
+
+type Want int
+
+const (
+	WantNothing Want = iota
+	WantToStart
+	WantToFinish
+) // Plan 构建计划
+
+type EdgeResult int
+
+const (
+	EdgeFailed EdgeResult = iota
+	EdgeSucceeded
 )
 
 type Plan struct {
-	state    *graph.State
-	queue    []*graph.Edge // 就绪队列
-	buildLog *buildlog.BuildLog
+	builder      *builder.Builder
+	want         map[*graph.Edge]Want
+	ready        *graph.EdgePriorityQueue
+	commandEdges int
+	wantedEdges  int
+	targets      []*graph.Node
 }
 
-func NewPlan(state *graph.State, bl *buildlog.BuildLog) *Plan {
-	return &Plan{state: state, buildLog: bl}
+func NewPlan(builder *builder.Builder) *Plan {
+	return &Plan{
+		builder: builder,
+		want:    make(map[*graph.Edge]Want),
+		ready:   &graph.EdgePriorityQueue{},
+	}
 }
-func (p *Plan) visit(fs util.FileSystem, n *graph.Node, need map[*graph.Node]bool) error {
-	if need[n] {
+
+func (p *Plan) Reset() {
+	p.want = make(map[*graph.Edge]Want)
+	p.ready.Clear()
+	p.commandEdges = 0
+	p.wantedEdges = 0
+	p.targets = nil
+}
+
+func (p *Plan) AddTarget(target *graph.Node) error {
+	p.targets = append(p.targets, target)
+	return p.addSubTarget(target, nil, nil)
+}
+
+func (p *Plan) addSubTarget(node *graph.Node, dependent *graph.Node, dyndepWalk map[*graph.Edge]bool) error {
+	edge := node.InEdge
+	if edge == nil {
+		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
+		if node.Dirty && !node.GeneratedByDepLoader {
+			var ref string
+			if dependent != nil {
+				ref = ", needed by '" + dependent.Path + "',"
+			}
+			return fmt.Errorf("'%s'%s missing and no known rule to make it", node.Path, ref)
+		}
 		return nil
 	}
-	need[n] = true
-	if n.Edge != nil {
-		// 检查输入是否脏
-		for _, in := range n.Edge.Inputs {
-			if err := p.visit(fs, in, need); err != nil {
-				return err
-			}
+
+	if edge.OutputsReady {
+		return nil
+	}
+
+	want, exists := p.want[edge]
+	if !exists {
+		want = WantNothing
+		p.want[edge] = want
+	}
+
+	if dyndepWalk != nil && want == WantToFinish {
+		return nil
+	}
+
+	if node.Dirty && want == WantNothing {
+		p.want[edge] = WantToStart
+		p.edgeWanted(edge)
+	}
+
+	if dyndepWalk != nil {
+		dyndepWalk[edge] = true
+	}
+
+	if exists {
+		return nil
+	}
+
+	for _, in := range edge.Inputs {
+		if err := p.addSubTarget(in, node, dyndepWalk); err != nil {
+			return err
 		}
-		for _, imp := range n.Edge.ImplicitDeps {
-			if err := p.visit(fs, imp, need); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+func (p *Plan) edgeWanted(edge *graph.Edge) {
+	p.wantedEdges++
+	if !edge.IsPhony() {
+		p.commandEdges++
+		if p.builder != nil && p.builder.status != nil {
+			p.builder.status.EdgeAddedToPlan(edge)
 		}
-		// order-only 依赖不触发脏标记，但需要存在
-		for _, ord := range n.Edge.OrderOnlyDeps {
-			if err := ord.LoadMtime(fs); err != nil {
-				return err
-			}
-			if ord.Mtime == -1 {
-				return errors.New("missing order-only dependency: " + ord.Path)
-			}
-			if err := p.visit(fs, ord, need); err != nil {
-				return err
-			}
+	}
+}
+
+func (p *Plan) FindWork() *graph.Edge {
+	if p.ready.Len() == 0 {
+		return nil
+	}
+	work := p.ready.Top()
+	// 若使用jobserver，则尝试获取令牌（此处简化）
+	p.ready.Pop()
+	return work
+}
+
+func (p *Plan) EdgeFinished(edge *graph.Edge, result EdgeResult) error {
+	e, exists := p.want[edge]
+	if !exists {
+		return nil
+	}
+	directlyWanted := e != WantNothing
+
+	if directlyWanted {
+		edge.Pool.EdgeFinished(edge)
+	}
+	edge.Pool.RetrieveReadyEdges(p.ready)
+
+	if result != EdgeSucceeded {
+		return nil
+	}
+
+	if directlyWanted {
+		p.wantedEdges--
+	}
+	delete(p.want, edge)
+	edge.OutputsReady = true
+
+	for _, out := range edge.Outputs {
+		if err := p.nodeFinished(out); err != nil {
+			return err
 		}
-		if n.Edge.DyndepFile != nil {
-			if err := p.visit(fs, n.Edge.DyndepFile, need); err != nil {
+	}
+	return nil
+}
+
+func (p *Plan) nodeFinished(node *graph.Node) error {
+	// 若此节点提供 dyndep 信息，则加载
+	if node.DyndepPending {
+		if p.builder == nil {
+			return fmt.Errorf("dyndep requires Plan to have a Builder")
+		}
+		return p.builder.LoadDyndeps(node)
+	}
+
+	for _, outEdge := range node.OutEdges {
+		want, exists := p.want[outEdge]
+		if !exists {
+			continue
+		}
+		if err := p.edgeMaybeReady(outEdge, want); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Plan) edgeMaybeReady(edge *graph.Edge, want Want) error {
+	if edge.AllInputsReady() {
+		if want != WantNothing {
+			p.scheduleWork(edge)
+		} else {
+			if err := p.EdgeFinished(edge, EdgeSucceeded); err != nil {
 				return err
 			}
 		}
@@ -54,134 +184,97 @@ func (p *Plan) visit(fs util.FileSystem, n *graph.Node, need map[*graph.Node]boo
 	return nil
 }
 
-// Compute 从目标节点开始标记脏节点，并返回拓扑顺序的边列表
-func (p *Plan) Compute(fs util.FileSystem, targets []*graph.Node) ([]*graph.Edge, error) {
-	// 1. 收集所有需要构建的节点（后序遍历）
-	need := make(map[*graph.Node]bool)
-	for _, t := range targets {
-		if err := p.visit(fs, t, need); err != nil {
-			return nil, err
-		}
+func (p *Plan) scheduleWork(edge *graph.Edge) {
+	e, exists := p.want[edge]
+	if !exists || e != WantToStart {
+		return
 	}
-
-	// 2. 脏标记：比较输出和输入的时间戳
-	// 脏标记：比较时间戳或命令哈希
-	for n := range need {
-		if err := n.LoadMtime(fs); err != nil {
-			return nil, err
-		}
-		if n.Edge != nil {
-			// 如果输出文件不存在，直接标记为脏
-			if n.Mtime == -1 {
-				n.Dirty = true
-				continue
-			}
-			// 检查输出是否比任何输入旧
-			var newestInput int64 = -1
-			allInputs := append([]*graph.Node{}, n.Edge.Inputs...)
-			// 隐式依赖也要检查
-			allInputs = append(allInputs, n.Edge.ImplicitDeps...)
-			for _, in := range allInputs {
-				if err := in.LoadMtime(fs); err != nil {
-					return nil, err
-				}
-				//if in.Mtime == -1 && !in.Generated {
-				//	// 输入文件不存在且不是由其他规则生成，需要尝试构建它
-				//	// 如果 in 本身有对应的 edge，则会被递归处理；否则报错
-				//	if in.Edge == nil {
-				//		return nil, fmt.Errorf("missing input file: %s", in.Path)
-				//	}
-				//	// 标记当前边为 dirty
-				//	n.Dirty = true
-				//}
-				if in.Mtime > newestInput {
-					newestInput = in.Mtime
-				}
-			}
-			//for _, imp := range n.Edge.ImplicitDeps {
-			//	if err := imp.LoadMtime(); err != nil {
-			//		return nil, err
-			//	}
-			//	if imp.Mtime > newestInput {
-			//		newestInput = imp.Mtime
-			//	}
-			//}
-			if n.Mtime < newestInput || n.Mtime == -1 {
-				n.Dirty = true
-			} else {
-				// 检查命令哈希是否改变
-				lastHash := p.buildLog.GetCommandHash(n.Path)
-				if lastHash == "" {
-					n.Dirty = true
-				} else {
-					currentHash := graph.ComputeCommandHash(n.Edge) // 需要实现此函数
-					if lastHash != currentHash {
-						n.Dirty = true
-					}
-				}
-			}
-			// 如果有 depfile，稍后处理
-		}
+	p.want[edge] = WantToFinish
+	pool := edge.Pool
+	if pool.ShouldDelayEdge() {
+		pool.DelayEdge(edge)
+		pool.RetrieveReadyEdges(p.ready)
+	} else {
+		pool.EdgeScheduled(edge)
+		p.ready.Push(edge)
 	}
-
-	// 3. 收集需要构建的边（输出脏的边）
-	edgesSet := make(map[*graph.Edge]bool)
-	for n := range need {
-		if n.Dirty && n.Edge != nil {
-			edgesSet[n.Edge] = true
-		}
-	}
-	edges := make([]*graph.Edge, 0, len(edgesSet))
-	for e := range edgesSet {
-		edges = append(edges, e)
-	}
-
-	return topologicalSort(edges)
 }
 
-func topologicalSort(edges []*graph.Edge) ([]*graph.Edge, error) {
-	// 4. 拓扑排序（简单按依赖深度排序）
-	// 计算每个边的入度（依赖的边）
-	inDegree := make(map[*graph.Edge]int)
-	for _, e := range edges {
-		for _, out := range e.Outputs {
-			for _, depEdge := range edges {
-				for _, in := range depEdge.Inputs {
-					if in == out {
-						inDegree[depEdge]++
-					}
+func (p *Plan) PrepareQueue() {
+	p.computeCriticalPath()
+	p.scheduleInitialEdges()
+}
+
+func (p *Plan) computeCriticalPath() {
+	// 拓扑排序
+	visited := make(map[*graph.Edge]bool)
+	sorted := make([]*graph.Edge, 0)
+	var dfs func(edge *graph.Edge)
+	dfs = func(edge *graph.Edge) {
+		if visited[edge] {
+			return
+		}
+		visited[edge] = true
+		for _, in := range edge.Inputs {
+			if prod := in.InEdge; prod != nil {
+				dfs(prod)
+			}
+		}
+		sorted = append(sorted, edge)
+	}
+	for _, target := range p.targets {
+		if edge := target.InEdge; edge != nil {
+			dfs(edge)
+		}
+	}
+	// 初始化权重
+	for _, e := range sorted {
+		weight := 1
+		if e.IsPhony() {
+			weight = 0
+		}
+		e.CriticalPathWeight = int64(weight)
+	}
+	// 反向传播
+	for i := len(sorted) - 1; i >= 0; i-- {
+		e := sorted[i]
+		for _, in := range e.Inputs {
+			if prod := in.InEdge; prod != nil {
+				cand := e.CriticalPathWeight + 1
+				if prod.IsPhony() {
+					cand = e.CriticalPathWeight
+				}
+				if cand > prod.CriticalPathWeight {
+					prod.CriticalPathWeight = cand
 				}
 			}
 		}
 	}
-	// Kahn 算法
-	var sorted []*graph.Edge
-	queue := []*graph.Edge{}
-	for _, e := range edges {
-		if inDegree[e] == 0 {
-			queue = append(queue, e)
-		}
-	}
-	for len(queue) > 0 {
-		e := queue[0]
-		queue = queue[1:]
-		sorted = append(sorted, e)
-		// 减少依赖该边的边的入度
-		for _, out := range e.Outputs {
-			for _, depEdge := range edges {
-				for _, in := range depEdge.Inputs {
-					if in == out {
-						inDegree[depEdge]--
-						if inDegree[depEdge] == 0 {
-							queue = append(queue, depEdge)
-						}
-					}
-				}
+}
+
+func (p *Plan) scheduleInitialEdges() {
+	p.ready.Clear()
+	pools := make(map[*graph.Pool]bool)
+	for edge, want := range p.want {
+		if want == WantToStart && edge.AllInputsReady() {
+			pool := edge.Pool
+			if pool.ShouldDelayEdge() {
+				pool.DelayEdge(edge)
+				pools[pool] = true
+			} else {
+				p.scheduleWork(edge)
 			}
 		}
 	}
-	if len(sorted) != len(edges) {
-		return nil, errors.New("circular dependency detected")
+	for pool := range pools {
+		pool.RetrieveReadyEdges(p.ready)
 	}
-	return sorted, nil
+}
+
+func (p *Plan) MoreToDo() bool {
+	return p.wantedEdges > 0 && p.commandEdges > 0
+}
+
+func (p *Plan) CommandEdgeCount() int {
+	return p.commandEdges
 }

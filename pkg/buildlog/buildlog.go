@@ -208,22 +208,32 @@ func (bl *BuildLog) recompactLocked() {
 }
 
 // RecordCommand 记录一条边的构建信息（支持多输出）
-func (bl *BuildLog) RecordCommand(edge *graph.Edge, start, end int64) {
-	if !bl.open {
-		return
-	}
-	hash := graph.HashEdge(edge) // 需要在 graph 包中实现 HashEdge
+func (bl *BuildLog) RecordCommand(edge *graph.Edge, start, end int64, mtime int64) {
+	command := edge.EvaluateCommand(true) // 包含 rspfile 内容
+	commandHash := graph.HashCommand(command)
+
 	for _, out := range edge.Outputs {
-		rec := &Record{
-			Output:      out.Path,
-			CommandHash: hash,
-			StartTime:   start,
-			EndTime:     end,
-			Mtime:       0, // 稍后通过 Restat 更新
+		path := out.Path
+		entry, ok := bl.entries[path]
+		if !ok {
+			entry = &LogEntry{Output: path}
+			bl.entries[path] = entry
 		}
-		bl.UpdateRecord(rec)
+		entry.CommandHash = commandHash
+		entry.StartTime = start
+		entry.EndTime = end
+		entry.Mtime = mtime
+
+		if bl.fileHandle != nil {
+			if err := bl.WriteEntry(bl.fileHandle, entry); err != nil {
+				return err
+			}
+			if err := bl.fileHandle.Sync(); err != nil {
+				return err
+			}
+		}
 	}
-	// bl.dirty = true
+	return nil
 }
 
 // LookupByOutput 返回输出对应的记录（如果存在）

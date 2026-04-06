@@ -1,7 +1,6 @@
-package parser
+package graph
 
 import (
-	"ninja-go/pkg/graph"
 	"strings"
 )
 
@@ -49,7 +48,7 @@ func (es *EvalString) Clear() {
 	es.singleToken = ""
 }
 
-func (es *EvalString) Evaluate(env *graph.BindingEnv) string {
+func (es *EvalString) Evaluate(env *BindingEnv) string {
 	if len(es.fragments) == 0 {
 		return es.singleToken
 	}

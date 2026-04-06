@@ -26,9 +26,9 @@ type ManifestParser struct {
 	quiet       bool
 	env         *graph.BindingEnv
 	subparser   *ManifestParser
-	ins         []*EvalString
-	outs        []*EvalString
-	validations []*EvalString
+	ins         []*graph.EvalString
+	outs        []*graph.EvalString
+	validations []*graph.EvalString
 	lexer       *Lexer
 }
 
@@ -180,7 +180,7 @@ func (p *ManifestParser) parseRule() error {
 	return nil
 }
 
-func (p *ManifestParser) parseLet() (string, *EvalString, error) {
+func (p *ManifestParser) parseLet() (string, *graph.EvalString, error) {
 	key, err := p.lexer.ReadIdent()
 	if err != nil {
 		return "", nil, err

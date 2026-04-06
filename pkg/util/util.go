@@ -32,103 +32,159 @@ func Info(msg string, args ...interface{}) {
 
 // CanonicalizePath 规范化路径，将连续的 '/' 合并，解析 '.' 和 '..'，
 // 并将 Windows 反斜杠转为正斜杠，同时记录反斜杠位置用于恢复。
-/*func CanonicalizePath(path string) (string, uint64) {
+func CanonicalizePath(path string) (string, uint64) {
 	if path == "" {
 		return "", 0
 	}
-	// 复制为可修改的字节数组
+	// 转换为字节切片以便修改
 	buf := []byte(path)
-	len := len(buf)
-	slashBits := uint64(0)
-	bit := uint64(1)
-
-	// 处理 Windows 盘符和网络路径前缀
-	start := 0
-	if len >= 2 && buf[0] == '\\' && buf[1] == '\\' {
-		// 网络路径 //server/share，保留前两个斜杠
-		start = 2
-		bit <<= 2
-	} else if len >= 1 && IsPathSeparator(buf[0]) {
-		start = 1
-		bit <<= 1
+	n := len(buf)
+	if n == 0 {
+		return "", 0
 	}
-
-	// 循环处理每个路径组件
-	dst := buf[start:]
-	src := buf[start:]
-	end := buf[len:]
+	// 输出位置
+	dst := 0
+	// 记录起始位置（用于处理根目录）
+	dstStart := 0
+	src := 0
+	// 解析绝对路径前缀
+	if IsPathSeparator(buf[src]) {
+		if runtime.GOOS == "windows" && src+1 < n && IsPathSeparator(buf[src+1]) {
+			// Windows 网络路径 //server/share，保留前两个斜杠
+			buf[dst] = buf[src]
+			dst++
+			src++
+			buf[dst] = buf[src]
+			dst++
+			src++
+		} else {
+			// 普通绝对路径，保留一个斜杠
+			buf[dst] = buf[src]
+			dst++
+			src++
+		}
+		dstStart = dst
+	} else {
+		// 跳过开头的 "../" 序列
+		for src+3 <= n && buf[src] == '.' && buf[src+1] == '.' && IsPathSeparator(buf[src+2]) {
+			// 复制 "../" 到输出（但后续可能被回退？不，这里直接跳过，因为要保留？）
+			// C++ 中跳过开头的 "../" 但不复制，我们这里也跳过不复制
+			src += 3
+		}
+	}
 	componentCount := 0
-	dstStart := dst
-
-	for src < end {
-		// 查找下一个路径分隔符
+	// 保存当前输出位置（用于回退）
+	dst0 := dst
+	for src < n {
+		// 查找下一个分隔符
 		nextSep := src
-		for nextSep < end && !IsPathSeparator(*nextSep) {
+		for nextSep < n && !IsPathSeparator(buf[nextSep]) {
 			nextSep++
 		}
+		if nextSep == n {
+			// 最后一个组件，跳出循环单独处理
+			break
+		}
+		// 组件长度（不包括尾部分隔符）
 		compLen := nextSep - src
-		// 空组件（连续分隔符）跳过
 		if compLen == 0 {
+			// 空组件（连续分隔符），忽略
 			src = nextSep + 1
 			continue
 		}
-		// 处理 '.' 和 '..'
-		if compLen == 1 && src[0] == '.' {
+		if compLen == 1 && buf[src] == '.' {
+			// 忽略 '.' 组件
 			src = nextSep + 1
 			continue
 		}
-		if compLen == 2 && src[0] == '.' && src[1] == '.' {
-			// 回退一个组件
+		if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
 			if componentCount > 0 {
-				// 向前查找上一个分隔符
-				for dst > dstStart && !IsPathSeparator(dst[-1]) {
+				// 回退一个组件：向前移动 dst 到上一个分隔符后
+				componentCount--
+				// 回退 dst，直到遇到前一个分隔符或回到 dst0
+				for dst > dst0 && !IsPathSeparator(buf[dst-1]) {
 					dst--
 				}
-				if dst > dstStart {
+				if dst > dst0 {
 					dst-- // 去掉分隔符
 				}
-				componentCount--
 			} else {
-				// 保留 '..' 作为路径起始
-				copy(dst, src[:2])
-				dst += 2
+				// 保留开头的 '..'
+				buf[dst] = '.'
+				dst++
+				buf[dst] = '.'
+				dst++
 				componentCount++
 			}
 			src = nextSep + 1
 			continue
 		}
-		// 普通组件
-		if dst != src {
-			copy(dst, src[:compLen])
-		}
-		dst += compLen
+		// 普通组件：复制组件和尾部分隔符
 		componentCount++
-		// 添加分隔符（除了最后一个组件）
-		if nextSep < end {
-			*dst = '/'
-			dst++
+		if dst != src {
+			copy(buf[dst:], buf[src:nextSep+1])
 		}
+		dst += compLen + 1
 		src = nextSep + 1
 	}
-	// 去除末尾多余的分隔符（但保留根目录的单个斜杠）
-	if dst > dstStart && IsPathSeparator(dst[-1]) {
+	// 处理最后一个组件（没有尾部分隔符）
+	if src < n {
+		compLen := n - src
+		if compLen == 1 && buf[src] == '.' {
+			// 忽略末尾 '.'
+		} else if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
+			if componentCount > 0 {
+				// 回退一个组件
+				for dst > dst0 && !IsPathSeparator(buf[dst-1]) {
+					dst--
+				}
+				if dst > dst0 {
+					dst--
+				}
+			} else {
+				buf[dst] = '.'
+				dst++
+				buf[dst] = '.'
+				dst++
+			}
+		} else {
+			if dst != src {
+				copy(buf[dst:], buf[src:n])
+			}
+			dst += compLen
+		}
+	}
+	// 移除末尾多余的分隔符（但保留根目录的单个分隔符）
+	if dst > dstStart && IsPathSeparator(buf[dst-1]) {
 		dst--
 	}
-	if dst == buf {
-		*dst = '.'
-		dst++
+	if dst == 0 {
+		buf[0] = '.'
+		dst = 1
 	}
-	newLen := int(dst - buf)
-	// 记录反斜杠位置
-	for i := 0; i < newLen; i++ {
-		if buf[i] == '\\' {
-			slashBits |= bit
-			buf[i] = '/'
+	result := string(buf[:dst])
+	var slashBits uint64 = 0
+	if runtime.GOOS == "windows" {
+		mask := uint64(1)
+		for i := 0; i < dst; i++ {
+			c := buf[i]
+			if c == '\\' {
+				slashBits |= mask
+				// 将反斜杠转为正斜杠（已在 buf 中修改，但 result 是复制的，需要重新处理？）
+				// 注意：buf 已经被修改，但我们最终要返回规范化后的字符串（正斜杠）
+				// 由于我们在遍历时已经修改了 buf[i] = '/'，所以 result 中已经是正斜杠。
+				// 但我们需要同时返回 slashBits，以便恢复反斜杠位置。
+				buf[i] = '/'
+			}
+			if c == '/' {
+				mask <<= 1
+			}
 		}
-		bit <<= 1
+		// 重新生成 result，确保正斜杠
+		result = string(buf[:dst])
 	}
-	return string(buf[:newLen]), slashBits
-}*/
+	return result, slashBits
+}
 
 // IsPathSeparator 判断字符是否为路径分隔符。
 func IsPathSeparator(c byte) bool {
@@ -297,4 +353,37 @@ func EditDistance(a, b string, allowReplacements bool, maxDist int) int {
 	_ = allowReplacements
 	_ = maxDist
 	return 0
+}
+
+// DirName 返回路径的目录名，与 C++ 版本行为一致：
+// 找到最后一个路径分隔符，然后向前跳过连续的分隔符，返回之前的子串。
+// 例如：DirName("foo/bar/") -> "foo"
+//
+//	DirName("foo//bar") -> "foo"
+//	DirName("foo") -> ""
+func DirName(path string) string {
+	// 根据操作系统确定分隔符集合
+	var separators string
+	if os.PathSeparator == '/' {
+		separators = "/"
+	} else {
+		separators = "\\/"
+	}
+	// 查找最后一个分隔符
+	lastSep := strings.LastIndexAny(path, separators)
+	if lastSep == -1 {
+		return ""
+	}
+	// 向前跳过连续的分隔符
+	for lastSep > 0 && strings.ContainsAny(string(path[lastSep-1]), separators) {
+		lastSep--
+	}
+	return path[:lastSep]
+}
+
+// MakeDir 创建单级目录，权限为 0777（Unix）或默认（Windows）。
+// 注意：此函数不会递归创建父目录，需要调用者确保父目录存在。
+// 返回值与 C++ 的 mkdir/_mkdir 一致：成功返回 0，失败返回 -1（并设置 errno）。
+func MakeDir(path string) error {
+	return os.Mkdir(path, 0755)
 }

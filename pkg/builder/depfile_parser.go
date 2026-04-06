@@ -4,10 +4,21 @@ import (
 	"strings"
 )
 
+// DepfileParserOptions 目前为空，保留用于扩展
+type DepfileParserOptions struct{}
+
 // DepfileParser 解析 depfile 内容
 type DepfileParser struct {
-	Outs []string
-	Ins  []string
+	Outs    []string
+	Ins     []string
+	options DepfileParserOptions
+}
+
+// NewDepfileParser 创建解析器实例
+func NewDepfileParser(options DepfileParserOptions) *DepfileParser {
+	return &DepfileParser{
+		options: options,
+	}
 }
 
 // Parse 解析 depfile 内容，返回错误（如果有）
