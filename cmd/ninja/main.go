@@ -12,7 +12,7 @@ import (
 
 var (
 	// 全局调试标志
-	g_metrics                *util.Metrics
+	g_metrics                *builder.Metrics
 	g_explaining             bool
 	g_keep_depfile           bool
 	g_keep_rsp               bool
@@ -24,6 +24,28 @@ func main() {
 }
 
 const kNinjaVersion = "1.14.0.git"
+
+type NinjaMain struct {
+	builder.BuildLogUser
+	/// Command line used to run Ninja.
+	ninja_command_ string
+
+	/// Build configuration set from flags (e.g. parallelism).
+	config_ *builder.BuildConfig
+
+	/// Loaded state (rules, nodes).
+	state_ builder.State
+
+	/// Functions for accessing the disk.
+	disk_interface_ util.FileSystem
+
+	/// The build directory, used for storing the build log etc.
+	build_dir_ string
+
+	build_log_         *builder.BuildLog
+	deps_log_          *builder.DepsLog
+	start_time_millis_ int64
+}
 
 func realMain() int {
 	// 构建配置
@@ -176,7 +198,7 @@ func realMain() int {
 
 	// 加载构建文件
 	state := builder.NewState()
-	diskInterface := builder.NewRealDiskInterface()
+	diskInterface := builder.NewRealFileSystem()
 	parserOpts := builder.ManifestParserOptions{
 		PhonyCycleAction: builder.PhonyCycleActionWarn,
 	}
@@ -184,7 +206,7 @@ func realMain() int {
 		parserOpts.PhonyCycleAction = builder.PhonyCycleActionError
 	}
 	manifestParser := builder.NewManifestParser(state, diskInterface, parserOpts)
-	if err := manifestParser.Load(options.inputFile); err != nil {
+	if err := manifestParser.Load(options.inputFile, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -199,23 +221,31 @@ func realMain() int {
 	}
 
 	// 打开日志
-	buildLog := builder.NewBuildLog(".ninja_log")
+	log_path := ".ninja_log"
+	if buildDir != "" {
+		log_path = buildDir + "/" + log_path
+	}
+	buildLog := builder.NewBuildLog(log_path)
 	if buildDir != "" {
 		buildLog = builder.NewBuildLog(buildDir + "/.ninja_log")
 	}
-	if err := buildLog.Load(); err != nil && !os.IsNotExist(err) {
+	if err := buildLog.Load(log_path); err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "ninja: loading build log: %v\n", err)
 		return 1
 	}
 	if !config.DryRun {
-		if err := buildLog.OpenForWrite(); err != nil {
+		if err := buildLog.OpenForWrite(log_path, this); err != nil {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
 			return 1
 		}
 		defer buildLog.Close()
 	}
 
-	depsLog := builder.NewDepsLog(".ninja_deps")
+	path := ".ninja_deps"
+	if buildDir != "" {
+		path = buildDir + "/" + path
+	}
+	depsLog := builder.NewDepsLog(path)
 	if buildDir != "" {
 		depsLog = builder.NewDepsLog(buildDir + "/.ninja_deps")
 	}
@@ -224,7 +254,7 @@ func realMain() int {
 		return 1
 	}
 	if !config.DryRun {
-		if err := depsLog.OpenForWrite(); err != nil {
+		if err := depsLog.OpenForWrite(path); err != nil {
 			fmt.Fprintf(os.Stderr, "ninja: opening deps log: %v\n", err)
 			return 1
 		}
@@ -252,10 +282,10 @@ func realMain() int {
 	}
 
 	// 创建状态输出
-	statusPrinter := status.NewConsoleStatus(config)
-
+	statusPrinter := builder.NewConsoleStatus(config)
+	start_time_millis_ := int64(0)
 	// 创建 Builder
-	b := builder.NewBuilder(state, config, buildLog, depsLog, diskInterface, statusPrinter)
+	b := builder.NewBuilder(state, &config, buildLog, depsLog, start_time_millis_, diskInterface, statusPrinter)
 
 	// 添加目标
 	for _, t := range targets {
@@ -327,7 +357,7 @@ func debugEnable(mode string) bool {
   nostatcache  don't batch stat() calls per directory and cache them`)
 		return false
 	case "stats":
-		g_metrics = util.NewMetrics()
+		g_metrics = &builder.Metrics{}
 		return true
 	case "explain":
 		g_explaining = true

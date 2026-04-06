@@ -28,7 +28,7 @@ type ConsoleStatus struct {
 }
 
 // NewStatus 根据 BuildConfig 创建 Status 实例。
-func NewStatus(config BuildConfig) Status {
+func NewConsoleStatus(config BuildConfig) Status {
 	return &ConsoleStatus{config: config}
 }
 

@@ -32,6 +32,22 @@ type ManifestParser struct {
 	lexer       *Lexer
 }
 
+// Verify that *UserCacher implements Cacher
+var _ Parser = (*ManifestParser)(nil)
+
+func (p *ManifestParser) Load(filename string, parent *BaseParser) error {
+	// 读取文件内容
+	content, err := p.fileReader.ReadFile(filename)
+	if err != nil {
+		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
+		if parent != nil {
+			parent.lexer.Error(errMsg)
+		}
+		return fmt.Errorf("%s", errMsg)
+	}
+	return p.Parse(filename, string(content))
+}
+
 func NewManifestParser(state *State, fileReader util.FileSystem, options ManifestParserOptions) *ManifestParser {
 	return &ManifestParser{
 		state:      state,

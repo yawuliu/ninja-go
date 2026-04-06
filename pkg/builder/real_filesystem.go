@@ -8,6 +8,17 @@ import (
 // RealFileSystem 真实文件系统
 type RealFileSystem struct{}
 
+func (fs *RealFileSystem) MakeDirs(path string) error {
+	return os.MkdirAll(path, os.ModePerm)
+}
+
+// Verify that *UserCacher implements Cacher
+var _ util.FileSystem = (*RealFileSystem)(nil)
+
+func NewRealFileSystem() *RealFileSystem {
+	return &RealFileSystem{}
+}
+
 func (fs *RealFileSystem) Open(path string) (util.File, error) {
 	return os.Open(path)
 }
