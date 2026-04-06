@@ -38,14 +38,6 @@ func (p *Parser) ParseReader(r io.Reader, source string) error {
 	scanner := bufio.NewScanner(r)
 	lineNo := 0
 	var pendingRule *graph.Rule
-	//var pendingBuild struct {
-	//	outputs   []string
-	//	rule      string
-	//	inputs    []string
-	//	implicit  []string
-	//	orderOnly []string
-	//}
-
 	for scanner.Scan() {
 		lineNo++
 		raw := scanner.Text()
@@ -72,14 +64,6 @@ func (p *Parser) ParseReader(r io.Reader, source string) error {
 		}
 		line = strings.TrimSpace(line)
 		// 变量赋值: key = value
-		//if strings.Contains(line, "=") && !strings.HasPrefix(line, "rule") && !strings.HasPrefix(line, "build") {
-		//	parts := strings.SplitN(line, "=", 2)
-		//	key := strings.TrimSpace(parts[0])
-		//	val := strings.TrimSpace(parts[1])
-		//	p.scope[key] = p.expand(val)
-		//	continue
-		//}
-
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -131,14 +115,8 @@ func (p *Parser) ParseReader(r io.Reader, source string) error {
 					orderOnly = append(orderOnly, arg)
 				}
 			}
-			//pendingBuild.outputs = outputs
-			//pendingBuild.rule = ruleName
-			//pendingBuild.inputs = inputs
-			//pendingBuild.implicit = implicit
-			//pendingBuild.orderOnly = orderOnly
-
 			// 立即添加这条边
-			p.addBuild(struct {
+			err := p.addBuild(struct {
 				outputs   []string
 				rule      string
 				inputs    []string
@@ -146,7 +124,9 @@ func (p *Parser) ParseReader(r io.Reader, source string) error {
 				orderOnly []string
 			}{outputs, ruleName, inputs, implicit, orderOnly})
 			// 注意：build 语句不支持缩进属性（如 pool），所以不设置 p.indent
-			// p.indent = leadingSpaces + 1
+			if err != nil {
+				return err
+			}
 		case "default":
 			if len(fields) < 2 {
 				return fmt.Errorf("%s:%d: default requires targets", source, lineNo)
@@ -190,34 +170,7 @@ func (p *Parser) ParseReader(r io.Reader, source string) error {
 						// 未知属性，可以忽略或报错
 					}
 				}
-				//switch fields[0] {
-				//case "command":
-				//	val := strings.TrimPrefix(line, "command")
-				//	val = strings.TrimPrefix(val, "=")
-				//	pendingRule.Command = p.expand(strings.TrimSpace(val))
-				//case "depfile":
-				//	val := strings.TrimPrefix(line, "depfile")
-				//	val = strings.TrimPrefix(val, "=")
-				//	pendingRule.Depfile = p.expand(strings.TrimSpace(val))
-				//case "dyndep":
-				//	val := strings.TrimPrefix(line, "dyndep")
-				//	val = strings.TrimPrefix(val, "=")
-				//	pendingRule.Dyndep = p.expand(strings.TrimSpace(val))
-				//case "restat":
-				//	pendingRule.Restat = true
-				//case "generator":
-				//	pendingRule.Generator = true
-				//case "pool":
-				//	val := strings.TrimPrefix(line, "pool")
-				//	val = strings.TrimPrefix(val, "=")
-				//	pendingRule.Pool = p.expand(strings.TrimSpace(val))
-				//}
-				// } else if pendingBuild.rule != "" {
-				// build 块的属性暂不支持（如 pool, dyndep 等）
-				// 处理最后累积的 build
-				//if pendingBuild.rule != "" {
-				//	p.addBuild(pendingBuild)
-				//}
+
 			} else {
 				// 不在任何块内，且行不是 rule/build/default，则视为变量赋值
 				if strings.Contains(line, "=") {
@@ -241,11 +194,11 @@ func (p *Parser) addBuild(b struct {
 	inputs    []string
 	implicit  []string
 	orderOnly []string
-}) {
+}) error {
 	rule := p.state.Rules[b.rule]
 	if rule == nil {
 		// 延迟错误？实际应该报错，这里简化
-		return
+		return fmt.Errorf("%s:%s: rule %q not found", b.outputs, b.rule, b.rule)
 	}
 	edge := &graph.Edge{Rule: rule}
 	// 输出节点
@@ -272,6 +225,7 @@ func (p *Parser) addBuild(b struct {
 		node.AddOutEdge(edge) // 新增：建立反向关系
 	}
 	p.state.Edges = append(p.state.Edges, edge)
+	return nil
 }
 
 func (p *Parser) expand(s string) string {
