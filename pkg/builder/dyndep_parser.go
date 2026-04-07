@@ -51,33 +51,33 @@ func (p *DyndepParser) Parse(filename, input string) error {
 	for {
 		token := p.lexer.ReadToken()
 		switch token {
-		case T_BUILD:
+		case BUILD:
 			if !haveVersion {
 				return p.lexer.Error("expected 'ninja_dyndep_version = ...'")
 			}
 			if err := p.parseEdge(); err != nil {
 				return err
 			}
-		case T_IDENT:
+		case IDENT:
 			p.lexer.UnreadToken()
 			if haveVersion {
-				return p.lexer.Error("unexpected " + TokenName(token))
+				return p.lexer.Error("unexpected " + token.String())
 			}
 			if err := p.parseDyndepVersion(); err != nil {
 				return err
 			}
 			haveVersion = true
-		case T_ERROR:
+		case ERROR:
 			return p.lexer.Error(p.lexer.DescribeLastError())
-		case T_EOF:
+		case TEOF:
 			if !haveVersion {
 				return p.lexer.Error("expected 'ninja_dyndep_version = ...'")
 			}
 			return nil
-		case T_NEWLINE:
+		case NEWLINE:
 			continue
 		default:
-			return p.lexer.Error("unexpected " + TokenName(token))
+			return p.lexer.Error("unexpected " + token.String())
 		}
 	}
 }
@@ -101,24 +101,27 @@ func (p *DyndepParser) parseDyndepVersion() error {
 
 // parseLet 解析 key = value 行
 func (p *DyndepParser) parseLet() (string, *EvalString, error) {
-	key, err := p.lexer.ReadIdent()
-	if err != nil {
+	var key string
+	succ := p.lexer.ReadIdent(&key)
+	if !succ {
 		return "", nil, p.lexer.Error("expected variable name")
 	}
-	if err := p.expectToken(T_EQUALS); err != nil {
+	if err := p.expectToken(EQUALS); err != nil {
 		return "", nil, err
 	}
-	value, err := p.lexer.ReadVarValue()
+	value := EvalString{}
+	_, err := p.lexer.ReadVarValue(&value)
 	if err != nil {
 		return "", nil, err
 	}
-	return key, value, nil
+	return key, &value, nil
 }
 
 // parseEdge 解析 build 语句
 func (p *DyndepParser) parseEdge() error {
 	// 1. 读取主输出
-	out0, err := p.lexer.ReadPath()
+	out0 := EvalString{}
+	_, err := p.lexer.ReadPath(&out0)
 	if err != nil {
 		return err
 	}
@@ -144,7 +147,8 @@ func (p *DyndepParser) parseEdge() error {
 	(*p.dyndepFile)[edge] = info
 
 	// 2. 禁止显式输出
-	out, err := p.lexer.ReadPath()
+	out := EvalString{}
+	_, err = p.lexer.ReadPath(&out)
 	if err != nil {
 		return err
 	}
@@ -154,32 +158,34 @@ func (p *DyndepParser) parseEdge() error {
 
 	// 3. 解析隐式输出（'|' 后）
 	var implicitOutputs []*EvalString
-	if p.lexer.PeekToken(T_PIPE) {
+	if p.lexer.PeekToken(PIPE) {
 		for {
-			out, err := p.lexer.ReadPath()
+			_, err := p.lexer.ReadPath(&out)
 			if err != nil {
 				return err
 			}
 			if out.Empty() {
 				break
 			}
-			implicitOutputs = append(implicitOutputs, out)
+			implicitOutputs = append(implicitOutputs, &out)
 		}
 	}
 
 	// 4. 期望冒号
-	if err := p.expectToken(T_COLON); err != nil {
+	if err := p.expectToken(COLON); err != nil {
 		return err
 	}
 
 	// 5. 规则名必须是 "dyndep"
-	ruleName, err := p.lexer.ReadIdent()
-	if err != nil || ruleName != "dyndep" {
+	var ruleName string
+	succ := p.lexer.ReadIdent(&ruleName)
+	if !succ || ruleName != "dyndep" {
 		return p.lexer.Error("expected build command name 'dyndep'")
 	}
 
 	// 6. 禁止显式输入
-	in, err := p.lexer.ReadPath()
+	in := EvalString{}
+	_, err = p.lexer.ReadPath(&in)
 	if err != nil {
 		return err
 	}
@@ -189,31 +195,31 @@ func (p *DyndepParser) parseEdge() error {
 
 	// 7. 解析隐式输入（'|' 后）
 	var implicitInputs []*EvalString
-	if p.lexer.PeekToken(T_PIPE) {
+	if p.lexer.PeekToken(PIPE) {
 		for {
-			in, err := p.lexer.ReadPath()
+			_, err := p.lexer.ReadPath(&in)
 			if err != nil {
 				return err
 			}
 			if in.Empty() {
 				break
 			}
-			implicitInputs = append(implicitInputs, in)
+			implicitInputs = append(implicitInputs, &in)
 		}
 	}
 
 	// 8. 禁止 order-only 输入
-	if p.lexer.PeekToken(T_PIPE2) {
+	if p.lexer.PeekToken(PIPE2) {
 		return p.lexer.Error("order-only inputs not supported")
 	}
 
 	// 9. 期望换行
-	if err := p.expectToken(T_NEWLINE); err != nil {
+	if err := p.expectToken(NEWLINE); err != nil {
 		return err
 	}
 
 	// 10. 可选的缩进块（restat）
-	if p.lexer.PeekToken(T_INDENT) {
+	if p.lexer.PeekToken(INDENT) {
 		key, val, err := p.parseLet()
 		if err != nil {
 			return err
@@ -254,7 +260,7 @@ func (p *DyndepParser) parseEdge() error {
 func (p *DyndepParser) expectToken(expected Token) error {
 	tok := p.lexer.ReadToken()
 	if tok != expected {
-		return p.lexer.Error(fmt.Sprintf("expected %s, got %s", TokenName(expected), TokenName(tok)))
+		return p.lexer.Error(fmt.Sprintf("expected %s, got %s", expected.String(), tok.String()))
 	}
 	return nil
 }

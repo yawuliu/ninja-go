@@ -2,408 +2,1157 @@ package builder
 
 import (
 	"fmt"
-	"unicode"
 )
 
-// Lexer 词法分析器
-type Lexer struct {
-	filename              string
-	input                 []rune
-	pos                   int
-	line                  int
-	col                   int
-	lastStart             int // last_token_ 的起始位置
-	lastEnd               int // last_token_ 的结束位置
-	newlineVersionChecked bool
-	ManifestVersionMajor  int
-	ManifestVersionMinor  int
+type Token int
+
+const (
+	ERROR Token = iota
+	BUILD
+	COLON
+	DEFAULT
+	EQUALS
+	IDENT
+	INCLUDE
+	INDENT
+	NEWLINE
+	PIPE2
+	PIPE
+	PIPEAT
+	POOL
+	RULE
+	SUBNINJA
+	TEOF
+)
+
+func (t Token) String() string {
+	switch t {
+	case ERROR:
+		return "lexing error"
+	case BUILD:
+		return "'build'"
+	case COLON:
+		return "':'"
+	case DEFAULT:
+		return "'default'"
+	case EQUALS:
+		return "'='"
+	case IDENT:
+		return "identifier"
+	case INCLUDE:
+		return "'include'"
+	case INDENT:
+		return "indent"
+	case NEWLINE:
+		return "newline"
+	case PIPE2:
+		return "'||'"
+	case PIPE:
+		return "'|'"
+	case PIPEAT:
+		return "'|@'"
+	case POOL:
+		return "'pool'"
+	case RULE:
+		return "'rule'"
+	case SUBNINJA:
+		return "'subninja'"
+	case TEOF:
+		return "eof"
+	default:
+		return "unknown token"
+	}
 }
 
-// NewLexer 创建词法分析器（测试用）
-func NewLexer(input string) *Lexer {
+func TokenErrorHint(expected Token) string {
+	if expected == COLON {
+		return " ($ also escapes ':')"
+	}
+	return ""
+}
+
+type Lexer struct {
+	filename              string
+	yyinput               string
+	pos                   int
+	lastPos               int
+	manifestVersionMajor  int
+	manifestVersionMinor  int
+	newlineVersionChecked bool
+}
+
+func NewLexer(filename, input string) *Lexer {
 	l := &Lexer{}
 	l.Start("input", input)
 	return l
 }
 
-// Start 初始化词法分析器
 func (l *Lexer) Start(filename, input string) {
 	l.filename = filename
-	l.input = []rune(input)
+	l.yyinput = input
 	l.pos = 0
-	l.line = 1
-	l.col = 0
-	l.lastStart = -1
-	l.lastEnd = -1
+	l.lastPos = 0
+	l.manifestVersionMajor = 1
+	l.manifestVersionMinor = 14
 	l.newlineVersionChecked = false
-	l.ManifestVersionMajor = 0
-	l.ManifestVersionMinor = 0
 }
 
-// currentChar 返回当前字符（不移动）
-func (l *Lexer) currentChar() rune {
-	if l.pos >= len(l.input) {
-		return 0
-	}
-	return l.input[l.pos]
+func (l *Lexer) SetManifestVersion(major, minor int) {
+	l.manifestVersionMajor = major
+	l.manifestVersionMinor = minor
 }
 
-// nextChar 前进一个字符，更新行列
-func (l *Lexer) nextChar() {
-	if l.pos >= len(l.input) {
-		return
-	}
-	ch := l.input[l.pos]
-	l.pos++
-	if ch == '\n' {
-		l.line++
-		l.col = 0
-	} else {
-		l.col++
-	}
+func (l *Lexer) Error(msg string) error {
+	line, col := l.lineColumnOf(l.lastPos)
+	return fmt.Errorf("%s:%d:%d: %s", l.filename, line, col, msg)
 }
 
-// peekChar 预览下一个字符（不移动）
-func (l *Lexer) peekChar() rune {
-	if l.pos+1 >= len(l.input) {
-		return 0
-	}
-	return l.input[l.pos+1]
-}
-
-// EatWhitespace 跳过空白和续行符
-func (l *Lexer) EatWhitespace() {
-	for {
-		ch := l.currentChar()
-		if ch == ' ' || ch == '\t' {
-			l.nextChar()
-			continue
-		}
-		if ch == '$' {
-			next := l.peekChar()
-			if next == '\n' || next == '\r' {
-				l.nextChar() // skip $
-				l.nextChar() // skip \n or \r
-				if next == '\r' && l.currentChar() == '\n' {
-					l.nextChar()
-				}
-				continue
-			}
-		}
-		break
-	}
-}
-
-// ReadToken 读取下一个 token
-func (l *Lexer) ReadToken() Token {
-	// 跳过空白（不包括换行）
-	//for l.currentChar() == ' ' || l.currentChar() == '\t' {
-	//	l.nextChar()
-	//}
-	var tokenType Token
-	// var tokenValue string
-	startPos := l.pos
-	//startLine := l.line
-	//startCol := l.col
-
-	ch := l.currentChar()
-	switch ch {
-	case 0:
-		tokenType = T_EOF
-		goto done
-	case '\n':
-		l.nextChar()
-		tokenType = T_NEWLINE
-		goto done
-	case '#':
-		// 注释直到行尾
-		for l.currentChar() != 0 && l.currentChar() != '\n' {
-			l.nextChar()
-		}
-		return l.ReadToken() // 跳过注释，继续读下一个
-	case ':':
-		l.nextChar()
-		tokenType = T_COLON
-		// tokenValue = ":"
-		goto done
-	case '=':
-		l.nextChar()
-		tokenType = T_EQUALS
-		// tokenValue = "="
-		goto done
-	case '|':
-		l.nextChar()
-		if l.currentChar() == '|' {
-			l.nextChar()
-			tokenType = T_PIPE2
-			// tokenValue = "||"
-		} else if l.currentChar() == '@' {
-			l.nextChar()
-			tokenType = T_PIPEAT
-			// tokenValue = "|@"
+func (l *Lexer) lineColumnOf(offset int) (int, int) {
+	line, col := 1, 1
+	for _, ch := range l.yyinput[:offset] {
+		if ch == '\n' {
+			line++
+			col = 1
 		} else {
-			tokenType = T_PIPE
-			// tokenValue = "|"
+			col++
 		}
-		goto done
-	default:
-		if unicode.IsLetter(ch) || ch == '_' {
-			// 标识符或关键字
-			start := l.pos
-			for unicode.IsLetter(l.currentChar()) || unicode.IsDigit(l.currentChar()) || l.currentChar() == '_' || l.currentChar() == '-' {
-				l.nextChar()
-			}
-			word := string(l.input[start:l.pos])
-			switch word {
-			case "build":
-				tokenType = T_BUILD
-			case "pool":
-				tokenType = T_POOL
-			case "rule":
-				tokenType = T_RULE
-			case "default":
-				tokenType = T_DEFAULT
-			case "include":
-				tokenType = T_INCLUDE
-			case "subninja":
-				tokenType = T_SUBNINJA
-			default:
-				tokenType = T_IDENT
-			}
-			// tokenValue = word
-		} else {
-			// ch := l.currentChar()
-			l.nextChar()
-			tokenType = T_ERROR
-			// tokenValue = string(ch)
-		}
-		goto done
 	}
-done:
-	// startPos = l.pos
-	l.lastStart = startPos
-	l.lastEnd = l.pos
-	if tokenType != T_NEWLINE && tokenType != T_EOF {
-		l.EatWhitespace()
-	}
-	return tokenType // Token{Type: tokenType, Value: tokenValue, Line: startLine, Col: startCol}
+	return line, col
 }
 
-// UnreadToken 回退到上一个 token（简单实现：将位置重置到 lastStart）
+func (l *Lexer) DescribeLastError() string {
+	if l.lastPos < len(l.yyinput) && l.yyinput[l.lastPos] == '\t' {
+		return "tabs are not allowed, use spaces"
+	}
+	return "lexing error"
+}
+
 func (l *Lexer) UnreadToken() {
-	if l.lastStart >= 0 {
-		l.pos = l.lastStart
-		// 需要恢复行列，这里简化，实际应保存，但通常不影响
-	}
+	l.pos = l.lastPos
 }
 
-// PeekToken 预览下一个 token
 func (l *Lexer) PeekToken(t Token) bool {
 	tok := l.ReadToken()
 	if tok == t {
-		// l.UnreadToken()
 		return true
 	}
 	l.UnreadToken()
 	return false
 }
 
-// ReadIdent 读取标识符
-func (l *Lexer) ReadIdent() (string, error) {
-	start := l.pos
-	if l.pos >= len(l.input) {
-		return "", l.Error("expected identifier")
-	}
+var eyybm = [256]byte{
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	128, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+}
+
+func (l *Lexer) EatWhitespace() {
+	var p = l.pos
+	var marker int
 	for {
-		ch := l.currentChar()
-		if !(unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' || ch == '-') {
-			break
+		l.pos = p
+
+		{
+			var yych byte
+			yych = l.yyinput[p]
+			if eyybm[0+yych]&128 != 0 {
+				goto yy59
+			}
+			if yych <= 0x00 {
+				goto yy56
+			}
+			if yych == '$' {
+				goto yy60
+			}
+			goto yy57
+		yy56:
+			p++
+			{
+				break
+			}
+		yy57:
+			p++
+		yy58:
+			{
+				break
+			}
+		yy59:
+			p++
+			yych = l.yyinput[p]
+			if eyybm[0+yych]&128 == 0 {
+				goto yy59
+			}
+			{
+				continue
+			}
+		yy60:
+			p++
+			yych = l.yyinput[p]
+			marker = p
+			if yych == '\n' {
+				goto yy61
+			}
+			if yych == '\r' {
+				goto yy62
+			}
+			goto yy58
+		yy61:
+			p++
+			{
+				continue
+			}
+		yy62:
+			p++
+			yych = l.yyinput[p]
+			if yych == '\n' {
+				goto yy63
+			}
+			p = marker
+			goto yy58
+		yy63:
+			p++
+			{
+				continue
+			}
 		}
-		l.nextChar()
 	}
-	if l.pos == start {
-		return "", l.Error("expected identifier")
+}
+
+var yyybm = [256]byte{
+	0, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 0, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	160, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 192, 192, 128,
+	192, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 128, 128, 128, 128, 128, 128,
+	128, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 128, 128, 128, 128, 192,
+	128, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 192, 192, 192, 192, 192,
+	192, 192, 192, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+}
+
+func (l *Lexer) ReadToken() Token {
+	var p = l.pos
+	var marker int
+	var start int
+	var token Token
+	for {
+		start = p
+
+		{
+			var yych byte
+			yyaccept := 0
+			yych = l.yyinput[p]
+			if yybm[0+yych]&32 != 0 {
+				goto yy6
+			}
+			if yych <= '^' {
+				if yych <= ',' {
+					if yych <= '\f' {
+						if yych <= 0x00 {
+							goto yy1
+						}
+						if yych == '\n' {
+							goto yy4
+						}
+						goto yy2
+					} else {
+						if yych <= '\r' {
+							goto yy5
+						}
+						if yych == '#' {
+							goto yy8
+						}
+						goto yy2
+					}
+				} else {
+					if yych <= ':' {
+						if yych == '/' {
+							goto yy2
+						}
+						if yych <= '9' {
+							goto yy9
+						}
+						goto yy11
+					} else {
+						if yych <= '=' {
+							if yych <= '<' {
+								goto yy2
+							}
+							goto yy12
+						} else {
+							if yych <= '@' {
+								goto yy2
+							}
+							if yych <= 'Z' {
+								goto yy9
+							}
+							goto yy2
+						}
+					}
+				}
+			} else {
+				if yych <= 'i' {
+					if yych <= 'b' {
+						if yych == '`' {
+							goto yy2
+						}
+						if yych <= 'a' {
+							goto yy9
+						}
+						goto yy13
+					} else {
+						if yych == 'd' {
+							goto yy14
+						}
+						if yych <= 'h' {
+							goto yy9
+						}
+						goto yy15
+					}
+				} else {
+					if yych <= 'r' {
+						if yych == 'p' {
+							goto yy16
+						}
+						if yych <= 'q' {
+							goto yy9
+						}
+						goto yy17
+					} else {
+						if yych <= 'z' {
+							if yych <= 's' {
+								goto yy18
+							}
+							goto yy9
+						} else {
+							if yych == '|' {
+								goto yy19
+							}
+							goto yy2
+						}
+					}
+				}
+			}
+		yy1:
+			p++
+			{
+				token = TEOF
+				break
+			}
+		yy2:
+			p++
+		yy3:
+			{
+				token = ERROR
+				break
+			}
+		yy4:
+			p++
+			{
+				token = NEWLINE
+				break
+			}
+		yy5:
+			p++
+			yych = l.yyinput[p]
+			if yych == '\n' {
+				goto yy20
+			}
+			goto yy3
+		yy6:
+			yyaccept = 0
+			p++
+			yych = l.yyinput[p]
+			marker = p
+			if yyybm[0+yych]&32 != 0 {
+				goto yy6
+			}
+			if yych <= '\f' {
+				if yych == '\n' {
+					goto yy4
+				}
+			} else {
+				if yych <= '\r' {
+					goto yy21
+				}
+				if yych == '#' {
+					goto yy23
+				}
+			}
+		yy7:
+			{
+				token = INDENT
+				break
+			}
+		yy8:
+			yyaccept = 1
+			p++
+			yych = l.yyinput[p]
+			marker = p
+			if yych <= 0x00 {
+				goto yy3
+			}
+			goto yy24
+		yy9:
+			p++
+			yych = l.yyinput[p]
+		yy10:
+			if yyybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = IDENT
+				break
+			}
+		yy11:
+			p++
+			{
+				token = COLON
+				break
+			}
+		yy12:
+			p++
+			{
+				token = EQUALS
+				break
+			}
+		yy13:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'u' {
+				goto yy25
+			}
+			goto yy10
+		yy14:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'e' {
+				goto yy26
+			}
+			goto yy10
+		yy15:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'n' {
+				goto yy27
+			}
+			goto yy10
+		yy16:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'o' {
+				goto yy28
+			}
+			goto yy10
+		yy17:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'u' {
+				goto yy29
+			}
+			goto yy10
+		yy18:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'u' {
+				goto yy30
+			}
+			goto yy10
+		yy19:
+			p++
+			yych = l.yyinput[p]
+			if yych == '@' {
+				goto yy31
+			}
+			if yych == '|' {
+				goto yy32
+			}
+			{
+				token = PIPE
+				break
+			}
+		yy20:
+			p++
+			{
+				token = NEWLINE
+				break
+			}
+		yy21:
+			p++
+			yych = l.yyinput[p]
+			if yych == '\n' {
+				goto yy20
+			}
+		yy22:
+			p = marker
+			if yyaccept == 0 {
+				goto yy7
+			} else {
+				goto yy3
+			}
+		yy23:
+			p++
+			yych = l.yyinput[p]
+		yy24:
+			if (yybm[0+yych] & 128) != 0 {
+				goto yy23
+			}
+			if yych <= 0x00 {
+				goto yy22
+			}
+			p++
+			{
+				continue
+			}
+		yy25:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'i' {
+				goto yy33
+			}
+			goto yy10
+		yy26:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'f' {
+				goto yy34
+			}
+			goto yy10
+		yy27:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'c' {
+				goto yy35
+			}
+			goto yy10
+		yy28:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'o' {
+				goto yy36
+			}
+			goto yy10
+		yy29:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'l' {
+				goto yy37
+			}
+			goto yy10
+		yy30:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'b' {
+				goto yy38
+			}
+			goto yy10
+		yy31:
+			p++
+			{
+				token = PIPEAT
+				break
+			}
+		yy32:
+			p++
+			{
+				token = PIPE2
+				break
+			}
+		yy33:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'l' {
+				goto yy39
+			}
+			goto yy10
+		yy34:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'a' {
+				goto yy40
+			}
+			goto yy10
+		yy35:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'l' {
+				goto yy41
+			}
+			goto yy10
+		yy36:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'l' {
+				goto yy42
+			}
+			goto yy10
+		yy37:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'e' {
+				goto yy43
+			}
+			goto yy10
+		yy38:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'n' {
+				goto yy44
+			}
+			goto yy10
+		yy39:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'd' {
+				goto yy45
+			}
+			goto yy10
+		yy40:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'u' {
+				goto yy46
+			}
+			goto yy10
+		yy41:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'u' {
+				goto yy47
+			}
+			goto yy10
+		yy42:
+			p++
+			yych = l.yyinput[p]
+			if yyybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = POOL
+				break
+			}
+		yy43:
+			p++
+			yych = l.yyinput[p]
+			if yyybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = RULE
+				break
+			}
+		yy44:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'i' {
+				goto yy48
+			}
+			goto yy10
+		yy45:
+			p++
+			yych = l.yyinput[p]
+			if yybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = BUILD
+				break
+			}
+		yy46:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'l' {
+				goto yy49
+			}
+			goto yy10
+		yy47:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'd' {
+				goto yy50
+			}
+			goto yy10
+		yy48:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'n' {
+				goto yy51
+			}
+			goto yy10
+		yy49:
+			p++
+			yych = l.yyinput[p]
+			if yych == 't' {
+				goto yy52
+			}
+			goto yy10
+		yy50:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'e' {
+				goto yy53
+			}
+			goto yy10
+		yy51:
+			p++
+			yych = l.yyinput[p]
+			if yych == 'j' {
+				goto yy54
+			}
+			goto yy10
+		yy52:
+			p++
+			yych = l.yyinput[p]
+			if yybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = DEFAULT
+				break
+			}
+		yy53:
+			p++
+			yych = l.yyinput[p]
+			if yybm[0+yych]&64 != 0 {
+				goto yy9
+			}
+			{
+				token = INCLUDE
+				break
+			}
+		yy54:
+			p++
+			yych = l.yyinput[p]
+			if yych != 'a' {
+				goto yy10
+			}
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 64) != 0 {
+				goto yy9
+			}
+			{
+				token = SUBNINJA
+				break
+			}
+		}
 	}
-	ident := string(l.input[start:l.pos])
-	l.lastStart = start
-	l.lastEnd = l.pos
+
+	l.lastPos = start
+	l.pos = p
+	if token != NEWLINE && token != TEOF {
+		l.EatWhitespace()
+	}
+	return token
+}
+
+var yybm = [256]byte{
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 128, 128, 0,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 0, 0, 0, 0, 0, 0,
+	0, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 0, 0, 0, 0, 128,
+	0, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 128, 128, 128, 128, 128,
+	128, 128, 128, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+}
+
+func (l *Lexer) ReadIdent(out *string) bool {
+	var p = l.pos
+	var start int
+	for {
+		start = p
+		{
+			var yych byte
+			yych = l.yyinput[p]
+			if yybm[0+yych]&128 != 0 {
+				goto yy65
+			}
+			p++
+			{
+				l.lastPos = start
+				return false
+			}
+		yy65:
+			p++
+			yych = l.yyinput[p]
+			if yybm[0+yych]&128 != 0 {
+				goto yy65
+			}
+			{
+				*out = l.yyinput[start:p]
+				break
+			}
+		}
+	}
+	l.lastPos = start
+	l.pos = p
 	l.EatWhitespace()
-	return ident, nil
+	return true
 }
 
-// ReadPath 读取路径字符串
-func (l *Lexer) ReadPath() (*EvalString, error) {
-	return l.readEvalString(true)
+var myybm = [256]byte{
+	0, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 0, 16, 16, 0, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	32, 16, 16, 16, 0, 16, 16, 16,
+	16, 16, 16, 16, 16, 208, 144, 16,
+	208, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 0, 16, 16, 16, 16, 16,
+	16, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 16, 16, 16, 16, 208,
+	16, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 208, 208, 208, 208, 208,
+	208, 208, 208, 16, 0, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
+	16, 16, 16, 16, 16, 16, 16, 16,
 }
 
-// ReadVarValue 读取变量值字符串
-func (l *Lexer) ReadVarValue() (*EvalString, error) {
-	return l.readEvalString(false)
-}
-
-// readEvalString 核心读取方法
-func (l *Lexer) readEvalString(path bool) (*EvalString, error) {
-	eval := &EvalString{}
+func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
+	var p = l.pos
+	var marker int
+	var start int
 	for {
-		start := l.pos
-		ch := l.currentChar()
-		switch {
-		case ch == 0:
-			return nil, l.Error("unexpected EOF")
-		case ch == '\n':
-			if path {
-				return eval, nil
+		start = p
+
+		{
+			var yych byte
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 16) != 0 {
+				goto yy68
 			}
-			l.nextChar()
-			return eval, nil
-		case ch == ' ' || ch == '\t' || ch == '|' || ch == ':':
-			if path {
-				return eval, nil
-			}
-			l.nextChar()
-			eval.AddText(string(ch))
-			continue
-		case ch == '$':
-			l.nextChar()
-			if err := l.handleDollar(eval, path); err != nil {
-				return nil, err
-			}
-			continue
-		default:
-			// 普通文本
-			for {
-				nch := l.currentChar()
-				if nch == 0 || nch == '$' || (path && (nch == '\n' || nch == ' ' || nch == '\t' || nch == '|' || nch == ':')) {
-					break
+			if yych <= '\r' {
+				if yych <= 0x00 {
+					goto yy67
 				}
-				if !path && nch == '\n' {
-					break
+				if yych <= '\n' {
+					goto yy69
 				}
-				l.nextChar()
+				goto yy70
+			} else {
+				if yych <= ' ' {
+					goto yy69
+				}
+				if yych <= '$' {
+					goto yy71
+				}
+				goto yy69
 			}
-			if l.pos > start {
-				eval.AddText(string(l.input[start:l.pos]))
+		yy67:
+			p++
+			{
+				l.lastPos = start
+				return Error("unexpected EOF", err)
 			}
-			continue
-		}
-	}
-}
-
-// handleDollar 处理 $ 转义序列
-func (l *Lexer) handleDollar(eval *EvalString, path bool) error {
-	ch := l.currentChar()
-	if ch == 0 {
-		return l.Error("unexpected EOF after $")
-	}
-	switch ch {
-	case '$':
-		l.nextChar()
-		eval.AddText("$")
-		return nil
-	case ' ':
-		l.nextChar()
-		eval.AddText(" ")
-		return nil
-	case ':':
-		l.nextChar()
-		eval.AddText(":")
-		return nil
-	case '^':
-		l.nextChar()
-		if !l.newlineVersionChecked {
-			if l.ManifestVersionMajor < 1 || (l.ManifestVersionMajor == 1 && l.ManifestVersionMinor < 14) {
-				return l.Error("using $^ escape requires specifying 'ninja_required_version' with version >= 1.14")
+		yy68:
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 16) != 0 {
+				goto yy68
 			}
-			l.newlineVersionChecked = true
+			{
+				eval.AddText(l.yyinput[start:p])
+				continue
+			}
+		yy69:
+			p++
+			{
+				if path {
+					p = start
+					break
+				} else {
+					if l.yyinput[start] == '\n' {
+						break
+					}
+					eval.AddText(l.yyinput[start : start+1])
+					continue
+				}
+			}
+		yy70:
+			p++
+			yych = l.yyinput[p]
+			if yych == '\n' {
+				goto yy72
+			}
+			{
+				l.lastPos = start
+				return Error(DescribeLastError(), err)
+			}
+		yy71:
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 64) != 0 {
+				goto yy79
+			}
+			if yych <= '#' {
+				if yych <= '\f' {
+					if yych == '\n' {
+						goto yy75
+					}
+					goto yy73
+				} else {
+					if yych <= '\r' {
+						goto yy76
+					}
+					if yych == ' ' {
+						goto yy77
+					}
+					goto yy73
+				}
+			} else {
+				if yych <= ']' {
+					if yych <= '$' {
+						goto yy78
+					}
+					if yych <= '/' {
+						goto yy73
+					}
+					if yych <= ':' {
+						goto yy80
+					}
+					goto yy73
+				} else {
+					if yych <= '^' {
+						goto yy81
+					}
+					if yych <= '`' {
+						goto yy73
+					}
+					if yych <= '{' {
+						goto yy82
+					}
+					goto yy73
+				}
+			}
+		yy72:
+			p++
+			{
+				if path {
+					p = start
+				}
+				break
+			}
+		yy73:
+			p++
+		yy74:
+			{
+				l.lastPos = start
+				return Error("bad $-escape (literal $ must be written as $$)", err)
+			}
+		yy75:
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 32) != 0 {
+				goto yy75
+			}
+			{
+				continue
+			}
+		yy76:
+			p++
+			yych = l.yyinput[p]
+			if yych == '\n' {
+				goto yy83
+			}
+			goto yy74
+		yy77:
+			p++
+			{
+				eval.AddText(" ")
+				continue
+			}
+		yy78:
+			p++
+			{
+				eval.AddText("$")
+				continue
+			}
+		yy79:
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 64) != 0 {
+				goto yy79
+			}
+			{
+				eval.AddSpecial(l.yyinput[start+1 : p])
+				continue
+			}
+		yy80:
+			p++
+			{
+				eval.AddText(":")
+				continue
+			}
+		yy81:
+			p++
+			{
+				if !newline_version_checked_ {
+					if (manifest_version_major < kMinNewlineEscapeVersionMajor) ||
+						(manifest_version_major == kMinNewlineEscapeVersionMajor &&
+							manifest_version_minor < kMinNewlineEscapeVersionMinor) {
+						return Error("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14", err)
+					}
+					newline_version_checked_ = true
+				}
+				eval.AddText("\n")
+				continue
+			}
+		yy82:
+			p++
+			yych = l.yyinput[p]
+			marker = p
+			if (yybm[0+yych] & 128) != 0 {
+				goto yy84
+			}
+			goto yy74
+		yy83:
+			p++
+			yych = l.yyinput[p]
+			if yych == ' ' {
+				goto yy83
+			}
+			{
+				continue
+			}
+		yy84:
+			p++
+			yych = l.yyinput[p]
+			if (yybm[0+yych] & 128) != 0 {
+				goto yy84
+			}
+			if yych == '}' {
+				goto yy85
+			}
+			p = marker
+			goto yy74
+		yy85:
+			p++
+			{
+				eval.AddSpecial(l.yyinput[start+2 : p-1])
+				continue
+			}
 		}
-		eval.AddText("\n")
-		return nil
-	case '{':
-		l.nextChar()
-		varName, err := l.readIdentUntil('}')
-		if err != nil {
-			return err
-		}
-		if l.currentChar() != '}' {
-			return l.Error("missing '}'")
-		}
-		l.nextChar()
-		eval.AddSpecial(varName)
-		return nil
-	default:
-		if l.isIdentStart(ch) {
-			varName := l.readSimpleIdent()
-			eval.AddSpecial(varName)
-			return nil
-		}
-		return l.Error("bad $-escape (literal $ must be written as $$)")
 	}
-}
-
-// readIdentUntil 读取标识符直到遇到 stop 字符
-func (l *Lexer) readIdentUntil(stop rune) (string, error) {
-	start := l.pos
-	for {
-		ch := l.currentChar()
-		if ch == 0 {
-			return "", l.Error("unexpected EOF")
-		}
-		if ch == stop {
-			break
-		}
-		if !l.isIdentChar(ch) {
-			return "", l.Error("invalid character in identifier")
-		}
-		l.nextChar()
+	l.lastPos = start
+	l.pos = p
+	if path {
+		l.EatWhitespace()
 	}
-	if l.pos == start {
-		return "", l.Error("empty identifier")
+	// Non-path strings end in newlines, so there's no whitespace to eat.
+	return true
+}
+
+// / Read a path (complete with $escapes).
+// / Returns false only on error, returned path may be empty if a delimiter
+// / (space, newline) is hit.
+func (l *Lexer) ReadPath(path *EvalString) (bool, error) {
+	err := l.ReadEvalString(path, true)
+	if err != nil {
+		return false, err
 	}
-	return string(l.input[start:l.pos]), nil
+	return true, nil
 }
 
-// readSimpleIdent 读取简单标识符
-func (l *Lexer) readSimpleIdent() string {
-	start := l.pos
-	for {
-		ch := l.currentChar()
-		if !l.isIdentChar(ch) {
-			break
-		}
-		l.nextChar()
+// / Read the value side of a var = value line (complete with $escapes).
+// / Returns false only on error.
+func (l *Lexer) ReadVarValue(value *EvalString) (bool, error) {
+	err := l.ReadEvalString(value, false)
+	if err != nil {
+		return false, err
 	}
-	return string(l.input[start:l.pos])
-}
-
-func (l *Lexer) isIdentChar(ch rune) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' || ch == '-'
-}
-
-func (l *Lexer) isIdentStart(ch rune) bool {
-	return unicode.IsLetter(ch) || ch == '_'
-}
-
-// DescribeLastError 返回上一个错误 token 的详细信息
-func (l *Lexer) DescribeLastError() string {
-	// 简化实现，返回空字符串或检查最后一个字符
-	return ""
-}
-
-// Error 构造带行列号的错误
-func (l *Lexer) Error(msg string) error {
-	// 使用 lastStart 位置或当前 pos 计算行列
-	line, col := l.line, l.col
-	// 可以进一步根据 lastStart 回溯，简化
-	return &ParseError{Line: line, Col: col, Msg: msg}
-}
-
-// ParseError 自定义错误
-type ParseError struct {
-	Line int
-	Col  int
-	Msg  string
-}
-
-func (e *ParseError) Error() string {
-	return fmt.Sprintf("%d:%d: %s", e.Line, e.Col, e.Msg)
+	return true, nil
 }

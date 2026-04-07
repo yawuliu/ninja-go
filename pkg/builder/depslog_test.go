@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func tempFile(t *testing.T) string {
+func depslog_tempFile(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "ninja_deps")
 }
 
 // TestWriteRead 对应 C++ DepsLogTest.WriteRead
-func TestWriteRead(t *testing.T) {
-	logPath := tempFile(t)
+func TestDepsLogWriteRead(t *testing.T) {
+	logPath := depslog_tempFile(t)
 	state := NewState()
 	outNode := state.AddNode("out.o")
 	fooNode := state.AddNode("foo.h")
@@ -59,7 +59,7 @@ func TestWriteRead(t *testing.T) {
 
 // TestLotsOfDeps 对应 C++ DepsLogTest.LotsOfDeps
 func TestLotsOfDeps(t *testing.T) {
-	logPath := tempFile(t)
+	logPath := depslog_tempFile(t)
 	const numDeps = 100000
 	state1 := NewState()
 	outNode := state1.AddNode("out.o")
@@ -90,8 +90,8 @@ func TestLotsOfDeps(t *testing.T) {
 }
 
 // TestDoubleEntry 对应 C++ DepsLogTest.DoubleEntry
-func TestDoubleEntry(t *testing.T) {
-	logPath := tempFile(t)
+func TestDepsLogDoubleEntry(t *testing.T) {
+	logPath := depslog_tempFile(t)
 
 	// 第一次写入
 	state := NewState()
@@ -130,8 +130,8 @@ func TestDoubleEntry(t *testing.T) {
 	assert.Equal(t, size1, size2)
 }
 
-func TestRecompact(t *testing.T) {
-	logPath := tempFile(t)
+func TestDepsLogRecompact(t *testing.T) {
+	logPath := depslog_tempFile(t)
 
 	// 创建初始状态，包含两个节点
 	state := NewState()
@@ -213,7 +213,7 @@ func TestInvalidHeader(t *testing.T) {
 		"# ninjadeps\n\x01\x02\x03\x04", // 无效版本号
 	}
 	for _, header := range invalidHeaders {
-		logPath := tempFile(t)
+		logPath := depslog_tempFile(t)
 		err := os.WriteFile(logPath, []byte(header), 0644)
 		require.NoError(t, err)
 
@@ -232,10 +232,10 @@ func TestInvalidHeader(t *testing.T) {
 }
 
 // TestTruncated 对应 C++ DepsLogTest.Truncated
-func TestTruncated(t *testing.T) {
+func TestDepsLogTruncated(t *testing.T) {
 	t.Skip("skipping TestTruncated in short mode")
 	return
-	logPath := tempFile(t)
+	logPath := depslog_tempFile(t)
 
 	// 创建包含两个记录的日志
 	state := NewState()
@@ -285,10 +285,10 @@ func TestTruncated(t *testing.T) {
 }
 
 // TestTruncatedRecovery 对应 C++ DepsLogTest.TruncatedRecovery
-func TestTruncatedRecovery(t *testing.T) {
+func TestDepsLogTruncatedRecovery(t *testing.T) {
 	t.Skip("skipping TestTruncated in short mode")
 	return
-	logPath := tempFile(t)
+	logPath := depslog_tempFile(t)
 
 	// 创建两个记录
 	state := NewState()
@@ -352,8 +352,8 @@ func TestTruncatedRecovery(t *testing.T) {
 }
 
 // TestReverseDepsNodes 对应 C++ DepsLogTest.ReverseDepsNodes
-func TestReverseDepsNodes(t *testing.T) {
-	logPath := tempFile(t)
+func TestDepsLogReverseDepsNodes(t *testing.T) {
+	logPath := depslog_tempFile(t)
 	state := NewState()
 	out := state.AddNode("out.o")
 	out2 := state.AddNode("out2.o")
@@ -386,7 +386,7 @@ func TestReverseDepsNodes(t *testing.T) {
 }
 
 // TestMalformedDepsLog 对应 C++ DepsLogTest.MalformedDepsLog
-func TestMalformedDepsLog(t *testing.T) {
+func TestDepsLogMalformedDepsLog(t *testing.T) {
 	// 由于 Go 实现可能使用不同的二进制格式，此测试需要根据实际格式编写。
 	// 暂时跳过。
 	t.Skip("Malformed log handling not implemented")

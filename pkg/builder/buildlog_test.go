@@ -13,120 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockFile struct {
-	*bytes.Buffer
-	name   string
-	closed bool
-}
-
-func (f *mockFile) Close() error { f.closed = true; return nil }
-func (f *mockFile) Stat() (os.FileInfo, error) {
-	return &mockFileInfoWrapper{path: f.name, mtime: 0}, nil
-}
-
-type mockFileInfoWrapper struct {
-	path  string
-	mtime int64
-}
-
-func (m *mockFileInfoWrapper) Name() string       { return m.path }
-func (m *mockFileInfoWrapper) Size() int64        { return 0 }
-func (m *mockFileInfoWrapper) Mode() os.FileMode  { return 0644 }
-func (m *mockFileInfoWrapper) ModTime() time.Time { return time.Unix(m.mtime, 0) }
-func (m *mockFileInfoWrapper) IsDir() bool        { return false }
-func (m *mockFileInfoWrapper) Sys() interface{}   { return nil }
-
-type mockFileSystem struct {
-	files     map[string]*mockFileInfo
-	nextMtime int64
-}
-type mockFileInfo struct {
-	content string
-	mtime   int64
-}
-
-func newMockFileSystem() *mockFileSystem {
-	return &mockFileSystem{
-		files:     make(map[string]*mockFileInfo),
-		nextMtime: 1,
-	}
-}
-
-func (fs *mockFileSystem) tick() {
-	fs.nextMtime++
-}
-
-func (fs *mockFileSystem) Open(name string) (util.File, error) {
-	if info, ok := fs.files[name]; ok {
-		return &mockFile{Buffer: bytes.NewBufferString(info.content), name: name}, nil
-	}
-	return nil, os.ErrNotExist
-}
-func (fs *mockFileSystem) Create(name string) (util.File, error) {
-	buf := &bytes.Buffer{}
-	fs.files[name] = &mockFileInfo{content: "", mtime: fs.nextMtime}
-	fs.nextMtime++
-	return &mockFile{Buffer: buf, name: name}, nil
-}
-
-func (fs *mockFileSystem) Truncate(name string, size int64) error {
-	if size < 0 {
-		return os.ErrInvalid
-	}
-	info, ok := fs.files[name]
-	if !ok {
-		return os.ErrNotExist
-	}
-	current := []byte(info.content)
-	if int64(len(current)) > size {
-		// 截断
-		info.content = string(current[:size])
-	} else if int64(len(current)) < size {
-		// 填充空字节
-		padding := make([]byte, size-int64(len(current)))
-		info.content = string(current) + string(padding)
-	}
-	// 更新 mtime
-	info.mtime = fs.nextMtime
-	fs.nextMtime++
-	return nil
-}
-
-func (fs *mockFileSystem) Stat(path string) (os.FileInfo, error) {
-	if f, ok := fs.files[path]; ok {
-		return &mockFileInfoWrapper{path: path, mtime: f.mtime}, nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (fs *mockFileSystem) ReadFile(path string) ([]byte, error) {
-	if f, ok := fs.files[path]; ok {
-		return []byte(f.content), nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (fs *mockFileSystem) WriteFile(path string, data []byte, perm os.FileMode) error {
-	fs.files[path] = &mockFileInfo{
-		content: string(data),
-		mtime:   fs.nextMtime,
-	}
-	fs.nextMtime++
-	return nil
-}
-
-func (fs *mockFileSystem) Remove(path string) error {
-	delete(fs.files, path)
-	return nil
-}
-
-func (fs *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	// 简单模拟，不创建目录
-	return nil
-}
-
 // 测试辅助：创建临时文件路径
-func tempFile(t *testing.T) string {
+func buildlog_tempFile(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "ninja_log")
 }
 
@@ -157,7 +45,7 @@ func (u *testUser) IsPathDead(path string) bool {
 // 对应 C++ BuildLogTest.WriteRead
 func TestWriteRead(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	//state := graph.NewState()
 	//rule := &graph.Rule{Name: "cat", Command: "cat"}
 	//edge1 := &graph.Edge{Rule: rule, Outputs: []*graph.Node{state.AddNode("out")}}
@@ -182,7 +70,7 @@ func TestWriteRead(t *testing.T) {
 // 对应 C++ BuildLogTest.FirstWriteAddsSignature
 func TestFirstWriteAddsSignature(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	log := NewBuildLog(logPath)
 
 	// 第一次写入应该添加版本头
@@ -219,7 +107,7 @@ func TestFirstWriteAddsSignature(t *testing.T) {
 // 同一输出有两条记录，应保留最后一条（命令哈希不同）
 func TestDoubleEntry(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	// 手动写入两条相同输出、不同命令哈希的记录
 	content := `# ninja log v5
 123	456	789	out	abc123
@@ -240,7 +128,7 @@ func TestDoubleEntry(t *testing.T) {
 // 截断文件后加载不应崩溃
 func TestTruncate(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	state := NewState()
 	rule := &Rule{Name: "cat"}
 	edge1 := &Edge{Rule: rule, Outputs: []*Node{state.AddNode("out")}}
@@ -285,7 +173,7 @@ func TestTruncate(t *testing.T) {
 // 对应 C++ BuildLogTest.ObsoleteOldVersion
 func TestObsoleteOldVersion(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	content := `# ninja log v3
 123 456 0 out command
 `
@@ -300,7 +188,7 @@ func TestObsoleteOldVersion(t *testing.T) {
 // 对应 C++ BuildLogTest.SpacesInOutput
 func TestSpacesInOutput(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	content := `# ninja log v5
 123	456	789	out with space	cmdhash
 `
@@ -320,7 +208,7 @@ func TestSpacesInOutput(t *testing.T) {
 // 对应 C++ BuildLogTest.DuplicateVersionHeader
 func TestDuplicateVersionHeader(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	content := `# ninja log v5
 123	456	789	out	cmd1
 # ninja log v5
@@ -371,7 +259,7 @@ func (f *fakeFileInfo) Sys() interface{}   { return nil }
 // 需要实现 BuildLog.Restat 方法（更新 mtime 或过滤）
 func TestRestat(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	// 先写入一条记录，mtime=3
 	content := "# ninja log v5\n1	2	3	out	hash\n"
 	writeLog(t, fs, logPath, content)
@@ -399,7 +287,7 @@ func TestRestat(t *testing.T) {
 // 对应 C++ BuildLogTest.VeryLongInputLine
 func TestVeryLongInputLine(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	user := &testUser{deadPaths: map[string]bool{"out2": true}}
 	log := NewBuildLog(logPath)
 	log.UpdateRecord(&Record{Output: "out", CommandHash: "h1"})
@@ -420,7 +308,7 @@ func TestVeryLongInputLine(t *testing.T) {
 // 对应 C++ BuildLogTest.MultiTargetEdge
 func TestMultiTargetEdge(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	state := NewState()
 	rule := &Rule{Name: "cat"}
 	edge := &Edge{Rule: rule}
@@ -449,7 +337,7 @@ func TestMultiTargetEdge(t *testing.T) {
 // 对应 C++ BuildLogRecompactTest.Recompact
 func TestRecompact(t *testing.T) {
 	fs := newMockFileSystem()
-	logPath := tempFile(t)
+	logPath := buildlog_tempFile(t)
 	user := &testUser{deadPaths: map[string]bool{"dead": true}}
 	log := NewBuildLog(logPath)
 

@@ -95,11 +95,3 @@ func (c consoleStderr) Write(p []byte) (n int, err error) {
 }
 
 func ConsoleStderr() *consoleStderr { return &consoleStderr{} }
-
-// Verbosity 等级定义
-const (
-	VerbosityQuiet = iota
-	VerbosityNoStatusUpdate
-	VerbosityNormal
-	VerbosityVerbose
-)

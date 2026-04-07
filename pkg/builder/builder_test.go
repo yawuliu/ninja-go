@@ -86,12 +86,10 @@ func (f *mockFile) Stat() (os.FileInfo, error) {
 	return &mockFileInfoWrapper{path: f.name, mtime: 0}, nil
 }
 
-// mockFileSystem 模拟文件系统
 type mockFileSystem struct {
 	files     map[string]*mockFileInfo
 	nextMtime int64
 }
-
 type mockFileInfo struct {
 	content string
 	mtime   int64

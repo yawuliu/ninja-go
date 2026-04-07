@@ -1,8 +1,10 @@
 package builder
 
+type Verbosity int
+
 // BuildConfig 构建配置
 type BuildConfig struct {
-	Verbosity              int
+	Verbosity              Verbosity
 	DryRun                 bool
 	Parallelism            int
 	FailuresAllowed        int
@@ -11,13 +13,12 @@ type BuildConfig struct {
 	DepfileParserOptions   *DepfileParserOptions
 }
 
-type Verbosity int
-
+// Verbosity 等级定义
 const (
-	Quiet Verbosity = iota
-	NoStatusUpdate
-	Normal
-	Verbose
+	VerbosityQuiet Verbosity = iota
+	VerbosityNoStatusUpdate
+	VerbosityNormal
+	VerbosityVerbose
 )
 
 // DefaultBuildConfig 返回默认的构建配置

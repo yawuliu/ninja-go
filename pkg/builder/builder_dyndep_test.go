@@ -39,17 +39,22 @@ func TestDyndepWithProto(t *testing.T) {
 
 	// 创建状态并解析 build.ninja
 	state := NewState()
-	p := NewParser(state)
-	err = p.ParseFile("build.ninja")
+	ddf := DyndepFile{}
+	fs := NewRealFileSystem()
+	p := NewDyndepParser(state, fs, &ddf)
+	content, err := fs.ReadFile("build.ninja")
+	err = p.Parse("build.ninja", string(content))
 	assert.NoError(t, err)
 
 	// 创建 builder（使用顺序执行避免并发复杂性）
 	// 注意：为了测试简单，我们可以暂时使用顺序 builder，或者使用现有的并行 builder 但确保两阶段正确。
 	// 这里直接使用我们刚才修改的 Builder（支持两阶段），但需要传入合适的 parallel（例如1）。
-	bld := NewBuilder(state, 1, nil, nil) // 顺序执行方便调试
+	config := DefaultBuildConfig()
+	bld := NewBuilder(state, &config, NewBuildLog(".ninja_log"),
+		NewDepsLog(".ninja_deps"), 1, fs, NewConsoleStatus(config)) // 顺序执行方便调试
 
 	// 构建默认目标
-	err = bld.Build([]string{"default"})
+	_, err = bld.Build() // []string{"default"}
 	assert.NoError(t, err)
 
 	// 验证生成的文件是否存在

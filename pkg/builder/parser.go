@@ -48,8 +48,8 @@ func (b *BaseParser) ExpectToken(expected Token) error {
 	tok := b.lexer.ReadToken()
 	if tok != expected {
 		msg := fmt.Sprintf("expected %s, got %s%s",
-			TokenName(expected),
-			TokenName(tok),
+			expected.String(),
+			tok.String(),
 			TokenErrorHint(expected))
 		return b.lexer.Error(msg)
 	}
