@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -74,7 +75,7 @@ func TokenErrorHint(expected Token) string {
 type Lexer struct {
 	filename              string
 	yyinput               string
-	pos                   int
+	ofs_                  int
 	lastPos               int
 	manifestVersionMajor  int
 	manifestVersionMinor  int
@@ -90,7 +91,7 @@ func NewLexer(filename, input string) *Lexer {
 func (l *Lexer) Start(filename, input string) {
 	l.filename = filename
 	l.yyinput = input
-	l.pos = 0
+	l.ofs_ = 0
 	l.lastPos = 0
 	l.manifestVersionMajor = 1
 	l.manifestVersionMinor = 14
@@ -128,7 +129,7 @@ func (l *Lexer) DescribeLastError() string {
 }
 
 func (l *Lexer) UnreadToken() {
-	l.pos = l.lastPos
+	l.ofs_ = l.lastPos
 }
 
 func (l *Lexer) PeekToken(t Token) bool {
@@ -176,10 +177,10 @@ var eyybm = [256]byte{
 }
 
 func (l *Lexer) EatWhitespace() {
-	var p = l.pos
+	var p = l.ofs_
 	var marker int
 	for {
-		l.pos = p
+		l.ofs_ = p
 
 		{
 			var yych byte
@@ -208,7 +209,7 @@ func (l *Lexer) EatWhitespace() {
 		yy59:
 			p++
 			yych = l.yyinput[p]
-			if eyybm[0+yych]&128 == 0 {
+			if eyybm[0+yych]&128 != 0 {
 				goto yy59
 			}
 			{
@@ -283,8 +284,8 @@ var yyybm = [256]byte{
 }
 
 func (l *Lexer) ReadToken() Token {
-	var p = l.pos
-	var marker int
+	var p = l.ofs_
+	var q int
 	var start int
 	var token Token
 	for {
@@ -294,7 +295,7 @@ func (l *Lexer) ReadToken() Token {
 			var yych byte
 			yyaccept := 0
 			yych = l.yyinput[p]
-			if yybm[0+yych]&32 != 0 {
+			if yyybm[0+yych]&32 != 0 {
 				goto yy6
 			}
 			if yych <= '^' {
@@ -415,7 +416,7 @@ func (l *Lexer) ReadToken() Token {
 			yyaccept = 0
 			p++
 			yych = l.yyinput[p]
-			marker = p
+			q = p
 			if yyybm[0+yych]&32 != 0 {
 				goto yy6
 			}
@@ -440,7 +441,7 @@ func (l *Lexer) ReadToken() Token {
 			yyaccept = 1
 			p++
 			yych = l.yyinput[p]
-			marker = p
+			q = p
 			if yych <= 0x00 {
 				goto yy3
 			}
@@ -536,7 +537,7 @@ func (l *Lexer) ReadToken() Token {
 				goto yy20
 			}
 		yy22:
-			p = marker
+			p = q
 			if yyaccept == 0 {
 				goto yy7
 			} else {
@@ -546,7 +547,7 @@ func (l *Lexer) ReadToken() Token {
 			p++
 			yych = l.yyinput[p]
 		yy24:
-			if (yybm[0+yych] & 128) != 0 {
+			if yyybm[0+yych]&128 != 0 {
 				goto yy23
 			}
 			if yych <= 0x00 {
@@ -703,7 +704,7 @@ func (l *Lexer) ReadToken() Token {
 		yy45:
 			p++
 			yych = l.yyinput[p]
-			if yybm[0+yych]&64 != 0 {
+			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
 			{
@@ -755,7 +756,7 @@ func (l *Lexer) ReadToken() Token {
 		yy52:
 			p++
 			yych = l.yyinput[p]
-			if yybm[0+yych]&64 != 0 {
+			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
 			{
@@ -765,7 +766,7 @@ func (l *Lexer) ReadToken() Token {
 		yy53:
 			p++
 			yych = l.yyinput[p]
-			if yybm[0+yych]&64 != 0 {
+			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
 			{
@@ -780,7 +781,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 64) != 0 {
+			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
 			{
@@ -791,7 +792,7 @@ func (l *Lexer) ReadToken() Token {
 	}
 
 	l.lastPos = start
-	l.pos = p
+	l.ofs_ = p
 	if token != NEWLINE && token != TEOF {
 		l.EatWhitespace()
 	}
@@ -834,7 +835,7 @@ var yybm = [256]byte{
 }
 
 func (l *Lexer) ReadIdent(out *string) bool {
-	var p = l.pos
+	var p = l.ofs_
 	var start int
 	for {
 		start = p
@@ -862,7 +863,7 @@ func (l *Lexer) ReadIdent(out *string) bool {
 		}
 	}
 	l.lastPos = start
-	l.pos = p
+	l.ofs_ = p
 	l.EatWhitespace()
 	return true
 }
@@ -902,8 +903,12 @@ var myybm = [256]byte{
 	16, 16, 16, 16, 16, 16, 16, 16,
 }
 
+// $^ supported starting this version
+const kMinNewlineEscapeVersionMajor = 1
+const kMinNewlineEscapeVersionMinor = 14
+
 func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
-	var p = l.pos
+	var p = l.ofs_
 	var marker int
 	var start int
 	for {
@@ -912,7 +917,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		{
 			var yych byte
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 16) != 0 {
+			if myybm[0+yych]&16 != 0 {
 				goto yy68
 			}
 			if yych <= '\r' {
@@ -936,12 +941,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			p++
 			{
 				l.lastPos = start
-				return Error("unexpected EOF", err)
+				return errors.New("unexpected EOF")
 			}
 		yy68:
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 16) != 0 {
+			if myybm[0+yych]&16 != 0 {
 				goto yy68
 			}
 			{
@@ -970,12 +975,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			}
 			{
 				l.lastPos = start
-				return Error(DescribeLastError(), err)
+				return errors.New(l.DescribeLastError())
 			}
 		yy71:
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 64) != 0 {
+			if myybm[0+yych]&64 != 0 {
 				goto yy79
 			}
 			if yych <= '#' {
@@ -1031,12 +1036,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		yy74:
 			{
 				l.lastPos = start
-				return Error("bad $-escape (literal $ must be written as $$)", err)
+				return errors.New("bad $-escape (literal $ must be written as $$)")
 			}
 		yy75:
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 32) != 0 {
+			if myybm[0+yych]&32 != 0 {
 				goto yy75
 			}
 			{
@@ -1064,7 +1069,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		yy79:
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 64) != 0 {
+			if myybm[0+yych]&64 != 0 {
 				goto yy79
 			}
 			{
@@ -1080,13 +1085,13 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		yy81:
 			p++
 			{
-				if !newline_version_checked_ {
-					if (manifest_version_major < kMinNewlineEscapeVersionMajor) ||
-						(manifest_version_major == kMinNewlineEscapeVersionMajor &&
-							manifest_version_minor < kMinNewlineEscapeVersionMinor) {
-						return Error("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14", err)
+				if !l.newlineVersionChecked {
+					if (l.manifestVersionMajor < kMinNewlineEscapeVersionMajor) ||
+						(l.manifestVersionMajor == kMinNewlineEscapeVersionMajor &&
+							l.manifestVersionMinor < kMinNewlineEscapeVersionMinor) {
+						return errors.New("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14")
 					}
-					newline_version_checked_ = true
+					l.newlineVersionChecked = true
 				}
 				eval.AddText("\n")
 				continue
@@ -1095,7 +1100,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			p++
 			yych = l.yyinput[p]
 			marker = p
-			if (yybm[0+yych] & 128) != 0 {
+			if myybm[0+yych]&128 != 0 {
 				goto yy84
 			}
 			goto yy74
@@ -1111,7 +1116,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		yy84:
 			p++
 			yych = l.yyinput[p]
-			if (yybm[0+yych] & 128) != 0 {
+			if myybm[0+yych]&128 != 0 {
 				goto yy84
 			}
 			if yych == '}' {
@@ -1128,12 +1133,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		}
 	}
 	l.lastPos = start
-	l.pos = p
+	l.ofs_ = p
 	if path {
 		l.EatWhitespace()
 	}
 	// Non-path strings end in newlines, so there's no whitespace to eat.
-	return true
+	return nil
 }
 
 // / Read a path (complete with $escapes).

@@ -58,24 +58,24 @@ func (b *Builder) Destruct() {
 	b.status.SetExplanations(nil)
 }
 
-func (b *Builder) AddTarget(target *Node) error {
+func (b *Builder) AddTarget(target *Node) (bool, error) {
 	var validationNodes []*Node
 	if err := b.scan.RecomputeDirty(target, &validationNodes); err != nil {
-		return err
+		return false, err
 	}
 	if edge := target.InEdge; edge == nil || !edge.OutputsReady {
-		if err := b.plan.AddTarget(target); err != nil {
-			return err
+		if succ, err := b.plan.AddTarget(target); !succ {
+			return false, err
 		}
 	}
 	for _, vn := range validationNodes {
 		if e := vn.InEdge; e != nil && !e.OutputsReady {
-			if err := b.plan.AddTarget(vn); err != nil {
-				return err
+			if succ, err := b.plan.AddTarget(vn); !succ {
+				return false, err
 			}
 		}
 	}
-	return nil
+	return true, nil
 }
 func (b *Builder) AlreadyUpToDate() bool {
 	return !b.plan.MoreToDo()

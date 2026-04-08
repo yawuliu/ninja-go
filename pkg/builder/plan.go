@@ -44,12 +44,12 @@ func (p *Plan) Reset() {
 	p.targets = nil
 }
 
-func (p *Plan) AddTarget(target *Node) error {
+func (p *Plan) AddTarget(target *Node) (bool, error) {
 	p.targets = append(p.targets, target)
 	return p.addSubTarget(target, nil, nil)
 }
 
-func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bool) error {
+func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bool) (bool, error) {
 	edge := node.InEdge
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
@@ -58,13 +58,13 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 			if dependent != nil {
 				ref = ", needed by '" + dependent.Path + "',"
 			}
-			return fmt.Errorf("'%s'%s missing and no known rule to make it", node.Path, ref)
+			return false, fmt.Errorf("'%s'%s missing and no known rule to make it", node.Path, ref)
 		}
-		return nil
+		return false, nil
 	}
 
 	if edge.OutputsReady {
-		return nil
+		return false, nil
 	}
 
 	want, exists := p.want[edge]
@@ -74,7 +74,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 	}
 
 	if dyndepWalk != nil && want == WantToFinish {
-		return nil
+		return false, nil
 	}
 
 	if node.Dirty && want == WantNothing {
@@ -87,15 +87,15 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 	}
 
 	if exists {
-		return nil
+		return true, nil
 	}
 
 	for _, in := range edge.Inputs {
-		if err := p.addSubTarget(in, node, dyndepWalk); err != nil {
-			return err
+		if succ, err := p.addSubTarget(in, node, dyndepWalk); !succ && err != nil {
+			return false, nil
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func (p *Plan) edgeWanted(edge *Edge) {
@@ -371,7 +371,7 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile) e
 			if len(edge.Outputs) > 0 {
 				dependentNode = edge.Outputs[0]
 			}
-			if err := p.addSubTarget(in, dependentNode, dyndepWalk); err != nil {
+			if succ, err := p.addSubTarget(in, dependentNode, dyndepWalk); !succ && err != nil {
 				return err
 			}
 		}
@@ -416,7 +416,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node) error {
 		for _, vn := range validationNodes {
 			if inEdge := vn.InEdge; inEdge != nil {
 				if !inEdge.OutputsReady {
-					if err := p.AddTarget(vn); err != nil {
+					if succ, err := p.AddTarget(vn); !succ && err != nil {
 						return err
 					}
 				}

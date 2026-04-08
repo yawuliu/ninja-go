@@ -124,6 +124,7 @@ func (p *ManifestParser) Parse(filename, input string) error {
 			return fmt.Errorf("unexpected token %s", tok.String())
 		}
 	}
+	return errors.New(" not reached")
 }
 
 func (p *ManifestParser) parsePool() error {

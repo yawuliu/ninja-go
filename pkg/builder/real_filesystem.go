@@ -37,7 +37,12 @@ func (fs *RealFileSystem) Stat(path string) (os.FileInfo, error) {
 }
 
 func (fs *RealFileSystem) ReadFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	data = append(data, 0)
+	return data, nil
 }
 
 func (fs *RealFileSystem) WriteFile(path string, data []byte, perm os.FileMode) error {

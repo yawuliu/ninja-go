@@ -41,7 +41,7 @@ func (p *DepfileParser) Parse(content string) error {
 		if pos >= n {
 			break
 		}
-		// start := pos
+		// start := ofs_
 		// 解析一个 token（文件名），处理转义和续行
 		var token strings.Builder
 		escaped := false

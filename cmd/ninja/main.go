@@ -60,7 +60,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, status builder.Status) (bo
 	}
 
 	builder := builder.NewBuilder(n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
-	if err := builder.AddTarget(node); err != nil {
+	if succ, err := builder.AddTarget(node); !succ {
 		return false, err
 	}
 
@@ -1317,7 +1317,7 @@ func (n *NinjaMain) RunBuild(args []string, status builder.Status) builder.ExitS
 
 	// 添加目标到构建计划
 	for _, target := range targets {
-		if err := ibuilder.AddTarget(target); err != nil {
+		if succ, err := ibuilder.AddTarget(target); !succ && err != nil {
 			status.Error("%v", err)
 			return builder.ExitFailure
 		}
