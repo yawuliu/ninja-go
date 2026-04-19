@@ -336,15 +336,15 @@ func ReplaceContent(dst, src string) error {
 	return nil
 }
 
-// EditDistance 计算两个字符串的编辑距离（Levenshtein）。
-func EditDistance(a, b string, allowReplacements bool, maxDist int) int {
-	// 简单实现，可参考标准库或自己实现
-	// 为节省篇幅，这里返回 0 表示未实现，实际应实现算法
-	// 建议使用 github.com/agext/levenshtein 或自己写
-	_ = allowReplacements
-	_ = maxDist
-	return 0
-}
+//// EditDistance 计算两个字符串的编辑距离（Levenshtein）。
+//func EditDistance(a, b string, allowReplacements bool, maxDist int) int {
+//	// 简单实现，可参考标准库或自己实现
+//	// 为节省篇幅，这里返回 0 表示未实现，实际应实现算法
+//	// 建议使用 github.com/agext/levenshtein 或自己写
+//	_ = allowReplacements
+//	_ = maxDist
+//	return 0
+//}
 
 // DirName 返回路径的目录名，与 C++ 版本行为一致：
 // 找到最后一个路径分隔符，然后向前跳过连续的分隔符，返回之前的子串。

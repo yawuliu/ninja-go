@@ -55,15 +55,16 @@ func TestPlan_AddTarget(t *testing.T) {
 	outNode := state.AddNode("out.o", 0)
 	edge.Inputs = []*Node{inNode}
 	edge.Outputs = []*Node{outNode}
+	var err string
 	state.AddIn(edge, "in.c", 0)
-	state.AddOut(edge, "out.o", 0)
+	state.AddOut(edge, "out.o", 0, &err)
 
 	// 标记 out 为 dirty
 	outNode.Dirty = true
 
 	// 添加目标
-	ok, err := plan.AddTarget(outNode)
-	require.NoError(t, err)
+	ok := plan.AddTarget(outNode, &err)
+	assert.Equal(t, err, "")
 	assert.True(t, ok)
 
 	// 验证目标被添加
@@ -85,8 +86,9 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 	inNode := state.AddNode("missing.c", 0)
 	outNode := state.AddNode("out.o", 0)
 	// 使用 AddIn 和 AddOut 来正确设置连接关系
+	var err string
 	state.AddIn(edge, "missing.c", 0)
-	state.AddOut(edge, "out.o", 0)
+	state.AddOut(edge, "out.o", 0, &err)
 
 	// 标记输入为 dirty 且没有生成边（源文件）
 	inNode.Dirty = true
@@ -95,9 +97,9 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 	outNode.Dirty = true
 
 	// 添加目标应该失败
-	ok, err := plan.AddTarget(outNode)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "missing and no known rule")
+	ok := plan.AddTarget(outNode, &err)
+	assert.Equal(t, err, "")
+	assert.Contains(t, err, "missing and no known rule")
 	assert.False(t, ok)
 }
 
@@ -116,8 +118,9 @@ func TestPlan_AddTarget_AlreadyUpToDate(t *testing.T) {
 	edge.OutputsReady = true
 
 	// 添加目标
-	ok, err := plan.AddTarget(outNode)
-	require.NoError(t, err)
+	var err string
+	ok := plan.AddTarget(outNode, &err)
+	require.Equal(t, err, "")
 	assert.False(t, ok) // 不需要构建
 }
 
@@ -179,8 +182,9 @@ func TestPlan_EdgeFinished(t *testing.T) {
 	plan.commandEdges = 1
 
 	// 完成边
-	err := plan.EdgeFinished(edge, EdgeSucceeded)
-	require.NoError(t, err)
+	var err string
+	plan.EdgeFinished(edge, EdgeSucceeded, &err)
+	require.Equal(t, err, "")
 
 	// 验证状态
 	assert.Equal(t, 0, plan.wantedEdges)
@@ -201,8 +205,9 @@ func TestPlan_EdgeFinished_Failed(t *testing.T) {
 	plan.want[edge] = WantToFinish
 
 	// 边失败
-	err := plan.EdgeFinished(edge, EdgeFailed)
-	require.NoError(t, err)
+	var err string
+	plan.EdgeFinished(edge, EdgeFailed, &err)
+	require.Equal(t, err, "")
 
 	// 输出不应标记为就绪
 	assert.False(t, edge.OutputsReady)
@@ -250,7 +255,8 @@ func TestPlan_computeCriticalPath(t *testing.T) {
 
 	// 添加目标
 	cNode.Dirty = true
-	plan.AddTarget(cNode)
+	var err string
+	plan.AddTarget(cNode, &err)
 
 	// 计算关键路径
 	plan.computeCriticalPath()
@@ -336,8 +342,9 @@ func TestPlan_DyndepsLoaded(t *testing.T) {
 	scanner := &DependencyScan{}
 
 	// 调用 DyndepsLoaded
-	err := plan.DyndepsLoaded(scanner, outNode, ddf)
-	require.NoError(t, err)
+	var err string
+	plan.DyndepsLoaded(scanner, outNode, ddf, &err)
+	require.Equal(t, err, "")
 }
 
 // TestPlan_RefreshDyndepDependents 测试刷新动态依赖
@@ -352,8 +359,9 @@ func TestPlan_RefreshDyndepDependents(t *testing.T) {
 	scanner := &DependencyScan{}
 
 	// 调用 RefreshDyndepDependents
-	err := plan.RefreshDyndepDependents(scanner, node)
-	require.NoError(t, err)
+	var err string
+	plan.RefreshDyndepDependents(scanner, node, &err)
+	require.Equal(t, err, "")
 }
 
 // TestPlan_nodeFinished 测试节点完成
@@ -379,8 +387,9 @@ func TestPlan_nodeFinished(t *testing.T) {
 	plan.want[edge2] = WantToStart
 
 	// 完成中间节点
-	err := plan.nodeFinished(midNode)
-	require.NoError(t, err)
+	var err string
+	plan.nodeFinished(midNode, &err)
+	require.Equal(t, err, "")
 }
 
 // TestPlan_edgeMaybeReady 测试边可能就绪
@@ -400,8 +409,9 @@ func TestPlan_edgeMaybeReady(t *testing.T) {
 	plan.want[edge] = WantToStart
 
 	// 检查边是否就绪
-	err := plan.edgeMaybeReady(edge, WantToStart)
-	require.NoError(t, err)
+	var err string
+	plan.edgeMaybeReady(edge, WantToStart, &err)
+	require.Equal(t, err, "")
 }
 
 // TestPlan_scheduleInitialEdges 测试初始边调度
@@ -449,8 +459,9 @@ func TestPlan_AddTarget_Recursive(t *testing.T) {
 	bNode.Dirty = true
 
 	// 添加最终目标
-	ok, err := plan.AddTarget(aNode)
-	require.NoError(t, err)
+	var err string
+	ok := plan.AddTarget(aNode, &err)
+	require.Equal(t, err, "")
 	assert.True(t, ok)
 
 	// 验证所有边都被标记
@@ -499,7 +510,8 @@ func TestPlan_AddTarget_DyndepPending(t *testing.T) {
 	outNode.Dirty = true
 
 	// 添加目标
-	ok, err := plan.AddTarget(outNode)
-	require.NoError(t, err)
+	var err string
+	ok := plan.AddTarget(outNode, &err)
+	require.Equal(t, err, "")
 	assert.True(t, ok)
 }

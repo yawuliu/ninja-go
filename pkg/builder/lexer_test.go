@@ -97,8 +97,9 @@ func TestLexer_ReadPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := NewLexer("test", tt.input+"\n")
 			var path EvalString
-			ok, err := l.ReadPath(&path)
-			require.NoError(t, err)
+			var err string
+			ok := l.ReadPath(&path, &err)
+			require.Equal(t, err, "")
 			require.True(t, ok)
 			// path 需要环境来求值，这里只检查片段
 			if len(path.fragments) == 0 {
@@ -128,8 +129,9 @@ func TestLexer_ReadVarValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := NewLexer("test", tt.input)
 			var value EvalString
-			ok, err := l.ReadVarValue(&value)
-			require.NoError(t, err)
+			var err string
+			ok := l.ReadVarValue(&value, &err)
+			require.Equal(t, err, "")
 			require.True(t, ok)
 		})
 	}
@@ -263,8 +265,9 @@ func TestLexer_VersionCheck(t *testing.T) {
 	l.SetManifestVersion(1, 14)
 
 	var value EvalString
-	_, err := l.ReadVarValue(&value)
-	require.NoError(t, err)
+	var err string
+	l.ReadVarValue(&value, &err)
+	require.Equal(t, err, "")
 }
 
 // TestLexer_ErrorCases 测试错误情况
@@ -281,7 +284,8 @@ func TestLexer_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := NewLexer("test", tt.input+"\n")
 			var path EvalString
-			_, err := l.ReadPath(&path)
+			var err string
+			l.ReadPath(&path, &err)
 			// 某些错误可能不会立即返回，而是在读取时处理
 			_ = err
 		})
@@ -294,8 +298,9 @@ func TestLexer_EvalStringComplex(t *testing.T) {
 	l := NewLexer("test", input+"\n")
 
 	var value EvalString
-	ok, err := l.ReadVarValue(&value)
-	require.NoError(t, err)
+	var err string
+	ok := l.ReadVarValue(&value, &err)
+	require.Equal(t, err, "")
 	require.True(t, ok)
 
 	// 验证片段
@@ -356,9 +361,10 @@ third line`
 	}
 
 	// 测试错误报告包含位置信息
-	err := l.Error("test error")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "test:")
+	var err string
+	l.Error("test error", &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "test:")
 }
 
 // TestLexer_NewlineEscape 测试换行符转义
@@ -380,8 +386,9 @@ func TestLexer_NewlineEscape(t *testing.T) {
 
 	// 读取变量值（包含转义的换行）
 	var value EvalString
-	_, err := l.ReadVarValue(&value)
-	require.NoError(t, err)
+	var err string
+	l.ReadVarValue(&value, &err)
+	require.Equal(t, err, "")
 }
 
 // TestLexer_DollarEscapes 测试美元符号转义
@@ -404,8 +411,9 @@ func TestLexer_DollarEscapes(t *testing.T) {
 			l := NewLexer("test", input+"\n")
 
 			var value EvalString
-			_, err := l.ReadVarValue(&value)
-			require.NoError(t, err)
+			var err string
+			l.ReadVarValue(&value, &err)
+			require.Equal(t, err, "")
 		})
 	}
 }

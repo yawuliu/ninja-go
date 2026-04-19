@@ -6,14 +6,6 @@ import (
 	"sync"
 )
 
-func paths(nodes []*Node) []string {
-	res := make([]string, len(nodes))
-	for i, n := range nodes {
-		res[i] = n.Path
-	}
-	return res
-}
-
 type State struct {
 	mu        sync.RWMutex
 	Paths     map[string]*Node
@@ -121,8 +113,23 @@ func (s *State) LookupNode(path string) *Node {
 }
 
 func (s *State) SpellcheckNode(path string) *Node {
-	// 简单实现：返回编辑距离最小的节点（暂略）
-	return nil
+	const allowReplacements = true
+	const maxValidEditDistance = 3
+
+	minDistance := maxValidEditDistance + 1
+	var result *Node
+
+	for p, node := range s.Paths {
+		if node == nil {
+			continue
+		}
+		distance := util.EditDistance(p, path, allowReplacements, maxValidEditDistance)
+		if distance < minDistance {
+			minDistance = distance
+			result = node
+		}
+	}
+	return result
 }
 
 func (s *State) AddIn(edge *Edge, path string, slashBits uint64) {
@@ -132,18 +139,20 @@ func (s *State) AddIn(edge *Edge, path string, slashBits uint64) {
 	node.AddOutEdge(edge)
 }
 
-func (s *State) AddOut(edge *Edge, path string, slashBits uint64) error {
+func (s *State) AddOut(edge *Edge, path string, slashBits uint64, err *string) bool {
 	node := s.GetNode(path, slashBits)
 	if other := node.InEdge; other != nil {
 		if other == edge {
-			return fmt.Errorf("%s is defined as an output multiple times", path)
+			*err = fmt.Sprintf("%s is defined as an output multiple times", path)
+		} else {
+			*err = fmt.Sprintf("multiple rules generate %s", path)
 		}
-		return fmt.Errorf("multiple rules generate %s", path)
+		return false
 	}
 	edge.Outputs = append(edge.Outputs, node)
 	node.InEdge = edge
 	node.GeneratedByDepLoader = false
-	return nil
+	return true
 }
 
 func (s *State) AddValidation(edge *Edge, path string, slashBits uint64) {
@@ -153,13 +162,14 @@ func (s *State) AddValidation(edge *Edge, path string, slashBits uint64) {
 	node.GeneratedByDepLoader = false
 }
 
-func (s *State) AddDefault(path string) error {
+func (s *State) AddDefault(path string, err *string) bool {
 	node := s.LookupNode(path)
 	if node == nil {
-		return fmt.Errorf("unknown target '%s'", path)
+		*err = "unknown target '" + path + "'"
+		return false
 	}
 	s.Defaults = append(s.Defaults, node)
-	return nil
+	return true
 }
 
 func (s *State) Reset() {
@@ -175,27 +185,27 @@ func (s *State) Reset() {
 	}
 }
 
-func (s *State) RootNodes() ([]*Node, error) {
+func (s *State) RootNodes(err *string) []*Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var roots []*Node
+	var root_nodes []*Node
 	for _, e := range s.Edges {
 		for _, out := range e.Outputs {
 			if len(out.OutEdges) == 0 {
-				roots = append(roots, out)
+				root_nodes = append(root_nodes, out)
 			}
 		}
 	}
-	if len(s.Edges) > 0 && len(roots) == 0 {
-		return nil, fmt.Errorf("could not determine root nodes of build graph")
+	if len(s.Edges) > 0 && len(root_nodes) == 0 {
+		*err = "could not determine root nodes of build graph"
 	}
-	return roots, nil
+	return root_nodes
 }
 
-func (s *State) DefaultNodes() []*Node {
+func (s *State) DefaultNodes(err *string) []*Node {
 	if len(s.Defaults) > 0 {
 		return s.Defaults
 	}
-	roots, _ := s.RootNodes()
+	roots := s.RootNodes(err)
 	return roots
 }

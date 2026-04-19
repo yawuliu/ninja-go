@@ -3,8 +3,8 @@ package builder
 // CommandRunner 接口
 type CommandRunner interface {
 	CanRunMore() int
-	StartCommand(edge *Edge) error
-	WaitForCommand() (*CommandResult, error)
+	StartCommand(edge *Edge) bool
+	WaitForCommand(result *CommandResult) bool
 	GetActiveEdges() []*Edge
 	Abort()
 }

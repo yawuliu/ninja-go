@@ -121,8 +121,9 @@ rule cc
 
 build foo.o: cc foo.c
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证图结构
 	require.Len(t, state.Edges, 1)
@@ -154,8 +155,9 @@ build main.o: cc main.c
 build util.o: cc util.c
 build prog: link main.o util.o
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证边数量
 	require.Len(t, state.Edges, 3)
@@ -190,8 +192,9 @@ rule cc
 
 build foo.o: cc foo.c | foo.h
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.Inputs, 2)
@@ -214,8 +217,9 @@ rule cc
 
 build foo.o: cc foo.c || stamp
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.Inputs, 2)
@@ -239,8 +243,9 @@ rule cc
 build foo.o: cc foo.c
   cflags = -O3
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证全局变量
 	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
@@ -270,8 +275,9 @@ build all: phony foo.o bar.o
 
 default all
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证默认目标
 	assert.Len(t, state.Defaults, 1)
@@ -294,8 +300,9 @@ rule link
 
 build prog: link foo.o
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.NotNil(t, edge.Pool)
@@ -317,8 +324,9 @@ rule link
 
 build prog: link foo.o bar.o baz.o
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	rspfile := edge.GetUnescapedRspfile()
@@ -345,8 +353,9 @@ rule cc
 
 build foo.o: cc foo.c foo.o.dd
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	dyndep := edge.GetUnescapedDyndep()
@@ -370,8 +379,9 @@ rule cc
 build foo.o: cc foo.c
 build all: phony foo.o
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 找到 phony 边
 	var phonyEdge *Edge
@@ -418,8 +428,9 @@ build myapp: link main.o libutil.a
 
 default myapp
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证边数量
 	assert.GreaterOrEqual(t, len(state.Edges), 4)
@@ -442,8 +453,9 @@ rule cc
 build ./foo.o: cc ./foo.c
 build bar/../baz.o: cc bar/../baz.c
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 路径应该被规范化
 	assert.NotNil(t, state.LookupNode("foo.o"))
@@ -465,8 +477,9 @@ rule check
 
 build foo.o: cc foo.c |@ check.py
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.Validations, 1)
@@ -484,8 +497,9 @@ rule cc
   command = cc $in -o $out
   description = CC $out
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	rule := state.Bindings.LookupRule("cc")
 	desc := rule.GetBinding("description")
@@ -506,8 +520,9 @@ rule gen
 
 build config.h: gen config.in
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	rule := state.Bindings.LookupRule("gen")
 	generator := rule.GetBinding("generator")
@@ -527,8 +542,9 @@ rule stamp
 
 build stamp.txt: stamp always
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	rule := state.Bindings.LookupRule("stamp")
 	restat := rule.GetBinding("restat")
@@ -547,8 +563,9 @@ rule bison
 
 build parser.cc parser.h: bison parser.yy
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.Outputs, 2)
@@ -566,8 +583,9 @@ func TestIntegration_EscapedVariables(t *testing.T) {
 rule echo
   command = echo "Value: $$SOME_VAR"
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	rule := state.Bindings.LookupRule("echo")
 	cmd := rule.GetBinding("command")
@@ -594,8 +612,9 @@ build foo.o: cc foo.c
 default foo.o
 
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 应该正确解析
 	assert.Len(t, state.Edges, 1)
@@ -617,8 +636,9 @@ rule cc
 # Build statements
 build foo.o: cc foo.c
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 注释应该被正确处理
 	assert.Len(t, state.Edges, 1)
@@ -636,8 +656,9 @@ ninja_required_version = 1.14
 rule cc
   command = cc $in -o $out
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 版本应该被设置
 	assert.Equal(t, 1, parser.lexer.manifestVersionMajor)
@@ -658,8 +679,9 @@ rule cc
 
 build $builddir/foo.o: cc foo.c
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 输出路径应该包含 builddir
 	assert.NotNil(t, state.LookupNode("out/foo.o"))
@@ -683,8 +705,9 @@ global_var = before
 subninja sub.ninja
 global_var = after
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// subninja 中的变量不应该影响父级
 	assert.Equal(t, "", state.Bindings.LookupVariable("local_var"))
@@ -705,8 +728,9 @@ include common.ninja
 rule cc
   command = $common_var $in -o $out
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// include 中的变量应该可用
 	assert.Equal(t, "shared", state.Bindings.LookupVariable("common_var"))
@@ -726,8 +750,9 @@ build a.o: cc a.c
 build b.o: cc b.c
 build c.o: cc c.c
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 所有边应该是独立的（没有依赖关系）
 	for _, edge := range state.Edges {
@@ -758,8 +783,9 @@ build step1.out: gen input.txt
 build step2.out: process step1.out
 build final.out: finalize step2.out
 `
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证依赖链
 	require.Len(t, state.Edges, 3)
@@ -792,8 +818,9 @@ build a.o: cc b.o
 build b.o: cc a.o
 `
 	// 解析应该成功，循环检测在构建阶段
-	err := parser.ParseTest(manifest)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(manifest, &err)
+	require.Equal(t, err, "")
 
 	// 验证两条边都被创建
 	assert.Len(t, state.Edges, 2)

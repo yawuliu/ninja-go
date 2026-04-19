@@ -58,49 +58,106 @@ func (b *Builder) Destruct() {
 	b.status.SetExplanations(nil)
 }
 
-func (b *Builder) AddTargetByName(name string) (*Node, error) {
+func (b *Builder) AddTargetByName(name string, err *string) *Node {
 	node := b.state.LookupNode(name)
 	if node == nil {
-		return nil, fmt.Errorf("unknown target: '%s'", name)
+		*err = "unknown target: '" + name + "'"
+		return nil
 	}
-	if succ, err := b.AddTarget(node); !succ && err != nil {
-		return nil, err
+	if !b.AddTarget(node, err) {
+		return nil
 	}
 
-	return node, nil
+	return node
 }
 
-func (b *Builder) AddTarget(target *Node) (bool, error) {
+func (b *Builder) AddTarget(target *Node, err *string) bool {
 	var validationNodes []*Node
-	if succ, err := b.scan.RecomputeDirty(target, &validationNodes); !succ && err != nil {
-		return false, err
+	if !b.scan.RecomputeDirty(target, &validationNodes, err) {
+		return false
 	}
 	if edge := target.InEdge; edge == nil || !edge.OutputsReady {
-		if succ, err := b.plan.AddTarget(target); !succ {
-			return false, err
+		if !b.plan.AddTarget(target, err) {
+			return false
 		}
 	}
 	for _, vn := range validationNodes {
 		if e := vn.InEdge; e != nil && !e.OutputsReady {
-			if succ, err := b.plan.AddTarget(vn); !succ {
-				return false, err
+			if !b.plan.AddTarget(vn, err) {
+				return false
 			}
 		}
 	}
-	return true, nil
+	return true
 }
 func (b *Builder) AlreadyUpToDate() bool {
 	return !b.plan.MoreToDo()
 }
 
-func (b *Builder) StartEdge(edge *Edge) error {
+func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	// 启动命令
-	return b.commandRunner.StartCommand(edge)
+	// METRIC_RECORD("StartEdge") - ignored in Go conversion
+
+	if edge.IsPhony() {
+		return true
+	}
+
+	startTimeMillis := GetTimeMillis() - b.startTimeMillis
+	b.runningEdges[edge] = startTimeMillis
+
+	b.status.BuildEdgeStarted(edge, startTimeMillis)
+
+	var buildStart int64
+	if b.config.DryRun {
+		buildStart = 0
+	} else {
+		buildStart = -1
+	}
+
+	// Create directories necessary for outputs and remember the current filesystem mtime to record later
+	// XXX: this will block; do we care?
+	for _, o := range edge.Outputs {
+		if !b.disk.MakeDirs(o.Path) {
+			return false
+		}
+		if buildStart == -1 {
+			b.disk.WriteFile(b.lockFilePath, []byte(""), false)
+			buildStart = b.disk.Stat(b.lockFilePath, err)
+			if buildStart == -1 {
+				buildStart = 0
+			}
+		}
+	}
+
+	edge.CommandStartTime = buildStart
+
+	// Create depfile directory if needed.
+	depfile := edge.GetUnescapedDepfile()
+	if depfile != "" && !b.disk.MakeDirs(depfile) {
+		return false
+	}
+
+	// Create response file, if needed
+	rspfile := edge.GetUnescapedRspfile()
+	if rspfile != "" {
+		content := edge.GetBinding("rspfile_content")
+		if !b.disk.WriteFile(rspfile, []byte(content), true) {
+			return false
+		}
+	}
+
+	// start command computing and run it
+	if !b.commandRunner.StartCommand(edge) {
+		*err = "command '" + edge.EvaluateCommand() + "' failed."
+		return false
+	}
+
+	return true
 }
 
-func (b *Builder) Build() (ExitStatus, error) {
+func (b *Builder) Build(err *string) ExitStatus {
 	if b.AlreadyUpToDate() {
-		return ExitSuccess, nil
+		return ExitSuccess
 	}
 	b.plan.PrepareQueue()
 
@@ -127,16 +184,16 @@ func (b *Builder) Build() (ExitStatus, error) {
 				if edge.GetBindingBool("generator") {
 					b.buildLog.Close()
 				}
-				if err := b.startEdge(edge); err != nil {
+				if !b.startEdge(edge, err) {
 					b.Cleanup()
 					b.status.BuildFinished()
-					return ExitFailure, err
+					return ExitFailure
 				}
 				if edge.IsPhony() {
-					if err := b.plan.EdgeFinished(edge, EdgeSucceeded); err != nil {
+					if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
 						b.Cleanup()
 						b.status.BuildFinished()
-						return ExitFailure, err
+						return ExitFailure
 					}
 				} else {
 					pendingCommands++
@@ -149,17 +206,18 @@ func (b *Builder) Build() (ExitStatus, error) {
 
 		// 等待命令完成
 		if pendingCommands > 0 {
-			result, err := b.commandRunner.WaitForCommand()
+			var result CommandResult
+			b.commandRunner.WaitForCommand(&result)
 			if err != nil || result.Status == ExitInterrupted {
 				b.Cleanup()
 				b.status.BuildFinished()
 				return result.Status, fmt.Errorf("interrupted by user")
 			}
 			pendingCommands--
-			if err := b.finishCommand(result); err != nil {
+			if !b.finishCommand(&result, err) {
 				b.Cleanup()
 				b.status.BuildFinished()
-				return result.Status, err
+				return result.Status
 			}
 			if !result.Success() {
 				failuresAllowed--
@@ -171,20 +229,23 @@ func (b *Builder) Build() (ExitStatus, error) {
 		b.status.BuildFinished()
 		if failuresAllowed == 0 {
 			if b.config.FailuresAllowed > 1 {
-				return b.exitCode, fmt.Errorf("subcommands failed")
+				*err = "subcommands failed"
+			} else {
+				*err = "subcommand failed"
 			}
-			return b.exitCode, fmt.Errorf("subcommand failed")
+		} else {
+			*err = "stuck [this is a bug]"
 		}
-		return b.exitCode, fmt.Errorf("cannot make progress due to previous errors")
+		return b.exitCode
 	}
 
 	b.status.BuildFinished()
-	return b.exitCode, nil
+	return ExitSuccess
 }
 
-func (b *Builder) startEdge(edge *Edge) error {
+func (b *Builder) startEdge(edge *Edge, err *string) bool {
 	if edge.IsPhony() {
-		return nil
+		return true
 	}
 	start := (time.Now().UnixNano() - b.startTimeMillis) / 1e6
 	b.status.BuildEdgeStarted(edge, start)
@@ -192,7 +253,7 @@ func (b *Builder) startEdge(edge *Edge) error {
 	// 创建输出目录
 	for _, out := range edge.Outputs {
 		if err := b.disk.MkdirAll(util.DirName(out.Path), 0755); err != nil {
-			return err
+			return false
 		}
 	}
 	// 创建响应文件
@@ -200,19 +261,20 @@ func (b *Builder) startEdge(edge *Edge) error {
 	if rspfile != "" {
 		content := edge.GetBinding("rspfile_content")
 		if err := b.disk.WriteFile(rspfile, []byte(content), 0644); err != nil {
-			return err
+			return false
 		}
 	}
 	// 启动命令
-	if err := b.commandRunner.StartCommand(edge); err != nil {
-		return fmt.Errorf("command '%s' failed: %v", edge.EvaluateCommand(false), err)
+	if !b.commandRunner.StartCommand(edge) {
+		*err = fmt.Sprintf("command '%s' failed", edge.EvaluateCommand(false))
+		return false
 	}
-	return nil
+	return true
 }
 
 var g_keep_rsp = false
 
-func (b *Builder) finishCommand(result *CommandResult) error {
+func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 	edge := result.Edge
 
 	// 首先提取依赖（必须在命令输出被过滤前执行）
@@ -243,7 +305,7 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 
 	// 如果命令失败，直接标记边失败并返回
 	if result.Status != ExitSuccess {
-		return b.plan.EdgeFinished(edge, EdgeFailed)
+		return b.plan.EdgeFinished(edge, EdgeFailed, err)
 	}
 
 	// 处理 restat 和 generator 规则
@@ -277,8 +339,8 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 	}
 
 	// 标记边成功完成
-	if err := b.plan.EdgeFinished(edge, EdgeSucceeded); err != nil {
-		return err
+	if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
+		return false
 	}
 
 	// 删除响应文件
@@ -312,7 +374,7 @@ func (b *Builder) finishCommand(result *CommandResult) error {
 		}
 	}
 
-	return nil
+	return true
 }
 
 // KeepDepfile 控制是否保留 depfile 文件（调试用）

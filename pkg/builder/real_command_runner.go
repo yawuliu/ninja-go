@@ -142,16 +142,16 @@ func (r *RealCommandRunner) CanRunMore() int {
 	return capacity
 }
 
-func (r *RealCommandRunner) StartCommand(edge *Edge) error {
+func (r *RealCommandRunner) StartCommand(edge *Edge) bool {
 	command := edge.EvaluateCommand(false)
 	subproc := r.subprocs.Add(command, edge.UseConsole())
 	if subproc == nil {
-		return fmt.Errorf("failed to start command")
+		return false
 	}
 	r.mu.Lock()
 	r.subprocToEdge[subproc] = edge
 	r.mu.Unlock()
-	return nil
+	return true
 }
 
 func (r *RealCommandRunner) WaitForCommand() (*CommandResult, error) {

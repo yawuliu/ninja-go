@@ -127,9 +127,9 @@ func TestState_AddOut(t *testing.T) {
 	state := NewState()
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-
-	err := state.AddOut(edge, "output.o", 0)
-	require.NoError(t, err)
+	var err string
+	state.AddOut(edge, "output.o", 0, &err)
+	require.Equal(t, err, "")
 
 	require.Len(t, edge.Outputs, 1)
 	assert.Equal(t, "output.o", edge.Outputs[0].Path)
@@ -148,18 +148,19 @@ func TestState_AddOut_Duplicate(t *testing.T) {
 	edge2 := state.AddEdge(rule)
 
 	// 添加第一个输出
-	err := state.AddOut(edge1, "output.o", 0)
-	require.NoError(t, err)
+	var err string
+	state.AddOut(edge1, "output.o", 0, &err)
+	require.Equal(t, err, "")
 
 	// 同一边的重复输出应该报错
-	err = state.AddOut(edge1, "output.o", 0)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "defined as an output multiple times")
+	state.AddOut(edge1, "output.o", 0, &err)
+	assert.Equal(t, err, "")
+	assert.Contains(t, err, "defined as an output multiple times")
 
 	// 不同边的相同输出应该报错
-	err = state.AddOut(edge2, "output.o", 0)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "multiple rules generate")
+	state.AddOut(edge2, "output.o", 0, &err)
+	assert.Equal(t, err, "")
+	assert.Contains(t, err, "multiple rules generate")
 }
 
 // TestState_AddDefault 测试添加默认目标
@@ -170,16 +171,17 @@ func TestState_AddDefault(t *testing.T) {
 	state.AddNode("target", 0)
 	rule := &Rule{Name: "phony"}
 	edge := state.AddEdge(rule)
-	state.AddOut(edge, "target", 0)
+	var err string
+	state.AddOut(edge, "target", 0, &err)
 
 	// 添加为默认目标
-	err := state.AddDefault("target")
-	require.NoError(t, err)
+	state.AddDefault("target", &err)
+	require.Equal(t, err, "")
 	assert.Len(t, state.Defaults, 1)
 
 	// 不存在的节点应该报错
-	err = state.AddDefault("nonexistent")
-	assert.Error(t, err)
+	state.AddDefault("nonexistent", &err)
+	assert.Equal(t, err, "")
 }
 
 // TestState_Reset 测试重置状态
@@ -217,22 +219,24 @@ func TestState_RootNodes(t *testing.T) {
 	rule := &Rule{Name: "cc"}
 
 	// 空状态
-	roots, err := state.RootNodes()
-	require.NoError(t, err)
+	var err string
+	roots := state.RootNodes(&err)
+	require.Equal(t, err, "")
 	assert.Empty(t, roots)
 
 	// 创建简单图: a -> b -> c
 	// c 应该是根节点（没有其他边依赖它）
 	edge1 := state.AddEdge(rule)
+
 	state.AddIn(edge1, "a", 0)
-	state.AddOut(edge1, "b", 0)
+	state.AddOut(edge1, "b", 0, &err)
 
 	edge2 := state.AddEdge(rule)
 	state.AddIn(edge2, "b", 0)
-	state.AddOut(edge2, "c", 0)
+	state.AddOut(edge2, "c", 0, &err)
 
-	roots, err = state.RootNodes()
-	require.NoError(t, err)
+	roots = state.RootNodes(&err)
+	require.Equal(t, err, "")
 	require.Len(t, roots, 1)
 	assert.Equal(t, "c", roots[0].Path)
 }
@@ -244,17 +248,18 @@ func TestState_RootNodes_Cycle(t *testing.T) {
 
 	// 创建循环: a -> b, b -> a
 	edge1 := state.AddEdge(rule)
+	var err string
 	state.AddIn(edge1, "a", 0)
-	state.AddOut(edge1, "b", 0)
+	state.AddOut(edge1, "b", 0, &err)
 
 	edge2 := state.AddEdge(rule)
 	state.AddIn(edge2, "b", 0)
-	state.AddOut(edge2, "a", 0)
+	state.AddOut(edge2, "a", 0, &err)
 
 	// 这种情况下没有根节点
-	roots, err := state.RootNodes()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "could not determine root nodes")
+	roots := state.RootNodes(&err)
+	assert.Equal(t, err, "")
+	assert.Contains(t, err, "could not determine root nodes")
 	assert.Empty(t, roots)
 }
 
@@ -264,21 +269,23 @@ func TestState_DefaultNodes(t *testing.T) {
 	rule := &Rule{Name: "cc"}
 
 	// 没有默认目标时应该返回根节点
+	var err string
 	edge := state.AddEdge(rule)
 	state.AddIn(edge, "input", 0)
-	state.AddOut(edge, "output", 0)
+	state.AddOut(edge, "output", 0, &err)
 
-	defaults := state.DefaultNodes()
+	defaults := state.DefaultNodes(&err)
 	require.Len(t, defaults, 1)
 	assert.Equal(t, "output", defaults[0].Path)
 
 	// 设置默认目标后应该返回默认目标
 	state.AddNode("default_target", 0)
 	edge2 := state.AddEdge(rule)
-	state.AddOut(edge2, "default_target", 0)
-	state.AddDefault("default_target")
 
-	defaults = state.DefaultNodes()
+	state.AddOut(edge2, "default_target", 0, &err)
+	state.AddDefault("default_target", &err)
+
+	defaults = state.DefaultNodes(&err)
 	require.Len(t, defaults, 1)
 	assert.Equal(t, "default_target", defaults[0].Path)
 }

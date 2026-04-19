@@ -56,15 +56,15 @@ func NewManifestParser(state *State, file_reader util.FileSystem, options Manife
 //	}
 //}
 
-func (p *ManifestParser) Load(filename string, parent *BaseParser, err *string) bool {
+func (p *ManifestParser) Load(filename string, err *string, parent *BaseParser) bool {
 	// 读取文件内容
-	content, err := p.fileReader.ReadFile(filename)
-	if err != nil {
-		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
+	content, read_err := p.fileReader.ReadFile(filename)
+	if read_err != nil {
+		*err = "loading '" + filename + "': " + read_err.Error()
 		if parent != nil {
-			parent.lexer.Error(errMsg, err)
+			parent.lexer.Error(*err, err)
 		}
-		return fmt.Errorf("%s", errMsg)
+		return false
 	}
 	return p.Parse(filename, string(content), err)
 }
@@ -116,23 +116,22 @@ func (p *ManifestParser) Parse(filename, input string, err *string) bool {
 				return false
 			}
 		case ERROR:
-			return fmt.Errorf("%s", p.lexer.DescribeLastError())
+			return p.lexer.Error(p.lexer.DescribeLastError(), err)
 		case TEOF:
-			return nil
+			return true
 		case NEWLINE:
 			// ignore
 		default:
-			return fmt.Errorf("unexpected token %s", tok.String())
+			return p.lexer.Error("unexpected "+tok.String(), err)
 		}
 	}
-	return errors.New(" not reached")
+	return false
 }
 
 func (p *ManifestParser) parsePool(err *string) bool {
 	var name string
-	succ := p.lexer.ReadIdent(&name)
-	if !succ {
-		return errors.New("expected pool name")
+	if !p.lexer.ReadIdent(&name) {
+		return p.lexer.Error("expected pool name", err)
 	}
 	if !p.expectToken(NEWLINE, err) {
 		return false
@@ -149,8 +148,8 @@ func (p *ManifestParser) parsePool(err *string) bool {
 		}
 		if key == "depth" {
 			depthStr := val.Evaluate(p.env)
-			d, err := strconv.Atoi(strings.TrimSpace(depthStr))
-			if err != nil || d < 0 {
+			d, ierr := strconv.Atoi(strings.TrimSpace(depthStr))
+			if ierr != nil || d < 0 {
 				return p.lexer.Error("invalid pool depth", err)
 			}
 			depth = d
@@ -212,7 +211,7 @@ func (p *ManifestParser) parseRule(err *string) bool {
 
 func (p *ManifestParser) ParseLet(key *string, val *EvalString, err *string) bool {
 	if !p.lexer.ReadIdent(key) {
-		return "", nil, errors.New("expected variable name")
+		return p.lexer.Error("expected variable name", err)
 	}
 	if !p.expectToken(EQUALS, err) {
 		return false
@@ -394,7 +393,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		}
 		norm, slashBits := util.CanonicalizePath(path)
 		if !p.state.AddOut(edge, norm, slashBits, err) {
-			return p.lexer.Error(err.Error(), err)
+			return p.lexer.Error(*err, err)
 		}
 	}
 
@@ -491,8 +490,9 @@ func (p *ManifestParser) ParseDefault(err *string) bool {
 		}
 		// 规范化路径（slash_bits 在默认目标中不使用，因为只做查找）
 		norm, _ := util.CanonicalizePath(path)
-		if err := p.state.AddDefault(norm); err != nil {
-			return p.lexer.Error(err.Error(), err)
+		var default_err string
+		if !p.state.AddDefault(norm, &default_err) {
+			return p.lexer.Error(default_err, err)
 		}
 
 		// 尝试读取下一个路径
@@ -531,15 +531,13 @@ func (p *ManifestParser) parseFileInclude(newScope bool, err *string) bool {
 	} else {
 		p.subparser.env = p.env
 	}
-	// 读取文件内容
-	content, read_err := p.fileReader.ReadFile(path)
-	if read_err != nil {
-		return fmt.Errorf("loading '%s': %v", path, read_err)
-	}
-	if !p.subparser.Parse(path, string(content), err) {
+	if !p.subparser.Load(path, err, p.lexer) {
 		return false
 	}
-	return p.expectToken(NEWLINE, err)
+	if !p.expectToken(NEWLINE, err) {
+		return false
+	}
+	return true
 }
 
 func (p *ManifestParser) expectToken(tok Token, err *string) bool {
