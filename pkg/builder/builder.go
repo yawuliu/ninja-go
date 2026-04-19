@@ -368,7 +368,7 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 			if depsMtime == -1 {
 				return false
 			}
-			if !b.depsLog.RecordDeps(out, depsMtime, depsNodes) {
+			if !b.depsLog.RecordDeps(out, depsMtime, len(depsNodes), depsNodes) {
 				*err = fmt.Sprintf("error writing to deps log")
 				return false
 			}

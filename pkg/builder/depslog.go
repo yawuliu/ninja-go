@@ -3,7 +3,7 @@ package builder
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"ninja-go/pkg/util"
 	"os"
 	"sync"
 )
@@ -48,157 +48,159 @@ func (dl *DepsLog) Close() error {
 	return nil
 }
 
-func (dl *DepsLog) OpenForWrite(path string) error {
+func (dl *DepsLog) OpenForWrite(path string, err *string) bool {
 	if dl.needsRecompaction {
-		if err := dl.Recompact(path); err != nil {
-			return err
+		if !dl.Recompact(path, err) {
+			return false
 		}
 	}
 	dl.filePath = path
-	return nil
+	return true
 }
 
-func (dl *DepsLog) openForWriteIfNeeded() error {
+func (dl *DepsLog) openForWriteIfNeeded() bool {
 	if dl.file != nil || dl.filePath == "" {
-		return nil
+		return true
 	}
 	f, err := os.OpenFile(dl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return false
 	}
 	dl.file = f
 	// 检查文件是否为空
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		return false
 	}
 	if info.Size() == 0 {
 		if _, err := f.Write([]byte(kSignature)); err != nil {
-			return err
+			return false
 		}
 		if err := binary.Write(f, binary.LittleEndian, int32(kCurrentVersion)); err != nil {
-			return err
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 // RecordDeps 记录输出节点的依赖
-func (dl *DepsLog) RecordDeps(out *Node, mtime int64, deps []*Node) error {
+func (dl *DepsLog) RecordDeps(out *Node, mtime int64, node_count int, nodes []*Node) bool {
 	// 检查是否有变化
 	madeChange := false
 	if out.ID < 0 {
-		if err := dl.recordID(out); err != nil {
-			return err
+		if !dl.recordID(out) {
+			return false
 		}
 		madeChange = true
 	}
-	for _, dep := range deps {
+	for _, dep := range nodes {
 		if dep.ID < 0 {
-			if err := dl.recordID(dep); err != nil {
-				return err
+			if !dl.recordID(dep) {
+				return false
 			}
 			madeChange = true
 		}
 	}
 	if !madeChange {
-		existing := dl.GetDeps(out)
-		if existing != nil && existing.Mtime == mtime && len(existing.Nodes) == len(deps) {
-			same := true
-			for i, n := range existing.Nodes {
-				if n != deps[i] {
-					same = false
+		deps := dl.GetDeps(out)
+		if deps == nil || deps.Mtime != mtime && len(deps.Nodes) != node_count {
+			madeChange = true
+		} else {
+			for i := 0; i < node_count; i++ {
+				if deps.Nodes[i] != nodes[i] {
+					madeChange = true
 					break
 				}
-			}
-			if same {
-				return nil
 			}
 		}
 	}
 
-	// 计算记录大小
-	size := 4 * (1 + 2 + len(deps)) // outID(4) + mtime低4 + mtime高4 + 每个依赖4
-	if size > kMaxRecordSize {
-		return fmt.Errorf("record too large")
+	// Don't write anything if there's no new info.
+	if !madeChange {
+		return true
 	}
-	if err := dl.openForWriteIfNeeded(); err != nil {
-		return err
+
+	// 计算记录大小
+	size := 4 * (1 + 2 + len(nodes)) // outID(4) + mtime低4 + mtime高4 + 每个依赖4
+	if size > kMaxRecordSize {
+		panic("record too large")
+		return false
+	}
+	if !dl.openForWriteIfNeeded() {
+		return false
 	}
 	// 写入记录，最高位设为1表示依赖记录
 	recordSize := uint32(size) | 0x80000000
 	if err := binary.Write(dl.file, binary.LittleEndian, recordSize); err != nil {
-		return err
+		return false
 	}
 	if err := binary.Write(dl.file, binary.LittleEndian, int32(out.ID)); err != nil {
-		return err
+		return false
 	}
 	mtimeLow := uint32(mtime & 0xFFFFFFFF)
 	mtimeHigh := uint32((mtime >> 32) & 0xFFFFFFFF)
 	if err := binary.Write(dl.file, binary.LittleEndian, mtimeLow); err != nil {
-		return err
+		return false
 	}
 	if err := binary.Write(dl.file, binary.LittleEndian, mtimeHigh); err != nil {
-		return err
+		return false
 	}
-	for _, dep := range deps {
+	for _, dep := range nodes {
 		if err := binary.Write(dl.file, binary.LittleEndian, int32(dep.ID)); err != nil {
-			return err
+			return false
 		}
 	}
 	if err := dl.file.Sync(); err != nil {
-		return err
+		return false
 	}
 	// 更新内存
 	idx := out.ID
 	dl.ensureCapacity(idx)
-	dl.deps[idx] = &Deps{Mtime: mtime, Nodes: deps}
+	dl.deps[idx] = &Deps{Mtime: mtime, Nodes: nodes}
 	dl.nodes[idx] = out
-	for _, dep := range deps {
+	for _, dep := range nodes {
 		dl.reverseDeps[dep.ID] = append(dl.reverseDeps[dep.ID], idx)
 	}
-	return nil
+	return true
 }
 
 // recordID 为节点分配 ID 并写入节点记录
-func (dl *DepsLog) recordID(node *Node) error {
-	if node.ID >= 0 {
-		return nil
-	}
+func (dl *DepsLog) recordID(node *Node) bool {
 	path := node.Path
 	pathSize := len(path)
 	padding := (4 - (pathSize+1)%4) % 4
 	size := 4 + pathSize + 1 + padding // 4字节校验和 + 路径 + null + 填充
 	if size > kMaxRecordSize {
-		return fmt.Errorf("node path too long")
+		panic("node path too long")
+		return false
 	}
-	if err := dl.openForWriteIfNeeded(); err != nil {
-		return err
+	if !dl.openForWriteIfNeeded() {
+		return false
 	}
 	// 写入节点记录（最高位为0）
 	recordSize := uint32(size)
 	if err := binary.Write(dl.file, binary.LittleEndian, recordSize); err != nil {
-		return err
+		return false
 	}
 	if _, err := dl.file.Write([]byte(path)); err != nil {
-		return err
+		return false
 	}
 	if _, err := dl.file.Write([]byte{0}); err != nil {
-		return err
+		return false
 	}
 	if padding > 0 {
 		if _, err := dl.file.Write(make([]byte, padding)); err != nil {
-			return err
+			return false
 		}
 	}
 	id := len(dl.nodes)
 	checksum := uint32(^id)
 	if err := binary.Write(dl.file, binary.LittleEndian, checksum); err != nil {
-		return err
+		return false
 	}
 	node.ID = id
 	dl.nodes = append(dl.nodes, node)
-	return nil
+	return true
 }
 
 // Load 从磁盘加载 .ninja_deps 文件
@@ -391,14 +393,14 @@ func (dl *DepsLog) GetFirstReverseDepsNode(dep *Node) *Node {
 }
 
 // Recompact 重新压实日志
-func (dl *DepsLog) Recompact(path string) error {
+func (dl *DepsLog) Recompact(path string, err *string) bool {
 	dl.Close()
-	tempPath := path + ".recompact"
-	os.Remove(tempPath)
+	temp_path := path + ".recompact"
+	os.Remove(temp_path)
 
-	newLog := NewDepsLog(tempPath)
-	if err := newLog.OpenForWrite(tempPath); err != nil {
-		return err
+	newLog := NewDepsLog(temp_path)
+	if !newLog.OpenForWrite(temp_path, err) {
+		return false
 	}
 	// 重置所有节点的 ID
 	for _, n := range dl.nodes {
@@ -415,24 +417,18 @@ func (dl *DepsLog) Recompact(path string) error {
 		if outNode == nil || !dl.isDepsEntryLive(outNode) {
 			continue
 		}
-		if err := newLog.RecordDeps(outNode, deps.Mtime, deps.Nodes); err != nil {
+		if !newLog.RecordDeps(outNode, deps.Mtime, len(deps.Nodes), deps.Nodes) {
 			newLog.Close()
-			return err
+			return false
 		}
 	}
-	if err := newLog.Close(); err != nil {
-		return err
-	}
-	// 替换文件
-	if err := os.Rename(tempPath, path); err != nil {
-		return err
-	}
+	newLog.Close()
+
 	// 替换内存数据
 	dl.deps = newLog.deps
 	dl.nodes = newLog.nodes
-	dl.reverseDeps = newLog.reverseDeps
-	dl.needsRecompaction = false
-	return nil
+
+	return util.ReplaceContent(path, temp_path, err)
 }
 
 // isDepsEntryLive 判断节点的依赖记录是否存活

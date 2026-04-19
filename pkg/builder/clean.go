@@ -36,17 +36,18 @@ func (c *Cleaner) IsVerbose() bool {
 }
 
 // RemoveFile 删除文件，返回错误（模拟 C++ 的返回值）。
-func (c *Cleaner) RemoveFile(path string) error {
-	return c.disk.Remove(path)
+func (c *Cleaner) RemoveFile(path string) int {
+	return c.disk.RemoveFile(path)
 }
 
 // FileExists 检查文件是否存在。
 func (c *Cleaner) FileExists(path string) bool {
-	mtime, err := c.disk.Stat(path)
-	if err != nil || mtime.ModTime().UnixMilli() <= 0 {
-		return false
+	var err string
+	mtime := c.disk.Stat(path, &err)
+	if mtime == -1 {
+		panic(err)
 	}
-	return true
+	return mtime > 0
 }
 
 // Report 报告已删除的文件。
@@ -73,9 +74,10 @@ func (c *Cleaner) Remove(path string) {
 			c.Report(path)
 		}
 	} else {
-		if err := c.RemoveFile(path); err == nil {
+		ret := c.RemoveFile(path)
+		if ret == 0 {
 			c.Report(path)
-		} else {
+		} else if ret == -1 {
 			c.status = 1
 		}
 	}
@@ -274,7 +276,8 @@ func (c *Cleaner) LoadDyndeps() {
 	for _, edge := range c.state.Edges {
 		if dyndepNode := edge.DyndepFile; dyndepNode != nil && dyndepNode.DyndepPending {
 			// 忽略错误，尽可能清理
-			_ = c.dyndepLoader.LoadDyndeps(dyndepNode)
+			var err string
+			_ = c.dyndepLoader.LoadDyndeps(dyndepNode, &err)
 		}
 	}
 }

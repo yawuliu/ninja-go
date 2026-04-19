@@ -3,6 +3,7 @@ package builder
 import (
 	"fmt"
 	"ninja-go/pkg/util"
+	"os"
 	"strings"
 )
 
@@ -222,36 +223,127 @@ func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface util.Fi
 	}
 }
 
-func (l *ImplicitDepLoader) LoadDeps(edge *Edge) error {
-	// 先尝试从 DepsLog 加载
-	if l.depsLog != nil {
-		deps := l.depsLog.GetDeps(edge.Outputs[0])
-		if deps != nil {
-			// 更新边的隐式依赖
-			for _, dep := range deps.Nodes {
-				edge.Inputs = append(edge.Inputs, dep)
-				dep.AddOutEdge(edge)
-			}
-			edge.DepsLoaded = true
-			return nil
-		}
+func (l *ImplicitDepLoader) LoadDeps(edge *Edge, err *string) bool {
+	depsType := edge.GetBinding("deps")
+	if depsType != "" {
+		return l.LoadDepsFromLog(edge, err)
 	}
-	// 否则尝试从 depfile 加载
+
 	depfile := edge.GetUnescapedDepfile()
 	if depfile != "" {
-		return l.LoadDepFile(edge, depfile)
+		return l.LoadDepFile(edge, depfile, err)
 	}
-	return nil
+
+	// No deps to load.
+	return true
 }
 
-func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string) error {
-	// 读取文件并解析（调用 depfile parser）
-	// 这里略，需要集成 DepfileParser
-	return nil
+func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
+	// NOTE: deps are only supported for single-target edges.
+	output := edge.Outputs[0]
+	var deps *DepsLogDeps
+	if l.depsLog != nil {
+		deps = l.depsLog.GetDeps(output)
+	}
+	if deps == nil {
+		l.explanations.Record(output, "deps for '%s' are missing",
+			output.Path)
+		return false
+	}
+
+	// Load the output's mtime if we haven't already.
+	if !output.StatIfNecessary(l.diskInterface, err) {
+		return false
+	}
+
+	// Deps are invalid if the output is newer than the deps.
+	if output.Mtime > deps.Mtime {
+		l.explanations.Record(output,
+			"stored deps info out of date for '%s' (%d vs %d)",
+			output.Path, deps.Mtime, output.Mtime)
+		return false
+	}
+
+	nodes := deps.Nodes
+	nodeCount := deps.NodeCount
+	// Insert nodes before the order-only dependencies
+	insertPos := len(edge.Inputs) - edge.OrderOnlyDeps
+	edge.Inputs = append(edge.Inputs[:insertPos], append(nodes, edge.Inputs[insertPos:]...)...)
+	edge.ImplicitDeps += nodeCount
+	for i := 0; i < nodeCount; i++ {
+		nodes[i].AddOutEdge(edge)
+	}
+	return true
 }
 
-func (s *DependencyScan) LoadDyndeps(node *Node) error {
-	return s.dyndepLoader.LoadDyndeps(node)
+func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bool {
+	// METRIC_RECORD("depfile load") - ignored
+
+	// Read depfile content. Treat a missing depfile as empty.
+	content, readErr := l.diskInterface.ReadFile(path, err)
+	switch {
+	case readErr == nil:
+		// Okay
+	case os.IsNotExist(readErr):
+		*err = "" // clear error
+	default:
+		*err = "loading '" + path + "': " + *err
+		return false
+	}
+
+	firstOutput := edge.Outputs[0]
+	if content == "" {
+		l.explanations.Record(firstOutput, "depfile '%s' is missing", path)
+		return false
+	}
+
+	depfileParser := NewDepfileParser(l.depfileParserOptions)
+	depfileErr := ""
+	if !depfileParser.Parse(content, &depfileErr) {
+		*err = path + ": " + depfileErr
+		return false
+	}
+
+	if len(depfileParser.Outs) == 0 {
+		*err = path + ": no outputs declared"
+		return false
+	}
+
+	// Canonicalize the primary output path.
+	primaryOut := depfileParser.Outs[0]
+	var canonicalized string
+	util.CanonicalizePath(&canonicalized, primaryOut)
+	// Update the string slice (depfileParser.outs is a slice of strings, we need to replace)
+	depfileParser.Outs[0] = canonicalized
+
+	// Check that this depfile matches the edge's output.
+	if firstOutput.Path != canonicalized {
+		l.explanations.Record(firstOutput,
+			"expected depfile '%s' to mention '%s', got '%s'",
+			path, firstOutput.Path, canonicalized)
+		return false
+	}
+
+	// Ensure that all mentioned outputs are outputs of the edge.
+	for _, o := range depfileParser.Outs {
+		found := false
+		for _, edgeOut := range edge.Outputs {
+			if edgeOut.Path == o {
+				found = true
+				break
+			}
+		}
+		if !found {
+			*err = path + ": depfile mentions '" + o + "' as an output, but no such output was declared"
+			return false
+		}
+	}
+
+	return l.ProcessDepfileDeps(edge, &depfileParser.Ins, err)
+}
+
+func (s *DependencyScan) LoadDyndeps(node *Node, err *string) bool {
+	return s.dyndepLoader.LoadDyndeps(node, err)
 }
 
 func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile, err *string) bool {
@@ -353,8 +445,8 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 	// output file's actual mtime and simply check the recorded mtime from
 	// the log against the most recent input's mtime (see below)
 	usedRestat := false
-	if edge.GetBindingBool("restat") && ds.buildLog() != nil {
-		entry = ds.buildLog().LookupByOutput(output.Path)
+	if edge.GetBindingBool("restat") && ds.buildLog != nil {
+		entry = ds.buildLog.LookupByOutput(output.Path)
 		if entry != nil {
 			usedRestat = true
 		}
@@ -370,20 +462,20 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 		return true
 	}
 
-	if ds.buildLog() != nil {
+	if ds.buildLog != nil {
 		generator := edge.GetBindingBool("generator")
 		if entry == nil {
-			entry = ds.buildLog().LookupByOutput(output.Path)
+			entry = ds.buildLog.LookupByOutput(output.Path)
 		}
 		if entry != nil {
 			if !generator && BuildLogHashCommand(command) != entry.CommandHash {
 				// May also be dirty due to the command changing since the last build.
 				// But if this is a generator rule, the command changing does not make us dirty.
 				ds.explanations_.Record(output, "command line changed for %s",
-					output.Path())
+					output.Path)
 				return true
 			}
-			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime() {
+			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime {
 				// May also be dirty due to the mtime in the log being older than the
 				// mtime of the most recent input. This can occur even when the mtime
 				// on disk is newer if a previous run wrote to the output file but
@@ -392,8 +484,8 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 				// mtime and ignore the actual output's mtime above.
 				ds.explanations_.Record(output,
 					"recorded mtime of %s older than most recent input %s (%d vs %d)",
-					output.Path(), mostRecentInput.Path(),
-					entry.Mtime, mostRecentInput.Mtime())
+					output.Path, mostRecentInput.Path,
+					entry.Mtime, mostRecentInput.Mtime)
 				return true
 			}
 		}

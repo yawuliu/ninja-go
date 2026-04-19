@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"ninja-go/pkg/util"
@@ -59,37 +60,40 @@ func (bl *BuildLog) Close() error {
 }
 
 // OpenForWrite 准备写入日志，如果需要则先执行 recompact
-func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser) error {
+func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser, err *string) bool {
 	if bl.needsRecompaction {
-		if err := bl.Recompact(path, user); err != nil {
-			return err
+		if !bl.Recompact(path, user, err) {
+			return false
 		}
 	}
+	if bl.file == nil {
+		panic(errors.New("build log not opened"))
+	}
 	bl.filePath = path
-	return nil
+	return true
 }
 
 // openForWriteIfNeeded 在首次写入时打开文件并写入签名
-func (bl *BuildLog) openForWriteIfNeeded() error {
+func (bl *BuildLog) openForWriteIfNeeded() bool {
 	if bl.file != nil || bl.filePath == "" {
-		return nil
+		return true
 	}
 	f, err := os.OpenFile(bl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return false
 	}
 	bl.file = f
 	// 检查文件是否为空
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		return false
 	}
 	if info.Size() == 0 {
 		if _, err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); err != nil {
-			return err
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 // HashCommand 计算命令字符串的快速哈希值（与 C++ 的 rapidhash 类似）
@@ -100,7 +104,7 @@ func HashCommand(command string) string {
 }
 
 // RecordCommand 记录一条边的构建信息
-func (bl *BuildLog) RecordCommand(edge *Edge, start, end int64, mtime int64) error {
+func (bl *BuildLog) RecordCommand(edge *Edge, start, end int64, mtime int64) bool {
 	command := edge.EvaluateCommand(true)
 	commandHash := HashCommand(command) // 使用 SHA256 或 rapidhash
 
@@ -116,27 +120,30 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int64, mtime int64) err
 		entry.EndTime = end
 		entry.Mtime = mtime
 
-		if err := bl.openForWriteIfNeeded(); err != nil {
-			return err
+		if !bl.openForWriteIfNeeded() {
+			return false
 		}
 		if bl.file != nil {
-			if err := bl.writeEntry(bl.file, entry); err != nil {
-				return err
+			if !bl.writeEntry(bl.file, entry) {
+				return false
 			}
 			if err := bl.file.Sync(); err != nil {
-				return err
+				return false
 			}
 		}
 	}
-	return nil
+	return true
 }
 
 // writeEntry 将单条记录写入文件
-func (bl *BuildLog) writeEntry(f *os.File, entry *LogEntry) error {
+func (bl *BuildLog) writeEntry(f *os.File, entry *LogEntry) bool {
 	_, err := fmt.Fprintf(f, "%d\t%d\t%d\t%s\t%s\n",
 		entry.StartTime, entry.EndTime, entry.Mtime,
 		entry.Output, entry.CommandHash)
-	return err
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 // LookupByOutput 根据输出路径查找记录
@@ -228,17 +235,19 @@ func (bl *BuildLog) Load(path string) error {
 }
 
 // Recompact 重新压实日志，删除死亡记录
-func (bl *BuildLog) Recompact(path string, user BuildLogUser) error {
+func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool {
 	bl.Close()
-	tempPath := path + ".recompact"
-	f, err := os.Create(tempPath)
-	if err != nil {
-		return err
+	temp_path := path + ".recompact"
+	f, create_err := os.Create(temp_path)
+	if create_err != nil {
+		*err = create_err.Error()
+		return false
 	}
 	defer f.Close()
 
-	if _, err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); err != nil {
-		return err
+	if _, dump_err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); dump_err != nil {
+		*err = dump_err.Error()
+		return false
 	}
 
 	bl.mu.RLock()
@@ -248,8 +257,9 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser) error {
 		if user.IsPathDead(output) {
 			continue
 		}
-		if err := bl.writeEntry(f, entry); err != nil {
-			return err
+		if !bl.writeEntry(f, entry) {
+			*err = fmt.Sprintf("")
+			return false
 		}
 	}
 	// 删除死亡记录
@@ -259,28 +269,23 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser) error {
 		}
 	}
 
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		return err
-	}
-	bl.needsRecompaction = false
-	return nil
+	return util.ReplaceContent(path, temp_path, err)
 }
 
 // Restat 更新日志中某些输出的 mtime（用于 restat 规则）
-func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string) error {
+func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string, err *string) bool {
 	bl.Close()
 	tempPath := path + ".restat"
-	f, err := os.Create(tempPath)
-	if err != nil {
-		return err
+	f, create_err := os.Create(tempPath)
+	if create_err != nil {
+		*err = create_err.Error()
+		return false
 	}
 	defer f.Close()
 
-	if _, err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); err != nil {
-		return err
+	if _, dump_err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); dump_err != nil {
+		*err = dump_err.Error()
+		return false
 	}
 
 	bl.mu.Lock()
@@ -294,20 +299,19 @@ func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string) 
 	for output, entry := range bl.entries {
 		// 如果输出在 outputs 列表中，则更新其 mtime
 		if skipMap[output] {
-			info, err := disk.Stat(output)
-			if err != nil {
-				return err
+			mtime := disk.Stat(output, err)
+			if mtime == -1 {
+				return false
 			}
-			entry.Mtime = info.ModTime().UnixNano()
+			entry.Mtime = mtime
 		}
-		if err := bl.writeEntry(f, entry); err != nil {
-			return err
+		if !bl.writeEntry(f, entry) {
+			*err = fmt.Sprintf("failed to write entry for output %s", output)
+			return false
 		}
 	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, path)
+
+	return util.ReplaceContent(tempPath, path, err)
 }
 
 func (bl *BuildLog) Entries() map[string]*LogEntry { return bl.entries }

@@ -28,9 +28,9 @@ func NewDyndepLoader(state *State, diskInterface util.FileSystem) *DyndepLoader 
 }
 
 // LoadDyndeps 加载 dyndep 文件，更新图
-func (l *DyndepLoader) LoadDyndeps(node *Node) error {
+func (l *DyndepLoader) LoadDyndeps(node *Node, err *string) bool {
 	var ddf DyndepFile
-	return l.loadDyndeps(node, &ddf)
+	return l.loadDyndeps(node, &ddf, err)
 }
 
 // loadDyndeps 内部实现，可传入已有的 DyndepFile 映射

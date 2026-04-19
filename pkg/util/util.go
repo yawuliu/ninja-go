@@ -329,11 +329,12 @@ func Truncate(path string, size int64) error {
 }
 
 // ReplaceContent 原子替换文件内容：先写临时文件，再重命名。
-func ReplaceContent(dst, src string) error {
-	if err := os.Rename(src, dst); err != nil {
-		return err
+func ReplaceContent(dst, src string, err *string) bool {
+	if rename_err := os.Rename(src, dst); rename_err != nil {
+		*err = rename_err.Error()
+		return false
 	}
-	return nil
+	return true
 }
 
 //// EditDistance 计算两个字符串的编辑距离（Levenshtein）。
