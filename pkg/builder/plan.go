@@ -92,7 +92,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 
 	for _, in := range edge.Inputs {
 		if succ, err := p.addSubTarget(in, node, dyndepWalk); !succ && err != nil {
-			return false, nil
+			return false, err
 		}
 	}
 	return true, nil

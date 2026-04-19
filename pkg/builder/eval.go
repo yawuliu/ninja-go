@@ -71,9 +71,9 @@ func (es *EvalString) Unparse() string {
 	var sb strings.Builder
 	for _, frag := range es.fragments {
 		if frag.IsSpecial {
-			sb.WriteString("${")
+			// 使用 $var 格式而不是 ${var}
+			sb.WriteString("$")
 			sb.WriteString(frag.Text)
-			sb.WriteString("}")
 		} else {
 			// Escape $ as $$ in text fragments
 			sb.WriteString(strings.ReplaceAll(frag.Text, "$", "$$"))

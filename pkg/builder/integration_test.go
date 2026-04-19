@@ -490,7 +490,7 @@ rule cc
 	rule := state.Bindings.LookupRule("cc")
 	desc := rule.GetBinding("description")
 	require.NotNil(t, desc)
-	assert.Equal(t, "CC ${out}", desc.Unparse())
+	assert.Equal(t, "CC $out", desc.Unparse())
 }
 
 // TestIntegration_GeneratorRule 测试生成器规则

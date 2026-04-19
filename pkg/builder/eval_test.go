@@ -128,7 +128,7 @@ func TestEvalString_Unparse(t *testing.T) {
 				es.AddSpecial("in")
 				return es
 			},
-			expected: "gcc ${in}",
+			expected: "gcc $in",
 		},
 		{
 			name: "multiple_variables",
@@ -140,7 +140,7 @@ func TestEvalString_Unparse(t *testing.T) {
 				es.AddSpecial("out")
 				return es
 			},
-			expected: "gcc ${in} -o ${out}",
+			expected: "gcc $in -o $out",
 		},
 	}
 

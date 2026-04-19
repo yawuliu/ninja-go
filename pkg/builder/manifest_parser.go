@@ -153,7 +153,7 @@ func (p *ManifestParser) parsePool() error {
 			}
 			depth = d
 		} else {
-			return p.lexer.Error("unexpected variable '" + key + "'")
+			return p.lexer.Error("expected 'depth', got '" + key + "'")
 		}
 	}
 	if depth < 0 {
@@ -200,7 +200,7 @@ func (p *ManifestParser) parseRule() error {
 	}
 
 	if rule.GetBinding("command") == nil {
-		return p.lexer.Error("expected 'command =' line")
+		return p.lexer.Error("expected 'command'")
 	}
 
 	p.env.AddRule(rule)
@@ -241,6 +241,11 @@ func (p *ManifestParser) ParseEdge() error {
 		if out.Empty() {
 			break
 		}
+		// 检查路径求值后是否为单独的 ":"
+		path := out.Evaluate(p.env)
+		if path == ":" {
+			return p.lexer.Error("empty path")
+		}
 		p.outs = append(p.outs, &out)
 	}
 
@@ -255,6 +260,11 @@ func (p *ManifestParser) ParseEdge() error {
 			}
 			if out.Empty() {
 				break
+			}
+			// 检查路径求值后是否为单独的 ":"
+			path := out.Evaluate(p.env)
+			if path == ":" {
+				return p.lexer.Error("empty path")
 			}
 			p.outs = append(p.outs, &out)
 			implicitOuts++
@@ -384,7 +394,7 @@ func (p *ManifestParser) ParseEdge() error {
 	// 13. 添加输出节点
 	for _, outEval := range p.outs {
 		path := outEval.Evaluate(env)
-		if path == "" {
+		if path == "" || path == ":" {
 			return p.lexer.Error("empty path")
 		}
 		norm, slashBits := util.CanonicalizePath(path)

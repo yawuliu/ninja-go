@@ -84,12 +84,15 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 	edge := state.AddEdge(rule)
 	inNode := state.AddNode("missing.c", 0)
 	outNode := state.AddNode("out.o", 0)
-	edge.Inputs = []*Node{inNode}
-	edge.Outputs = []*Node{outNode}
+	// 使用 AddIn 和 AddOut 来正确设置连接关系
+	state.AddIn(edge, "missing.c", 0)
+	state.AddOut(edge, "out.o", 0)
 
 	// 标记输入为 dirty 且没有生成边（源文件）
 	inNode.Dirty = true
 	inNode.GeneratedByDepLoader = false
+	// 标记输出为 dirty 以触发构建检查
+	outNode.Dirty = true
 
 	// 添加目标应该失败
 	ok, err := plan.AddTarget(outNode)

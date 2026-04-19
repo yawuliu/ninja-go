@@ -84,7 +84,7 @@ type Lexer struct {
 
 func NewLexer(filename, input string) *Lexer {
 	l := &Lexer{}
-	l.Start("input", input)
+	l.Start(filename, input)
 	return l
 }
 
