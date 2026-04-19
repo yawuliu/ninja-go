@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"errors"
 	"fmt"
 	"ninja-go/pkg/util"
 	"strings"
@@ -68,7 +69,7 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 	edge.Mark = VisitInStack
 	*stack = append(*stack, node)
 
-	dirty := false
+	//dirty := false
 	edge.OutputsReady = true
 	edge.DepsMissing = false
 	// 加载 dyndep 等（简化）
@@ -85,14 +86,14 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 		//   input to this edge, the edge will not be considered ready below.
 		//   Later during the build the dyndep file will become ready and be
 		//   loaded to update this edge before it can possibly be scheduled.
-		if edge.DyndepFile!=nil && edge.DyndepFile.DyndepPending {
-			if (!s.RecomputeNodeDirty(edge.DyndepFile, stack, validationNodes)) {
-				return false
+		if edge.DyndepFile != nil && edge.DyndepFile.DyndepPending {
+			if flag, err := s.recomputeNodeDirty(edge.DyndepFile, stack, validationNodes); !flag {
+				return false, err
 			}
-			if !edge->dyndep_->in_edge() || edge->dyndep_->in_edge()->outputs_ready() {
+			if edge.DyndepFile.in_edge() == nil || edge.DyndepFile.in_edge().OutputsReady {
 				// The dyndep file is ready, so load it now.
-				if !s.LoadDyndeps(edge->dyndep_) {
-					return false
+				if s.LoadDyndeps(edge.DyndepFile) == nil {
+					return false, errors.New("dyndep file is missing")
 				}
 			}
 		}
@@ -100,8 +101,8 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 
 	// 递归处理输入
 	for _, in := range edge.Inputs {
-		if err := s.recomputeNodeDirty(in, stack, validationNodes); err != nil {
-			return err
+		if flag, err := s.recomputeNodeDirty(in, stack, validationNodes); err != nil {
+			return flag, err
 		}
 	}
 
@@ -110,7 +111,7 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 
 	edge.Mark = VisitDone
 	*stack = (*stack)[:len(*stack)-1]
-	return nil
+	return true, nil
 }
 
 type ImplicitDepLoader struct {

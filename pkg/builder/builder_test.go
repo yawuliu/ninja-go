@@ -221,8 +221,8 @@ func TestOneStep(t *testing.T) {
 	edge.Inputs = []*Node{inNode}
 	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
-	outNode.Edge = edge
-	outNode.Generated = true
+	outNode.InEdge = edge
+	outNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edge)
 	state.Defaults = []*Node{outNode}
 
@@ -253,10 +253,10 @@ func TestTwoStep(t *testing.T) {
 	edge2.Outputs = []*Node{outNode}
 	state.Edges = append(state.Edges, edge1, edge2)
 	// 关键：设置输出节点的生成边
-	cat1Node.Edge = edge1
-	cat1Node.Generated = true
-	outNode.Edge = edge2
-	outNode.Generated = true
+	cat1Node.InEdge = edge1
+	cat1Node.GeneratedByDepLoader = true
+	outNode.InEdge = edge2
+	outNode.GeneratedByDepLoader = true
 	state.Defaults = []*Node{outNode}
 
 	builder := NewBuilder(state, 1, newMockCommandRunner(fs), fs)
@@ -280,8 +280,8 @@ func TestMissingInput(t *testing.T) {
 	edge.Inputs = []*Node{inNode}
 	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
-	outNode.Edge = edge
-	outNode.Generated = true
+	outNode.InEdge = edge
+	outNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edge)
 	state.Defaults = []*Node{outNode}
 
@@ -308,8 +308,8 @@ func TestDepFileOK(t *testing.T) {
 	edge.Inputs = []*Node{inNode}
 	edge.Outputs = []*Node{outNode}
 	// 关键：设置输出节点的生成边
-	outNode.Edge = edge
-	outNode.Generated = true
+	outNode.InEdge = edge
+	outNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edge)
 	state.Defaults = []*Node{outNode}
 
@@ -348,10 +348,10 @@ func TestPhony(t *testing.T) {
 	edge2.Inputs = []*Node{outNode}
 	edge2.Outputs = []*Node{allNode}
 	//
-	outNode.Edge = edge1
-	outNode.Generated = true
-	allNode.Edge = edge2
-	allNode.Generated = true
+	outNode.InEdge = edge1
+	outNode.GeneratedByDepLoader = true
+	allNode.InEdge = edge2
+	allNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edge1, edge2)
 	state.Defaults = []*Node{allNode}
 
@@ -376,8 +376,8 @@ func TestFail(t *testing.T) {
 	edge.Inputs = []*Node{inNode}
 	edge.Outputs = []*Node{outNode}
 	//
-	outNode.Edge = edge
-	outNode.Generated = true
+	outNode.InEdge = edge
+	outNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edge)
 	state.Defaults = []*Node{outNode}
 
@@ -433,8 +433,8 @@ build out | out.imp: dyndep | in.imp
 	ddInNode := state.AddNode("dd-in")
 	edgeDd.Inputs = []*Node{ddInNode}
 	edgeDd.Outputs = []*Node{ddNode}
-	ddNode.Edge = edgeDd
-	ddNode.Generated = true
+	ddNode.InEdge = edgeDd
+	ddNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edgeDd)
 
 	// 边：out 最初没有规则，将由 dyndep 动态添加隐式输入/输出
@@ -443,8 +443,8 @@ build out | out.imp: dyndep | in.imp
 	outNode := state.AddNode("out")
 	edgeOut.Outputs = []*Node{outNode}
 	edgeOut.DyndepFile = ddNode
-	outNode.Edge = edgeOut
-	outNode.Generated = true
+	outNode.InEdge = edgeOut
+	outNode.GeneratedByDepLoader = true
 	state.Edges = append(state.Edges, edgeOut)
 
 	state.Defaults = []*Node{outNode}

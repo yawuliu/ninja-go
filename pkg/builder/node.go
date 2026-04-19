@@ -117,5 +117,5 @@ func (n *Node) UpdatePhonyMtime(mtime int64) {
 	}
 }
 
-func (e *Node) in_edge() *Edge         { return e.InEdge }
-func (e *Node) set_in_edge(edge *Edge) { e.InEdge = edge }
+func (n *Node) in_edge() *Edge         { return n.InEdge }
+func (n *Node) set_in_edge(edge *Edge) { n.InEdge = edge }

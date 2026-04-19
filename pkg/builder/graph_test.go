@@ -61,7 +61,7 @@ func TestMissingImplicit(t *testing.T) {
 	outNode := state.LookupNode("out")
 	require.NotNil(t, outNode)
 	// 验证隐式依赖 implicit 存在且为隐式依赖
-	edge := outNode.Edge
+	edge := outNode.InEdge
 	require.NotNil(t, edge)
 	assert.Len(t, edge.ImplicitDeps, 1)
 	assert.Equal(t, "implicit", edge.ImplicitDeps[0].Path)
@@ -93,12 +93,12 @@ func TestImplicitOutputParse(t *testing.T) {
 	impNode := state.LookupNode("out.imp")
 	require.NotNil(t, outNode)
 	require.NotNil(t, impNode)
-	edge := outNode.Edge
+	edge := outNode.InEdge
 	assert.Len(t, edge.Outputs, 2)
 	assert.Equal(t, "out", edge.Outputs[0].Path)
 	assert.Equal(t, "out.imp", edge.Outputs[1].Path)
 	assert.Equal(t, 1, edge.ImplicitOuts)
-	assert.Equal(t, edge, impNode.Edge)
+	assert.Equal(t, edge, impNode.InEdge)
 }
 
 // 对应 GraphTest.ImplicitOutputMissing
@@ -120,11 +120,11 @@ func TestImplicitOutputOnlyParse(t *testing.T) {
 `)
 	impNode := state.LookupNode("out.imp")
 	require.NotNil(t, impNode)
-	edge := impNode.Edge
+	edge := impNode.InEdge
 	assert.Len(t, edge.Outputs, 1)
 	assert.Equal(t, "out.imp", edge.Outputs[0].Path)
 	assert.Equal(t, 1, edge.ImplicitOuts)
-	assert.Equal(t, edge, impNode.Edge)
+	assert.Equal(t, edge, impNode.InEdge)
 }
 
 // 对应 GraphTest.PathWithCurrentDirectory
@@ -167,7 +167,7 @@ func TestVarInOutPathEscaping(t *testing.T) {
         rule cat
           command = cat $in > $out
 		build a$ b: cat no'space with$ space$$ no"space2`)
-	edge := state.LookupNode("a$ b").Edge
+	edge := state.LookupNode("a$ b").InEdge
 	cmd := edge.EvaluateCommand()
 	if util.IsWindows() {
 		assert.Equal(t, `cat no'space "with space$" "no\"space2" > "a b"`, cmd)
@@ -194,7 +194,7 @@ func TestRuleVariablesInScope(t *testing.T) {
           command = depfile is $depfile
         build out: r in
     `)
-	edge := state.LookupNode("out").Edge
+	edge := state.LookupNode("out").InEdge
 	assert.Equal(t, "depfile is x", edge.EvaluateCommand())
 }
 
@@ -207,7 +207,7 @@ func TestDepfileOverride(t *testing.T) {
         build out: r in
           depfile = y
     `)
-	edge := state.LookupNode("out").Edge
+	edge := state.LookupNode("out").InEdge
 	assert.Equal(t, "y", edge.GetBinding("depfile"))
 }
 
@@ -220,7 +220,7 @@ func TestDepfileOverrideParent(t *testing.T) {
         build out: r in
           depfile = y
     `)
-	edge := state.LookupNode("out").Edge
+	edge := state.LookupNode("out").InEdge
 	assert.Equal(t, "depfile is y", edge.GetBinding("command"))
 }
 

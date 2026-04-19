@@ -408,7 +408,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node) error {
 	for n := range dependents {
 		// 重新计算脏状态，同时检测新循环
 		var validationNodes []*Node
-		if err := scan.RecomputeDirty(n, &validationNodes); err != nil {
+		if _, err := scan.RecomputeDirty(n, &validationNodes); err != nil {
 			return err
 		}
 
