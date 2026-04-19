@@ -72,9 +72,8 @@ func CanonicalizePath(path string) (string, uint64) {
 			src += 3
 		}
 	}
-	componentCount := 0
-	// 保存当前输出位置（用于回退）
-	dst0 := dst
+	// 记录每个组件的起始位置（用于处理 ..）
+	compStarts := []int{dst}
 	for src < n {
 		// 查找下一个分隔符
 		nextSep := src
@@ -98,34 +97,30 @@ func CanonicalizePath(path string) (string, uint64) {
 			continue
 		}
 		if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
-			if componentCount > 0 {
-				// 回退一个组件：向前移动 dst 到上一个分隔符后
-				componentCount--
-				// 回退 dst，直到遇到前一个分隔符或回到 dst0
-				for dst > dst0 && !IsPathSeparator(buf[dst-1]) {
-					dst--
-				}
-				if dst > dst0 {
-					dst-- // 去掉分隔符
-				}
+			if len(compStarts) > 1 {
+				// 回退一个组件
+				compStarts = compStarts[:len(compStarts)-1]
+				dst = compStarts[len(compStarts)-1]
 			} else {
 				// 保留开头的 '..'
 				buf[dst] = '.'
 				dst++
 				buf[dst] = '.'
 				dst++
-				componentCount++
+				buf[dst] = '/'
+				dst++
+				compStarts = append(compStarts, dst)
 			}
 			src = nextSep + 1
 			continue
 		}
 		// 普通组件：复制组件和尾部分隔符
-		componentCount++
 		if dst != src {
 			copy(buf[dst:], buf[src:nextSep+1])
 		}
 		dst += compLen + 1
 		src = nextSep + 1
+		compStarts = append(compStarts, dst)
 	}
 	// 处理最后一个组件（没有尾部分隔符）
 	if src < n {
@@ -133,14 +128,10 @@ func CanonicalizePath(path string) (string, uint64) {
 		if compLen == 1 && buf[src] == '.' {
 			// 忽略末尾 '.'
 		} else if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
-			if componentCount > 0 {
+			if len(compStarts) > 1 {
 				// 回退一个组件
-				for dst > dst0 && !IsPathSeparator(buf[dst-1]) {
-					dst--
-				}
-				if dst > dst0 {
-					dst--
-				}
+				compStarts = compStarts[:len(compStarts)-1]
+				dst = compStarts[len(compStarts)-1]
 			} else {
 				buf[dst] = '.'
 				dst++

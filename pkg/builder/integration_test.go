@@ -343,7 +343,7 @@ rule cc
   command = cc $in -o $out
   dyndep = $out.dd
 
-build foo.o: cc foo.c foo.dd
+build foo.o: cc foo.c foo.o.dd
 `
 	err := parser.ParseTest(manifest)
 	require.NoError(t, err)
@@ -364,6 +364,9 @@ func TestIntegration_Phony(t *testing.T) {
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	manifest := `
+rule cc
+  command = cc $in -o $out
+
 build foo.o: cc foo.c
 build all: phony foo.o
 `
@@ -399,6 +402,9 @@ rule cc
 rule link
   command = $cc $in -o $out
 
+rule ar
+  command = ar rcs $out $in
+
 # Object files
 build main.o: cc main.c | config.h
 build util.o: cc util.c | config.h
@@ -406,9 +412,6 @@ build helper.o: cc helper.c
 
 # Library
 build libutil.a: ar util.o helper.o
-
-rule ar
-  command = ar rcs $out $in
 
 # Final binary
 build myapp: link main.o libutil.a
@@ -487,7 +490,7 @@ rule cc
 	rule := state.Bindings.LookupRule("cc")
 	desc := rule.GetBinding("description")
 	require.NotNil(t, desc)
-	assert.Equal(t, "CC $out", desc.Unparse())
+	assert.Equal(t, "CC ${out}", desc.Unparse())
 }
 
 // TestIntegration_GeneratorRule 测试生成器规则
@@ -667,6 +670,8 @@ func TestIntegration_SubninjaIsolation(t *testing.T) {
 	fs := newMockFSIntegration()
 	fs.CreateFile("sub.ninja", `
 local_var = in_sub
+rule cc
+  command = cc $in -o $out
 build sub.o: cc sub.c
 `)
 

@@ -66,7 +66,7 @@ func (es *EvalString) Evaluate(env Env) string {
 // Unparse 返回未展开的原始字符串表示（用于调试）
 func (es *EvalString) Unparse() string {
 	if len(es.fragments) == 0 {
-		return es.singleToken
+		return strings.ReplaceAll(es.singleToken, "$", "$$")
 	}
 	var sb strings.Builder
 	for _, frag := range es.fragments {
@@ -75,7 +75,8 @@ func (es *EvalString) Unparse() string {
 			sb.WriteString(frag.Text)
 			sb.WriteString("}")
 		} else {
-			sb.WriteString(frag.Text)
+			// Escape $ as $$ in text fragments
+			sb.WriteString(strings.ReplaceAll(frag.Text, "$", "$$"))
 		}
 	}
 	return sb.String()

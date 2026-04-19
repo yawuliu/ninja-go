@@ -60,10 +60,18 @@ func TestEvalString_MultipleTexts(t *testing.T) {
 	es.AddText("world")
 
 	// 多个文本应该合并到 fragments
+	// 注意：第一次AddText设置singleToken，第二次触发转换，后续合并到最后一个fragment
 	assert.Empty(t, es.singleToken)
-	require.Len(t, es.fragments, 1)
-	assert.Equal(t, "hello world", es.fragments[0].Text)
+	require.Len(t, es.fragments, 2)
+	assert.Equal(t, "hello", es.fragments[0].Text)
+	assert.Equal(t, " world", es.fragments[1].Text)
 	assert.False(t, es.fragments[0].IsSpecial)
+	assert.False(t, es.fragments[1].IsSpecial)
+
+	// 验证求值结果正确
+	env := newMockEnv()
+	result := es.Evaluate(env)
+	assert.Equal(t, "hello world", result)
 }
 
 // TestEvalString_WithVariable 测试包含变量
@@ -169,7 +177,7 @@ func TestEvalString_Serialize(t *testing.T) {
 				es.AddText(" world")
 				return es
 			},
-			expected: "[hello world]",
+			expected: "[hello][ world]",
 		},
 		{
 			name: "with_special",

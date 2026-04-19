@@ -181,6 +181,9 @@ func (l *Lexer) EatWhitespace() {
 	var marker int
 	for {
 		l.ofs_ = p
+		if p >= len(l.yyinput) {
+			return
+		}
 
 		{
 			var yych byte
@@ -294,6 +297,9 @@ func (l *Lexer) ReadToken() Token {
 		{
 			var yych byte
 			yyaccept := 0
+			if p >= len(l.yyinput) {
+				goto yy1
+			}
 			yych = l.yyinput[p]
 			if yyybm[0+yych]&32 != 0 {
 				goto yy6
@@ -839,6 +845,10 @@ func (l *Lexer) ReadIdent(out *string) bool {
 	var start int
 	for {
 		start = p
+		if p >= len(l.yyinput) {
+			l.lastPos = start
+			return false
+		}
 		{
 			var yych byte
 			yych = l.yyinput[p]
@@ -852,6 +862,10 @@ func (l *Lexer) ReadIdent(out *string) bool {
 			}
 		yy65:
 			p++
+			if p >= len(l.yyinput) {
+				*out = l.yyinput[start:p]
+				break
+			}
 			yych = l.yyinput[p]
 			if yybm[0+yych]&128 != 0 {
 				goto yy65
@@ -913,6 +927,10 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 	var start int
 	for {
 		start = p
+		if p >= len(l.yyinput) {
+			l.lastPos = start
+			return errors.New("unexpected EOF")
+		}
 
 		{
 			var yych byte
@@ -922,7 +940,8 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			}
 			if yych <= '\r' {
 				if yych <= 0x00 {
-					goto yy67
+					l.lastPos = start
+					return errors.New("unexpected EOF")
 				}
 				if yych <= '\n' {
 					goto yy69
@@ -936,12 +955,6 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 					goto yy71
 				}
 				goto yy69
-			}
-		yy67:
-			p++
-			{
-				l.lastPos = start
-				return errors.New("unexpected EOF")
 			}
 		yy68:
 			p++
