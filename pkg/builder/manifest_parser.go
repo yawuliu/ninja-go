@@ -47,13 +47,13 @@ func NewManifestParser(state *State, file_reader util.FileSystem, options Manife
 	return m
 }
 
-func (p *ManifestParser) Load(filename string, err *string, parent *BaseParser) bool {
+func (p *ManifestParser) Load(filename string, err *string, parent *Lexer) bool {
 	// 读取文件内容
 	content, read_err := p.fileReader.ReadFile(filename)
 	if read_err != nil {
 		*err = "loading '" + filename + "': " + read_err.Error()
 		if parent != nil {
-			parent.lexer.Error(*err, err)
+			parent.Error(*err, err)
 		}
 		return false
 	}
@@ -180,7 +180,7 @@ func (p *ManifestParser) parseRule(err *string) bool {
 		}
 
 		if IsReservedBinding(key) {
-			rule.AddBinding(key, value)
+			rule.AddBinding(key, &value)
 		} else {
 			return p.lexer.Error("unexpected variable '"+key+"'", err)
 		}

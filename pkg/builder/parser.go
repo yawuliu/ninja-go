@@ -8,9 +8,9 @@ import (
 // Parser 是所有解析器的接口
 type Parser interface {
 	// Load 加载并解析文件，如果 parent 不为 nil，则使用其 lexer 的上下文
-	Load(filename string, parent *BaseParser) error
+	Load(filename string, err *string, parent *Lexer) bool
 	// Parse 解析文件内容（由具体解析器实现）
-	Parse(filename, input string) error
+	Parse(filename, input string, err *string) bool
 }
 
 // BaseParser 提供公共字段和方法
@@ -30,12 +30,12 @@ func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
 }
 
 // Load 加载文件，如果 parent 非空则使用其 Lexer 进行错误报告
-func (b *BaseParser) Load(filename string, err *string, parent *BaseParser) bool {
+func (b *BaseParser) Load(filename string, err *string, parent *Lexer) bool {
 	content, read_err := b.FileReader.ReadFile(filename)
 	if read_err != nil {
 		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
 		if parent != nil {
-			parent.lexer.Error(*err, err)
+			parent.Error(*err, err)
 		}
 		return false
 	}

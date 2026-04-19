@@ -279,7 +279,7 @@ func (p *Plan) CommandEdgeCount() int {
 }
 
 // CleanNode 将节点标记为 clean，并递归清理所有依赖该节点的边（如果这些边不再 dirty）。
-func (p *Plan) CleanNode(scan *DependencyScan, node *Node) error {
+func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 	node.Dirty = false
 
 	for _, outEdge := range node.OutEdges {
@@ -315,16 +315,16 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node) error {
 			}
 
 			// 判断该边的输出是否 dirty
-			outputsDirty, err := scan.RecomputeOutputsDirty(outEdge, mostRecentInput)
-			if err != nil {
-				return err
+			var outputsDirty bool = false
+			if !scan.RecomputeOutputsDirty(outEdge, mostRecentInput, &outputsDirty, err) {
+				return false
 			}
 
 			if !outputsDirty {
 				// 递归清理该边的所有输出节点
 				for _, out := range outEdge.Outputs {
-					if err := p.CleanNode(scan, out); err != nil {
-						return err
+					if !p.CleanNode(scan, out, err) {
+						return false
 					}
 				}
 
@@ -340,7 +340,7 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node) error {
 			}
 		}
 	}
-	return nil
+	return true
 }
 
 // DyndepsLoaded 在加载 dyndep 文件后更新计划，将新发现的边加入构建图。

@@ -1,7 +1,6 @@
 package builder
 
 import (
-	"fmt"
 	"ninja-go/pkg/util"
 	"os/exec"
 	"sync"
@@ -155,26 +154,29 @@ func (r *RealCommandRunner) StartCommand(edge *Edge) bool {
 }
 
 func (r *RealCommandRunner) WaitForCommand(result *CommandResult) bool {
+	var subproc *Subprocess
 	for {
-		subproc := r.subprocs.NextFinished()
+		subproc = r.subprocs.NextFinished()
 		if subproc != nil {
-			r.mu.Lock()
-			edge := r.subprocToEdge[subproc]
-			delete(r.subprocToEdge, subproc)
-			r.mu.Unlock()
-			status := subproc.Finish()
-			output := subproc.GetOutput()
-			return &CommandResult{
-				Edge:   edge,
-				Status: status,
-				Output: output,
-			}, nil
+			break
 		}
 		interrupted := r.subprocs.DoWork()
 		if interrupted {
-			return &CommandResult{Status: ExitInterrupted}, nil
+			result.Status = ExitInterrupted
+			return false
 		}
 	}
+
+	result.Status = subproc.Finish()
+	result.Output = subproc.GetOutput()
+
+	e := r.subprocToEdge[subproc]
+	result.Edge = e
+	delete(r.subprocToEdge, subproc)
+
+	// Subprocess cleanup: let GC handle it, or call a Close method if needed.
+	// In Go, we typically don't explicitly delete objects.
+	return true
 }
 
 func (r *RealCommandRunner) GetActiveEdges() []*Edge {

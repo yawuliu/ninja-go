@@ -299,94 +299,110 @@ func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {
 	return fmt.Errorf("%s", msg.String())
 }
 
-func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node) (bool, error) {
-	command := edge.EvaluateCommand(true)
+func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node, outputs_dirty *bool, err *string) bool {
+	command := edge.EvaluateCommand( /*incl_rsp_file=*/ true)
 	for _, out := range edge.Outputs {
-		dirty, err := s.RecomputeOutputDirty(edge, mostRecentInput, command, out)
-		if err != nil {
-			return false, err
-		}
-		if dirty {
-			return true, nil
+		if s.RecomputeOutputDirty(edge, mostRecentInput, command, out) {
+			*outputs_dirty = true
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // RecomputeOutputDirty 判断单个输出节点是否需要重新构建（是否脏）。
 // 参数 edge 是产生该输出的边，mostRecentInput 是最近修改的输入节点，
 // command 是边的完整命令（用于比较命令哈希），output 是输出节点。
 // 返回 true 表示需要重新构建，false 表示 clean。
-func (s *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node, command string, output *Node) (bool, error) {
-	// 确保节点状态已统计
-	if err := output.StatIfNecessary(s.disk_interface_); err != nil {
-		return false, err
-	}
-
-	// 处理 phony 边
+func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node, command string, output *Node) bool {
 	if edge.IsPhony() {
-		// phony 边不写入任何输出。只有当没有输入、没有验证边且输出文件不存在时，才标记为脏。
-		if len(edge.Inputs) == 0 && len(edge.Validations) == 0 && !output.IsExists() {
-			s.explanations_.Record(output, "output %s of phony edge with no inputs doesn't exist", output.Path)
-			return true, nil
+		// Phony edges don't write any output. Outputs are only dirty if
+		// there are no inputs or validations and we're missing the output.
+		// If a phony target has inputs or validations, or the output exists,
+		// they are used for dirty calculation instead of this fallback.
+		if len(edge.Inputs) == 0 && len(edge.Validations) == 0 && !output.Exists() {
+			ds.explanations_.Record(
+				output, "output %s of phony edge with no inputs doesn't exist",
+				output.Path)
+			return true
 		}
-		// 用最新输入的时间戳更新 phony 节点的 mtime（供下游使用）
+
+		// Update the mtime with the newest input. Dependents can thus call mtime()
+		// on the fake node and get the latest mtime of the dependencies
 		if mostRecentInput != nil {
 			output.UpdatePhonyMtime(mostRecentInput.Mtime)
 		}
-		return false, nil
+
+		// Phony edges are clean, nothing to do
+		return false
 	}
 
-	// 如果输出文件不存在，标记为脏
-	if !output.IsExists() {
-		s.explanations_.Record(output, "output %s doesn't exist", output.Path)
-		return true, nil
+	// Dirty if we're missing the output.
+	if !output.Exists() {
+		ds.explanations_.Record(output, "output %s doesn't exist",
+			output.Path)
+		return true
 	}
 
-	// 如果是 restat 规则，可能之前已经清理过输出，并且将命令开始时间记录在日志中。
-	// restat 规则不检查输出的实际 mtime，而是比较日志中的记录 mtime 与最新输入的 mtime。
-	var entry *LogEntry
+	var entry *BuildLogEntry
+
+	// If this is a restat rule, we may have cleaned the output in a
+	// previous run and stored the command start time in the build log.
+	// We don't want to consider a restat rule's outputs as dirty unless
+	// an input changed since the last run, so we'll skip checking the
+	// output file's actual mtime and simply check the recorded mtime from
+	// the log against the most recent input's mtime (see below)
 	usedRestat := false
-	if edge.GetBindingBool("restat") && s.buildLog != nil {
-		entry = s.buildLog.LookupByOutput(output.Path)
+	if edge.GetBindingBool("restat") && ds.buildLog() != nil {
+		entry = ds.buildLog().LookupByOutput(output.Path)
 		if entry != nil {
 			usedRestat = true
 		}
 	}
 
-	// 如果不是 restat 规则，且输出比最新输入旧，则标记脏
+	// Dirty if the output is older than the input.
 	if !usedRestat && mostRecentInput != nil && output.Mtime < mostRecentInput.Mtime {
-		s.explanations_.Record(output,
+		ds.explanations_.Record(output,
 			"output %s older than most recent input %s (%d vs %d)",
-			output.Path, mostRecentInput.Path, output.Mtime, mostRecentInput.Mtime)
-		return true, nil
+			output.Path,
+			mostRecentInput.Path, output.Mtime,
+			mostRecentInput.Mtime)
+		return true
 	}
 
-	// 使用 build log 进行进一步检查
-	if s.buildLog != nil {
+	if ds.buildLog() != nil {
 		generator := edge.GetBindingBool("generator")
 		if entry == nil {
-			entry = s.buildLog.LookupByOutput(output.Path)
+			entry = ds.buildLog().LookupByOutput(output.Path)
 		}
 		if entry != nil {
-			// 如果命令哈希发生变化（且不是 generator 规则），则标记脏
-			if !generator && HashCommand(command) != entry.CommandHash {
-				s.explanations_.Record(output, "command line changed for %s", output.Path)
-				return true, nil
+			if !generator && BuildLogHashCommand(command) != entry.CommandHash {
+				// May also be dirty due to the command changing since the last build.
+				// But if this is a generator rule, the command changing does not make us dirty.
+				ds.explanations_.Record(output, "command line changed for %s",
+					output.Path())
+				return true
 			}
-			// 如果日志中的 mtime 比最新输入旧，则标记脏（即使磁盘上的 mtime 更新）
-			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime {
-				s.explanations_.Record(output,
+			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime() {
+				// May also be dirty due to the mtime in the log being older than the
+				// mtime of the most recent input. This can occur even when the mtime
+				// on disk is newer if a previous run wrote to the output file but
+				// exited with an error or was interrupted. If this was a restat rule,
+				// then we only check the recorded mtime against the most recent input
+				// mtime and ignore the actual output's mtime above.
+				ds.explanations_.Record(output,
 					"recorded mtime of %s older than most recent input %s (%d vs %d)",
-					output.Path, mostRecentInput.Path, entry.Mtime, mostRecentInput.Mtime)
-				return true, nil
+					output.Path(), mostRecentInput.Path(),
+					entry.Mtime, mostRecentInput.Mtime())
+				return true
 			}
-		} else if !generator {
-			// 没有日志记录且不是 generator 规则，则标记脏
-			s.explanations_.Record(output, "command line not found in log for %s", output.Path)
-			return true, nil
+		}
+		if entry == nil && !generator {
+			ds.explanations_.Record(output, "command line not found in log for %s",
+				output.Path)
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }

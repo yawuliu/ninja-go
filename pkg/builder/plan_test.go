@@ -317,8 +317,9 @@ func TestPlan_CleanNode(t *testing.T) {
 	inNode.Dirty = true
 	outNode.Dirty = true
 
-	err := plan.CleanNode(scanner, inNode)
-	require.NoError(t, err)
+	var err string
+	plan.CleanNode(scanner, inNode, &err)
+	require.Equal(t, err, "")
 
 	// 输入节点应该被标记为 clean
 	assert.False(t, inNode.Dirty)

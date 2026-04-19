@@ -192,7 +192,7 @@ func TestState_Reset(t *testing.T) {
 	node := state.AddNode("foo.txt", 0)
 	node.Dirty = true
 	node.Mtime = 12345
-	node.Exists = 1
+	node.exists_ = 1
 
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
@@ -307,7 +307,7 @@ func TestNode_NewNode(t *testing.T) {
 func TestNode_ResetState(t *testing.T) {
 	node := NewNode("test.txt", 0)
 	node.Mtime = 12345
-	node.Exists = 1
+	node.exists_ = 1
 	node.Dirty = true
 
 	node.ResetState()
@@ -365,11 +365,11 @@ func TestNode_IsExists(t *testing.T) {
 	assert.False(t, node.IsExists())
 
 	// 标记为不存在
-	node.Exists = ExistenceMissing
+	node.exists_ = ExistenceMissing
 	assert.False(t, node.IsExists())
 
 	// 标记为存在
-	node.Exists = ExistenceExists
+	node.exists_ = ExistenceExists
 	assert.True(t, node.IsExists())
 }
 

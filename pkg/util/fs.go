@@ -12,14 +12,15 @@ type File interface {
 }
 
 type FileSystem interface {
+	Stat(path string, err *string) int64
+	MakeDir(path string) bool
+	WriteFile(path string, contents string, crlf_on_windows bool) bool
+	RemoveFile(path string) int
+	MakeDirs(path string) bool
+
 	Open(path string) (File, error)
 	Create(path string) (File, error)
-	Stat(path string) (os.FileInfo, error)
 	ReadFile(path string) ([]byte, error)
-	WriteFile(path string, data []byte, perm os.FileMode) error
-	Remove(path string) error
-	MkdirAll(path string, perm os.FileMode) error
 	Truncate(name string, size int64) error
-	MakeDirs(path string) error
 	AllowStatCache(allow bool) bool
 }

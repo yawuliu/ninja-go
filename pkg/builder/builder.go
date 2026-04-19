@@ -15,7 +15,7 @@ type Builder struct {
 	config        *BuildConfig
 	buildLog      *BuildLog
 	depsLog       *DepsLog
-	runningEdges  map[*Edge]time.Time
+	runningEdges  map[*Edge]int64
 	disk          util.FileSystem
 	plan          *Plan
 	status        Status
@@ -121,7 +121,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 			return false
 		}
 		if buildStart == -1 {
-			b.disk.WriteFile(b.lockFilePath, []byte(""), false)
+			b.disk.WriteFile(b.lockFilePath, "", false)
 			buildStart = b.disk.Stat(b.lockFilePath, err)
 			if buildStart == -1 {
 				buildStart = 0
@@ -141,14 +141,14 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" {
 		content := edge.GetBinding("rspfile_content")
-		if !b.disk.WriteFile(rspfile, []byte(content), true) {
+		if !b.disk.WriteFile(rspfile, content, true) {
 			return false
 		}
 	}
 
 	// start command computing and run it
 	if !b.commandRunner.StartCommand(edge) {
-		*err = "command '" + edge.EvaluateCommand() + "' failed."
+		*err = "command '" + edge.EvaluateCommand(false) + "' failed."
 		return false
 	}
 
@@ -207,11 +207,11 @@ func (b *Builder) Build(err *string) ExitStatus {
 		// 等待命令完成
 		if pendingCommands > 0 {
 			var result CommandResult
-			b.commandRunner.WaitForCommand(&result)
-			if err != nil || result.Status == ExitInterrupted {
+			if !b.commandRunner.WaitForCommand(&result) || result.Status == ExitInterrupted {
 				b.Cleanup()
 				b.status.BuildFinished()
-				return result.Status, fmt.Errorf("interrupted by user")
+				*err = "interrupted by user"
+				return result.Status
 			}
 			pendingCommands--
 			if !b.finishCommand(&result, err) {
@@ -252,7 +252,7 @@ func (b *Builder) startEdge(edge *Edge, err *string) bool {
 
 	// 创建输出目录
 	for _, out := range edge.Outputs {
-		if err := b.disk.MkdirAll(util.DirName(out.Path), 0755); err != nil {
+		if !b.disk.MakeDirs(util.DirName(out.Path)) {
 			return false
 		}
 	}
@@ -260,7 +260,7 @@ func (b *Builder) startEdge(edge *Edge, err *string) bool {
 	rspfile := edge.GetBinding("rspfile")
 	if rspfile != "" {
 		content := edge.GetBinding("rspfile_content")
-		if err := b.disk.WriteFile(rspfile, []byte(content), 0644); err != nil {
+		if !b.disk.WriteFile(rspfile, content, true) {
 			return false
 		}
 	}
@@ -295,13 +295,14 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 	// 获取边的开始和结束时间
 	startMillis, ok := b.runningEdges[edge]
 	if !ok {
-		return fmt.Errorf("edge %v not found in running edges", edge)
+		*err = fmt.Sprintf("edge %v not found in running edges", edge)
+		return false
 	}
 	endMillis := time.Now().UnixNano()/1e6 - b.startTimeMillis
 	delete(b.runningEdges, edge)
 
 	// 通知状态
-	b.status.BuildEdgeFinished(edge, startMillis.UnixMilli(), endMillis, result.Status, result.Output)
+	b.status.BuildEdgeFinished(edge, startMillis, endMillis, result.Status, result.Output)
 
 	// 如果命令失败，直接标记边失败并返回
 	if result.Status != ExitSuccess {
@@ -318,16 +319,16 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 
 		if recordMtime == 0 || restat || generator {
 			for _, out := range edge.Outputs {
-				newMtime, err := b.disk.Stat(out.Path)
-				if err != nil {
-					return err
+				newMtime := b.disk.Stat(out.Path, err)
+				if newMtime == -1 {
+					return false
 				}
-				if newMtime.ModTime().UnixNano() > recordMtime {
-					recordMtime = newMtime.ModTime().UnixNano()
+				if newMtime > recordMtime {
+					recordMtime = newMtime
 				}
-				if restat && out.Mtime == newMtime.ModTime().UnixNano() {
-					if err := b.plan.CleanNode(b.scan, out); err != nil {
-						return err
+				if out.Mtime == newMtime && restat {
+					if !b.plan.CleanNode(b.scan, out, err) {
+						return false
 					}
 					nodeCleaned = true
 				}
@@ -346,30 +347,30 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 	// 删除响应文件
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" && !g_keep_rsp {
-		if err := b.disk.Remove(rspfile); err != nil && !os.IsNotExist(err) {
-			// 忽略不存在的文件错误
-		}
+		b.disk.RemoveFile(rspfile)
 	}
 
 	// 记录构建日志
 	if b.buildLog != nil {
-		if err := b.buildLog.RecordCommand(edge, startMillis.UnixMilli(), endMillis, recordMtime); err != nil {
-			return fmt.Errorf("error writing to build log: %v", err)
+		if !b.buildLog.RecordCommand(edge, startMillis, endMillis, recordMtime) {
+			*err = fmt.Sprintf("error writing to build log: %v", err)
+			return false
 		}
 	}
 
 	// 记录依赖日志
 	if depsType != "" && !b.config.DryRun {
 		if len(edge.Outputs) == 0 {
-			return fmt.Errorf("edge with deps but no outputs")
+			panic("should have been rejected by parser")
 		}
 		for _, out := range edge.Outputs {
-			depsMtime, err := b.disk.Stat(out.Path)
-			if err != nil {
-				return err
+			depsMtime := b.disk.Stat(out.Path, err)
+			if depsMtime == -1 {
+				return false
 			}
-			if err := b.depsLog.RecordDeps(out, depsMtime.ModTime().UnixNano(), depsNodes); err != nil {
-				return fmt.Errorf("error writing to deps log: %v", err)
+			if !b.depsLog.RecordDeps(out, depsMtime, depsNodes) {
+				*err = fmt.Sprintf("error writing to deps log")
+				return false
 			}
 		}
 	}
@@ -430,7 +431,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 
 		// 如果不保留 depfile，则删除它
 		if !g_keep_depfile {
-			if err := b.disk.Remove(depfile); err != nil {
+			if b.disk.RemoveFile(depfile) < 0 {
 				return fmt.Errorf("deleting depfile %s: %v", depfile, err)
 			}
 		}
@@ -467,24 +468,25 @@ func (b *Builder) Cleanup() {
 				// 仅当输出文件被实际修改时才删除。对于 generator 规则，我们可能不希望删除清单文件。
 				// 但如果规则使用了 depfile，则始终删除（考虑这种情况：由于 depfile 中提到的头文件修改导致需要重建输出，
 				// 但命令在触及输出文件之前被中断）。
-				newMtime, err := b.disk.Stat(out.Path)
-				if err != nil {
-					// 忽略 Stat 错误，仅记录
+				var err string
+				newMtime := b.disk.Stat(out.Path, &err)
+				if newMtime == -1 {
 					b.status.Error("%v", err)
 				}
-				if depfile != "" || out.Mtime != newMtime.ModTime().UnixNano() {
-					b.disk.Remove(out.Path)
+				if depfile != "" || out.Mtime != newMtime {
+					b.disk.RemoveFile(out.Path)
 				}
 			}
 			if depfile != "" {
-				b.disk.Remove(depfile)
+				b.disk.RemoveFile(depfile)
 			}
 		}
 	}
 
 	// 删除锁文件
-	if _, err := b.disk.Stat(b.lockFilePath); err == nil {
-		b.disk.Remove(b.lockFilePath)
+	var err string
+	if b.disk.Stat(b.lockFilePath, &err) > 0 {
+		b.disk.RemoveFile(b.lockFilePath)
 	}
 }
 

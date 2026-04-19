@@ -16,13 +16,13 @@ type DyndepParser struct {
 	filename   string
 }
 
-func (b *DyndepParser) Load(filename string, err *string, parent *BaseParser) bool {
+func (b *DyndepParser) Load(filename string, err *string, parent *Lexer) bool {
 	// 读取文件内容
 	content, read_err := b.fileReader.ReadFile(filename)
 	if read_err != nil {
 		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
 		if parent != nil {
-			parent.Error(errMsg)
+			parent.Error(*err, err)
 		}
 		return false
 	}
