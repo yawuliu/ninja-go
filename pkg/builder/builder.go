@@ -379,18 +379,18 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 	}
 }
 
-func (b *Builder) LoadDyndeps(node *Node) error {
+func (b *Builder) LoadDyndeps(node *Node, err *string) bool {
 	// 加载 dyndep 信息
 	var ddf DyndepFile
-	err := b.scan.LoadDyndeps2(node, &ddf)
-	if err != nil {
-		return err
+	if !b.scan.LoadDyndeps2(node, &ddf, err) {
+		return false
 	}
 	// 更新构建计划
-	if err := b.plan.DyndepsLoaded(b.scan, node, ddf); err != nil {
-		return err
+	if !b.plan.DyndepsLoaded(b.scan, node, ddf, err) {
+
+		return false
 	}
-	return nil
+	return true
 }
 
 // Cleanup 清理中断或失败构建产生的临时文件和部分输出。

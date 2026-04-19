@@ -16,17 +16,17 @@ type DyndepParser struct {
 	filename   string
 }
 
-func (b *DyndepParser) Load(filename string, parent *BaseParser) error {
+func (b *DyndepParser) Load(filename string, err *string, parent *BaseParser) bool {
 	// 读取文件内容
-	content, err := b.fileReader.ReadFile(filename)
-	if err != nil {
-		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
+	content, read_err := b.fileReader.ReadFile(filename)
+	if read_err != nil {
+		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
 		if parent != nil {
-			parent.lexer.Error(errMsg)
+			parent.Error(errMsg)
 		}
-		return fmt.Errorf("%s", errMsg)
+		return false
 	}
-	return b.Parse(filename, string(content))
+	return b.Parse(filename, string(content), err)
 }
 
 // Verify that *UserCacher implements Cacher
@@ -43,126 +43,123 @@ func NewDyndepParser(state *State, file_reader util.FileSystem, dyndepFile *Dynd
 }
 
 // Parse 解析 dyndep 文件内容。
-func (p *DyndepParser) Parse(filename, input string) error {
+func (p *DyndepParser) Parse(filename, input string, err *string) bool {
 	p.lexer.Start(filename, input)
 
-	haveVersion := false
+	haveDyndepVersion := false
 
 	for {
 		token := p.lexer.ReadToken()
 		switch token {
 		case BUILD:
-			if !haveVersion {
-				return p.lexer.Error("expected 'ninja_dyndep_version = ...'")
+			if !haveDyndepVersion {
+				return p.lexer.Error("expected 'ninja_dyndep_version = ...'", err)
 			}
-			if err := p.parseEdge(); err != nil {
-				return err
+			if !p.parseEdge(err) {
+				return false
 			}
 		case IDENT:
 			p.lexer.UnreadToken()
-			if haveVersion {
-				return p.lexer.Error("unexpected " + token.String())
+			if haveDyndepVersion {
+				return p.lexer.Error("unexpected "+token.String(), err)
 			}
-			if err := p.parseDyndepVersion(); err != nil {
-				return err
+			if !p.parseDyndepVersion(err) {
+				return false
 			}
-			haveVersion = true
+			haveDyndepVersion = true
 		case ERROR:
-			return p.lexer.Error(p.lexer.DescribeLastError())
+			return p.lexer.Error(p.lexer.DescribeLastError(), err)
 		case TEOF:
-			if !haveVersion {
-				return p.lexer.Error("expected 'ninja_dyndep_version = ...'")
+			if !haveDyndepVersion {
+				return p.lexer.Error("expected 'ninja_dyndep_version = ...'", err)
 			}
-			return nil
+			return true
 		case NEWLINE:
 			continue
 		default:
-			return p.lexer.Error("unexpected " + token.String())
+			return p.lexer.Error("unexpected "+token.String(), err)
 		}
+		return false
 	}
 }
 
 // parseDyndepVersion 解析版本行：ninja_dyndep_version = 1
-func (p *DyndepParser) parseDyndepVersion() error {
-	key, value, err := p.parseLet()
-	if err != nil {
-		return err
+func (p *DyndepParser) parseDyndepVersion(err *string) bool {
+	var name string
+	var let_value EvalString
+	if !p.parseLet(&name, &let_value, err) {
+		return false
 	}
-	if key != "ninja_dyndep_version" {
-		return p.lexer.Error("expected 'ninja_dyndep_version = ...'")
+	if name != "ninja_dyndep_version" {
+		return p.lexer.Error("expected 'ninja_dyndep_version = ...'", err)
 	}
-	version := value.Evaluate(p.env)
+
+	version := let_value.Evaluate(p.env)
 	major, minor := util.ParseVersion(version)
 	if major != 1 || minor != 0 {
-		return p.lexer.Error(fmt.Sprintf("unsupported 'ninja_dyndep_version = %s'", version))
+		return p.lexer.Error(fmt.Sprintf("unsupported 'ninja_dyndep_version = %s'", version), err)
 	}
-	return nil
+	return true
 }
 
 // parseLet 解析 key = value 行
-func (p *DyndepParser) parseLet() (string, *EvalString, error) {
-	var key string
-	succ := p.lexer.ReadIdent(&key)
-	if !succ {
-		return "", nil, p.lexer.Error("expected variable name")
+func (p *DyndepParser) parseLet(key *string, value *EvalString, err *string) bool {
+	if !p.lexer.ReadIdent(key) {
+		return p.lexer.Error("expected variable name", err)
 	}
-	if err := p.expectToken(EQUALS); err != nil {
-		return "", nil, err
+	if !p.expectToken(EQUALS, err) {
+		return false
 	}
-	value := EvalString{}
-	_, err := p.lexer.ReadVarValue(&value)
-	if err != nil {
-		return "", nil, err
+
+	if !p.lexer.ReadVarValue(value, err) {
+		return false
 	}
-	return key, &value, nil
+	return true
 }
 
 // parseEdge 解析 build 语句
-func (p *DyndepParser) parseEdge() error {
+func (p *DyndepParser) parseEdge(err *string) bool {
 	// 1. 读取主输出
 	out0 := EvalString{}
-	_, err := p.lexer.ReadPath(&out0)
-	if err != nil {
-		return err
+	if !p.lexer.ReadPath(&out0, err) {
+		return false
 	}
 	if out0.Empty() {
-		return p.lexer.Error("expected path")
+		return p.lexer.Error("expected path", err)
 	}
 	path := out0.Evaluate(p.env)
 	if path == "" {
-		return p.lexer.Error("empty path")
+		return p.lexer.Error("empty path", err)
 	}
 	norm, _ := util.CanonicalizePath(path)
 	node := p.state.LookupNode(norm)
 	if node == nil || node.InEdge == nil {
-		return p.lexer.Error("no build statement exists for '" + norm + "'")
+		return p.lexer.Error("no build statement exists for '"+norm+"'", err)
 	}
 	edge := node.InEdge
 
 	// 检查重复
 	if _, ok := (*p.dyndepFile)[edge]; ok {
-		return p.lexer.Error("multiple statements for '" + norm + "'")
+		return p.lexer.Error("multiple statements for '"+norm+"'", err)
 	}
 	info := &Dyndeps{}
 	(*p.dyndepFile)[edge] = info
 
 	// 2. 禁止显式输出
 	out := EvalString{}
-	_, err = p.lexer.ReadPath(&out)
-	if err != nil {
-		return err
+	if !p.lexer.ReadPath(&out, err) {
+		return false
 	}
 	if !out.Empty() {
-		return p.lexer.Error("explicit outputs not supported")
+		return p.lexer.Error("explicit outputs not supported", err)
 	}
 
 	// 3. 解析隐式输出（'|' 后）
 	var implicitOutputs []*EvalString
 	if p.lexer.PeekToken(PIPE) {
 		for {
-			_, err := p.lexer.ReadPath(&out)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&out, err) {
+				return false
 			}
 			if out.Empty() {
 				break
@@ -172,34 +169,32 @@ func (p *DyndepParser) parseEdge() error {
 	}
 
 	// 4. 期望冒号
-	if err := p.expectToken(COLON); err != nil {
-		return err
+	if !p.expectToken(COLON, err) {
+		return false
 	}
 
 	// 5. 规则名必须是 "dyndep"
 	var ruleName string
 	succ := p.lexer.ReadIdent(&ruleName)
 	if !succ || ruleName != "dyndep" {
-		return p.lexer.Error("expected build command name 'dyndep'")
+		return p.lexer.Error("expected build command name 'dyndep'", err)
 	}
 
 	// 6. 禁止显式输入
 	in := EvalString{}
-	_, err = p.lexer.ReadPath(&in)
-	if err != nil {
-		return err
+	if !p.lexer.ReadPath(&in, err) {
+		return false
 	}
 	if !in.Empty() {
-		return p.lexer.Error("explicit inputs not supported")
+		return p.lexer.Error("explicit inputs not supported", err)
 	}
 
 	// 7. 解析隐式输入（'|' 后）
 	var implicitInputs []*EvalString
 	if p.lexer.PeekToken(PIPE) {
 		for {
-			_, err := p.lexer.ReadPath(&in)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&in, err) {
+				return false
 			}
 			if in.Empty() {
 				break
@@ -210,22 +205,23 @@ func (p *DyndepParser) parseEdge() error {
 
 	// 8. 禁止 order-only 输入
 	if p.lexer.PeekToken(PIPE2) {
-		return p.lexer.Error("order-only inputs not supported")
+		return p.lexer.Error("order-only inputs not supported", err)
 	}
 
 	// 9. 期望换行
-	if err := p.expectToken(NEWLINE); err != nil {
-		return err
+	if !p.expectToken(NEWLINE, err) {
+		return false
 	}
 
 	// 10. 可选的缩进块（restat）
 	if p.lexer.PeekToken(INDENT) {
-		key, val, err := p.parseLet()
-		if err != nil {
-			return err
+		var key string
+		var val EvalString
+		if !p.parseLet(&key, &val, err) {
+			return false
 		}
 		if key != "restat" {
-			return p.lexer.Error("binding is not 'restat'")
+			return p.lexer.Error("binding is not 'restat'", err)
 		}
 		value := val.Evaluate(p.env)
 		info.Restat = value != ""
@@ -235,7 +231,7 @@ func (p *DyndepParser) parseEdge() error {
 	for _, inEval := range implicitInputs {
 		path := inEval.Evaluate(p.env)
 		if path == "" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		norm, slashBits := util.CanonicalizePath(path)
 		node := p.state.GetNode(norm, slashBits)
@@ -246,21 +242,24 @@ func (p *DyndepParser) parseEdge() error {
 	for _, outEval := range implicitOutputs {
 		path := outEval.Evaluate(p.env)
 		if path == "" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		norm, slashBits := util.CanonicalizePath(path)
 		node := p.state.GetNode(norm, slashBits)
 		info.ImplicitOutputs = append(info.ImplicitOutputs, node)
 	}
 
-	return nil
+	return true
 }
 
 // expectToken 辅助方法，期望下一个 token 为指定类型
-func (p *DyndepParser) expectToken(expected Token) error {
+func (p *DyndepParser) expectToken(expected Token, err *string) bool {
 	tok := p.lexer.ReadToken()
 	if tok != expected {
-		return p.lexer.Error(fmt.Sprintf("expected %s, got %s", expected.String(), tok.String()))
+		message := "expected " + expected.String()
+		message += ", got " + tok.String()
+		message += TokenErrorHint(expected)
+		return p.lexer.Error(message, err)
 	}
-	return nil
+	return true
 }

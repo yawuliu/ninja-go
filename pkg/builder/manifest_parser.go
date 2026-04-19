@@ -56,51 +56,52 @@ func NewManifestParser(state *State, file_reader util.FileSystem, options Manife
 //	}
 //}
 
-func (p *ManifestParser) Load(filename string, parent *BaseParser) error {
+func (p *ManifestParser) Load(filename string, parent *BaseParser, err *string) bool {
 	// 读取文件内容
 	content, err := p.fileReader.ReadFile(filename)
 	if err != nil {
 		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
 		if parent != nil {
-			parent.lexer.Error(errMsg)
+			parent.lexer.Error(errMsg, err)
 		}
 		return fmt.Errorf("%s", errMsg)
 	}
-	return p.Parse(filename, string(content))
+	return p.Parse(filename, string(content), err)
 }
 
-func (p *ManifestParser) ParseTest(input string) error {
+func (p *ManifestParser) ParseTest(input string, err *string) bool {
 	p.quiet = true
-	return p.Parse("input", input)
+	return p.Parse("input", input, err)
 }
 
-func (p *ManifestParser) Parse(filename, input string) error {
+func (p *ManifestParser) Parse(filename, input string, err *string) bool {
 	p.lexer.Start(filename, input)
 
 	for {
 		tok := p.lexer.ReadToken()
 		switch tok {
 		case POOL:
-			if err := p.parsePool(); err != nil {
-				return err
+			if !p.parsePool(err) {
+				return false
 			}
 		case BUILD:
-			if err := p.ParseEdge(); err != nil {
-				return err
+			if !p.ParseEdge(err) {
+				return false
 			}
 		case RULE:
-			if err := p.parseRule(); err != nil {
-				return err
+			if !p.parseRule(err) {
+				return false
 			}
 		case DEFAULT:
-			if err := p.ParseDefault(); err != nil {
-				return err
+			if !p.ParseDefault(err) {
+				return false
 			}
 		case IDENT:
 			p.lexer.UnreadToken()
-			key, val, err := p.ParseLet()
-			if err != nil {
-				return err
+			var key string
+			var val EvalString
+			if !p.ParseLet(&key, &val, err) {
+				return false
 			}
 			value := val.Evaluate(p.env)
 			if key == "ninja_required_version" {
@@ -111,8 +112,8 @@ func (p *ManifestParser) Parse(filename, input string) error {
 			}
 			p.env.AddBinding(key, value)
 		case INCLUDE, SUBNINJA:
-			if err := p.parseFileInclude(tok == SUBNINJA); err != nil {
-				return err
+			if !p.parseFileInclude(tok == SUBNINJA, err) {
+				return false
 			}
 		case ERROR:
 			return fmt.Errorf("%s", p.lexer.DescribeLastError())
@@ -127,105 +128,104 @@ func (p *ManifestParser) Parse(filename, input string) error {
 	return errors.New(" not reached")
 }
 
-func (p *ManifestParser) parsePool() error {
+func (p *ManifestParser) parsePool(err *string) bool {
 	var name string
 	succ := p.lexer.ReadIdent(&name)
 	if !succ {
 		return errors.New("expected pool name")
 	}
-	if err := p.expectToken(NEWLINE); err != nil {
-		return err
+	if !p.expectToken(NEWLINE, err) {
+		return false
 	}
 	if p.state.LookupPool(name) != nil {
-		return p.lexer.Error("duplicate pool '" + name + "'")
+		return p.lexer.Error("duplicate pool '"+name+"'", err)
 	}
 	depth := -1
 	for p.lexer.PeekToken(INDENT) {
-		key, val, err := p.ParseLet()
-		if err != nil {
-			return err
+		var key string
+		var val EvalString
+		if !p.ParseLet(&key, &val, err) {
+			return false
 		}
 		if key == "depth" {
 			depthStr := val.Evaluate(p.env)
 			d, err := strconv.Atoi(strings.TrimSpace(depthStr))
 			if err != nil || d < 0 {
-				return p.lexer.Error("invalid pool depth")
+				return p.lexer.Error("invalid pool depth", err)
 			}
 			depth = d
 		} else {
-			return p.lexer.Error("expected 'depth', got '" + key + "'")
+			return p.lexer.Error("expected 'depth', got '"+key+"'", err)
 		}
 	}
 	if depth < 0 {
-		return p.lexer.Error("expected 'depth =' line")
+		return p.lexer.Error("expected 'depth =' line", err)
 	}
 	p.state.AddPool(&Pool{Name: name, Depth: depth})
-	return nil
+	return true
 }
 
-func (p *ManifestParser) parseRule() error {
+func (p *ManifestParser) parseRule(err *string) bool {
 	var name string
 	succ := p.lexer.ReadIdent(&name)
 	if !succ {
-		return p.lexer.Error("expected rule name")
+		return p.lexer.Error("expected rule name", err)
 	}
 
-	if err := p.expectToken(NEWLINE); err != nil {
-		return err
+	if !p.expectToken(NEWLINE, err) {
+		return false
 	}
 
 	if p.env.LookupRuleCurrentScope(name) != nil {
-		return p.lexer.Error("duplicate rule '" + name + "'")
+		return p.lexer.Error("duplicate rule '"+name+"'", err)
 	}
 
 	rule := NewRule(name)
 
 	for p.lexer.PeekToken(INDENT) {
-		key, value, err := p.ParseLet()
-		if err != nil {
-			return err
+		var key string
+		var value EvalString
+		if !p.ParseLet(&key, &value, err) {
+			return false
 		}
 
 		if IsReservedBinding(key) {
 			rule.AddBinding(key, value)
 		} else {
-			return p.lexer.Error("unexpected variable '" + key + "'")
+			return p.lexer.Error("unexpected variable '"+key+"'", err)
 		}
 	}
 
 	rspfile := rule.GetBinding("rspfile")
 	rspfileContent := rule.GetBinding("rspfile_content")
 	if (rspfile == nil) != (rspfileContent == nil) {
-		return p.lexer.Error("rspfile and rspfile_content need to be both specified")
+		return p.lexer.Error("rspfile and rspfile_content need to be both specified", err)
 	}
 
 	if rule.GetBinding("command") == nil {
-		return p.lexer.Error("expected 'command'")
+		return p.lexer.Error("expected 'command'", err)
 	}
 
 	p.env.AddRule(rule)
-	return nil
+	return true
 }
 
-func (p *ManifestParser) ParseLet() (string, *EvalString, error) {
-	var key string
-	succ := p.lexer.ReadIdent(&key)
-	if !succ {
+func (p *ManifestParser) ParseLet(key *string, val *EvalString, err *string) bool {
+	if !p.lexer.ReadIdent(key) {
 		return "", nil, errors.New("expected variable name")
 	}
-	if err := p.expectToken(EQUALS); err != nil {
-		return "", nil, err
+	if !p.expectToken(EQUALS, err) {
+		return false
 	}
-	val := EvalString{}
-	_, err := p.lexer.ReadVarValue(&val)
-	if err != nil {
-		return "", nil, err
+
+	if !p.lexer.ReadVarValue(val, err) {
+		return false
 	}
-	return key, &val, nil
+	return true
 }
 
 // ParseEdge 解析 build 语句，创建 Edge 并添加到 State。
-func (p *ManifestParser) ParseEdge() error {
+func (p *ManifestParser) ParseEdge(err *string) bool {
 	// 清空临时存储（复用切片）
 	p.outs = p.outs[:0]
 	p.ins = p.ins[:0]
@@ -234,9 +234,8 @@ func (p *ManifestParser) ParseEdge() error {
 	// 1. 解析显式输出（可多个，以空格分隔）
 	for {
 		out := EvalString{}
-		_, err := p.lexer.ReadPath(&out)
-		if err != nil {
-			return err
+		if !p.lexer.ReadPath(&out, err) {
+			return false
 		}
 		if out.Empty() {
 			break
@@ -244,7 +243,7 @@ func (p *ManifestParser) ParseEdge() error {
 		// 检查路径求值后是否为单独的 ":"
 		path := out.Evaluate(p.env)
 		if path == ":" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		p.outs = append(p.outs, &out)
 	}
@@ -254,9 +253,8 @@ func (p *ManifestParser) ParseEdge() error {
 	if p.lexer.PeekToken(PIPE) {
 		for {
 			out := EvalString{}
-			_, err := p.lexer.ReadPath(&out)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&out, err) {
+				return false
 			}
 			if out.Empty() {
 				break
@@ -264,7 +262,7 @@ func (p *ManifestParser) ParseEdge() error {
 			// 检查路径求值后是否为单独的 ":"
 			path := out.Evaluate(p.env)
 			if path == ":" {
-				return p.lexer.Error("empty path")
+				return p.lexer.Error("empty path", err)
 			}
 			p.outs = append(p.outs, &out)
 			implicitOuts++
@@ -272,31 +270,30 @@ func (p *ManifestParser) ParseEdge() error {
 	}
 
 	if len(p.outs) == 0 {
-		return p.lexer.Error("expected path")
+		return p.lexer.Error("expected path", err)
 	}
 
 	// 3. 期望冒号
-	if err := p.expectToken(COLON); err != nil {
-		return err
+	if !p.expectToken(COLON, err) {
+		return false
 	}
 
 	// 4. 规则名
 	var ruleName string
 	succ := p.lexer.ReadIdent(&ruleName)
 	if !succ {
-		return p.lexer.Error("expected build command name")
+		return p.lexer.Error("expected build command name", err)
 	}
 	rule := p.env.LookupRule(ruleName)
 	if rule == nil {
-		return p.lexer.Error("unknown build rule '" + ruleName + "'")
+		return p.lexer.Error("unknown build rule '"+ruleName+"'", err)
 	}
 
 	// 5. 解析显式输入
 	for {
 		in := EvalString{}
-		_, err := p.lexer.ReadPath(&in)
-		if err != nil {
-			return err
+		if !p.lexer.ReadPath(&in, err) {
+			return false
 		}
 		if in.Empty() {
 			break
@@ -309,9 +306,8 @@ func (p *ManifestParser) ParseEdge() error {
 	if p.lexer.PeekToken(PIPE) {
 		for {
 			in := EvalString{}
-			_, err := p.lexer.ReadPath(&in)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&in, err) {
+				return false
 			}
 			if in.Empty() {
 				break
@@ -326,9 +322,8 @@ func (p *ManifestParser) ParseEdge() error {
 	if p.lexer.PeekToken(PIPE2) {
 		for {
 			in := EvalString{}
-			_, err := p.lexer.ReadPath(&in)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&in, err) {
+				return false
 			}
 			if in.Empty() {
 				break
@@ -342,9 +337,8 @@ func (p *ManifestParser) ParseEdge() error {
 	if p.lexer.PeekToken(PIPEAT) {
 		for {
 			val := EvalString{}
-			_, err := p.lexer.ReadPath(&val)
-			if err != nil {
-				return err
+			if !p.lexer.ReadPath(&val, err) {
+				return false
 			}
 			if val.Empty() {
 				break
@@ -354,8 +348,8 @@ func (p *ManifestParser) ParseEdge() error {
 	}
 
 	// 9. 期望换行
-	if err := p.expectToken(NEWLINE); err != nil {
-		return err
+	if !p.expectToken(NEWLINE, err) {
+		return false
 	}
 
 	// 10. 缩进内的变量绑定（为边创建独立作用域）
@@ -367,9 +361,10 @@ func (p *ManifestParser) ParseEdge() error {
 		env = p.env
 	}
 	for hasIndent {
-		key, val, err := p.ParseLet()
-		if err != nil {
-			return err
+		var key string
+		var val EvalString
+		if !p.ParseLet(&key, &val, err) {
+			return false
 		}
 		// 求值并添加到边的环境（值在全局环境求值，然后存入边的环境）
 		evaluated := val.Evaluate(p.env)
@@ -386,7 +381,7 @@ func (p *ManifestParser) ParseEdge() error {
 	if poolName != "" {
 		pool := p.state.LookupPool(poolName)
 		if pool == nil {
-			return p.lexer.Error("unknown pool name '" + poolName + "'")
+			return p.lexer.Error("unknown pool name '"+poolName+"'", err)
 		}
 		edge.Pool = pool
 	}
@@ -395,11 +390,11 @@ func (p *ManifestParser) ParseEdge() error {
 	for _, outEval := range p.outs {
 		path := outEval.Evaluate(env)
 		if path == "" || path == ":" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		norm, slashBits := util.CanonicalizePath(path)
-		if err := p.state.AddOut(edge, norm, slashBits); err != nil {
-			return p.lexer.Error(err.Error())
+		if !p.state.AddOut(edge, norm, slashBits, err) {
+			return p.lexer.Error(err.Error(), err)
 		}
 	}
 
@@ -407,7 +402,7 @@ func (p *ManifestParser) ParseEdge() error {
 	if len(edge.Outputs) == 0 {
 		// 从 state 中移除边（简单实现：从切片末尾删除）
 		p.state.Edges = p.state.Edges[:len(p.state.Edges)-1]
-		return nil
+		return true
 	}
 	edge.ImplicitOuts = implicitOuts
 
@@ -415,7 +410,7 @@ func (p *ManifestParser) ParseEdge() error {
 	for _, inEval := range p.ins {
 		path := inEval.Evaluate(env)
 		if path == "" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		norm, slashBits := util.CanonicalizePath(path)
 		p.state.AddIn(edge, norm, slashBits)
@@ -427,7 +422,7 @@ func (p *ManifestParser) ParseEdge() error {
 	for _, valEval := range p.validations {
 		path := valEval.Evaluate(env)
 		if path == "" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		norm, slashBits := util.CanonicalizePath(path)
 		p.state.AddValidation(edge, norm, slashBits)
@@ -467,46 +462,44 @@ func (p *ManifestParser) ParseEdge() error {
 			}
 		}
 		if !found {
-			return p.lexer.Error("dyndep '" + dyndep + "' is not an input")
+			return p.lexer.Error("dyndep '"+dyndep+"' is not an input", err)
 		}
 		if edge.DyndepFile.GeneratedByDepLoader == false {
 			panic(errors.New("dyndep '" + dyndep + "' is not a dependency"))
 		}
 	}
 
-	return nil
+	return true
 }
 
 // ParseDefault 解析 default 语句，将默认目标添加到 State 中。
-func (p *ManifestParser) ParseDefault() error {
+func (p *ManifestParser) ParseDefault(err *string) bool {
 	// 读取第一个路径
 	eval := EvalString{}
-	_, err := p.lexer.ReadPath(&eval)
-	if err != nil {
-		return err
+	if !p.lexer.ReadPath(&eval, err) {
+		return false
 	}
 	if eval.Empty() {
-		return p.lexer.Error("expected target name")
+		return p.lexer.Error("expected target name", err)
 	}
 
 	for {
 		// 求值路径（在当前环境中展开变量）
 		path := eval.Evaluate(p.env)
 		if path == "" {
-			return p.lexer.Error("empty path")
+			return p.lexer.Error("empty path", err)
 		}
 		// 规范化路径（slash_bits 在默认目标中不使用，因为只做查找）
 		norm, _ := util.CanonicalizePath(path)
 		if err := p.state.AddDefault(norm); err != nil {
-			return p.lexer.Error(err.Error())
+			return p.lexer.Error(err.Error(), err)
 		}
 
 		// 尝试读取下一个路径
 		eval.Clear()
 		next := EvalString{}
-		_, err := p.lexer.ReadPath(&next)
-		if err != nil {
-			return err
+		if !p.lexer.ReadPath(&next, err) {
+			return false
 		}
 		if next.Empty() {
 			break
@@ -515,21 +508,20 @@ func (p *ManifestParser) ParseDefault() error {
 	}
 
 	// 期望换行
-	if err := p.expectToken(NEWLINE); err != nil {
-		return err
+	if !p.expectToken(NEWLINE, err) {
+		return false
 	}
-	return nil
+	return true
 }
 
-func (p *ManifestParser) parseFileInclude(newScope bool) error {
+func (p *ManifestParser) parseFileInclude(newScope bool, err *string) bool {
 	eval := EvalString{}
-	_, err := p.lexer.ReadPath(&eval)
-	if err != nil {
-		return err
+	if !p.lexer.ReadPath(&eval, err) {
+		return false
 	}
 	path := eval.Evaluate(p.env)
 	if path == "" {
-		return p.lexer.Error("empty path")
+		return p.lexer.Error("empty path", err)
 	}
 	if p.subparser == nil {
 		p.subparser = NewManifestParser(p.state, p.fileReader, p.options)
@@ -540,19 +532,19 @@ func (p *ManifestParser) parseFileInclude(newScope bool) error {
 		p.subparser.env = p.env
 	}
 	// 读取文件内容
-	content, err := p.fileReader.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("loading '%s': %v", path, err)
+	content, read_err := p.fileReader.ReadFile(path)
+	if read_err != nil {
+		return fmt.Errorf("loading '%s': %v", path, read_err)
 	}
-	if err := p.subparser.Parse(path, string(content)); err != nil {
-		return err
+	if !p.subparser.Parse(path, string(content), err) {
+		return false
 	}
-	return p.expectToken(NEWLINE)
+	return p.expectToken(NEWLINE, err)
 }
 
-func (p *ManifestParser) expectToken(tok Token) error {
+func (p *ManifestParser) expectToken(tok Token, err *string) bool {
 	if p.lexer.ReadToken() != tok {
-		return p.lexer.Error("expected " + tok.String())
+		return p.lexer.Error("expected "+tok.String(), err)
 	}
-	return nil
+	return true
 }

@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -44,12 +45,12 @@ func (p *Plan) Reset() {
 	p.targets = nil
 }
 
-func (p *Plan) AddTarget(target *Node) (bool, error) {
+func (p *Plan) AddTarget(target *Node, err *string) bool {
 	p.targets = append(p.targets, target)
-	return p.addSubTarget(target, nil, nil)
+	return p.addSubTarget(target, nil, err, nil)
 }
 
-func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bool) (bool, error) {
+func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk map[*Edge]bool) bool {
 	edge := node.InEdge
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
@@ -58,13 +59,13 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 			if dependent != nil {
 				ref = ", needed by '" + dependent.Path + "',"
 			}
-			return false, fmt.Errorf("'%s'%s missing and no known rule to make it", node.Path, ref)
+			*err = fmt.Sprintf("'%s'%s missing and no known rule to make it", node.Path, ref)
 		}
-		return false, nil
+		return false
 	}
 
 	if edge.OutputsReady {
-		return false, nil
+		return false
 	}
 
 	want, exists := p.want[edge]
@@ -74,7 +75,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 	}
 
 	if dyndepWalk != nil && want == WantToFinish {
-		return false, nil
+		return false
 	}
 
 	if node.Dirty && want == WantNothing {
@@ -87,15 +88,15 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, dyndepWalk map[*Edge]bo
 	}
 
 	if exists {
-		return true, nil
+		return true
 	}
 
 	for _, in := range edge.Inputs {
-		if succ, err := p.addSubTarget(in, node, dyndepWalk); !succ && err != nil {
-			return false, err
+		if !p.addSubTarget(in, node, err, dyndepWalk) && *err != "" {
+			return false
 		}
 	}
-	return true, nil
+	return true
 }
 
 func (p *Plan) edgeWanted(edge *Edge) {
@@ -118,10 +119,10 @@ func (p *Plan) FindWork() *Edge {
 	return work
 }
 
-func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult) error {
+func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
 	e, exists := p.want[edge]
 	if !exists {
-		return nil
+		panic(errors.New("EdgeFinished"))
 	}
 	directlyWanted := e != WantNothing
 
@@ -131,7 +132,7 @@ func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult) error {
 	edge.Pool.RetrieveReadyEdges(p.ready)
 
 	if result != EdgeSucceeded {
-		return nil
+		return true
 	}
 
 	if directlyWanted {
@@ -141,20 +142,20 @@ func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult) error {
 	edge.OutputsReady = true
 
 	for _, out := range edge.Outputs {
-		if err := p.nodeFinished(out); err != nil {
-			return err
+		if !p.nodeFinished(out, err) {
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
-func (p *Plan) nodeFinished(node *Node) error {
+func (p *Plan) nodeFinished(node *Node, err *string) bool {
 	// 若此节点提供 dyndep 信息，则加载
 	if node.DyndepPending {
 		if p.builder == nil {
-			return fmt.Errorf("dyndep requires Plan to have a Builder")
+			panic(fmt.Errorf("dyndep requires Plan to have a Builder"))
 		}
-		return p.builder.LoadDyndeps(node)
+		return p.builder.LoadDyndeps(node, err)
 	}
 
 	for _, outEdge := range node.OutEdges {
@@ -162,24 +163,24 @@ func (p *Plan) nodeFinished(node *Node) error {
 		if !exists {
 			continue
 		}
-		if err := p.edgeMaybeReady(outEdge, want); err != nil {
-			return err
+		if !p.edgeMaybeReady(outEdge, want, err) {
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
-func (p *Plan) edgeMaybeReady(edge *Edge, want Want) error {
+func (p *Plan) edgeMaybeReady(edge *Edge, want Want, err *string) bool {
 	if edge.AllInputsReady() {
 		if want != WantNothing {
 			p.scheduleWork(edge)
 		} else {
-			if err := p.EdgeFinished(edge, EdgeSucceeded); err != nil {
-				return err
+			if !p.EdgeFinished(edge, EdgeSucceeded, err) {
+				return false
 			}
 		}
 	}
-	return nil
+	return true
 }
 
 func (p *Plan) scheduleWork(edge *Edge) {
@@ -343,10 +344,10 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node) error {
 }
 
 // DyndepsLoaded 在加载 dyndep 文件后更新计划，将新发现的边加入构建图。
-func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile) error {
+func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile, err *string) bool {
 	// 重新计算所有直接和间接依赖的脏状态
-	if err := p.RefreshDyndepDependents(scan, node); err != nil {
-		return err
+	if !p.RefreshDyndepDependents(scan, node, err) {
+		return false
 	}
 
 	// 收集已经在计划中且有新 dyndep 信息的边
@@ -371,8 +372,8 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile) e
 			if len(edge.Outputs) > 0 {
 				dependentNode = edge.Outputs[0]
 			}
-			if succ, err := p.addSubTarget(in, dependentNode, dyndepWalk); !succ && err != nil {
-				return err
+			if !p.addSubTarget(in, dependentNode, err, dyndepWalk) && *err != "" {
+				return false
 			}
 		}
 	}
@@ -390,16 +391,16 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile) e
 		if !ok {
 			continue
 		}
-		if err := p.edgeMaybeReady(edge, want); err != nil {
-			return err
+		if !p.edgeMaybeReady(edge, want, err) {
+			return false
 		}
 	}
 
-	return nil
+	return true
 }
 
 // RefreshDyndepDependents 重新计算依赖节点的脏状态，并根据需要将它们加入计划。
-func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node) error {
+func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *string) bool {
 	// 收集依赖节点的传递闭包，并标记它们的边为未访问
 	dependents := make(map[*Node]bool)
 	p.unmarkDependents(node, dependents)
@@ -408,17 +409,15 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node) error {
 	for n := range dependents {
 		// 重新计算脏状态，同时检测新循环
 		var validationNodes []*Node
-		if _, err := scan.RecomputeDirty(n, &validationNodes); err != nil {
-			return err
+		if !scan.RecomputeDirty(n, &validationNodes, err) {
+			return false
 		}
 
 		// 将新发现的验证节点添加为顶层目标
 		for _, vn := range validationNodes {
 			if inEdge := vn.InEdge; inEdge != nil {
-				if !inEdge.OutputsReady {
-					if succ, err := p.AddTarget(vn); !succ && err != nil {
-						return err
-					}
+				if !inEdge.OutputsReady && !p.AddTarget(vn, err) {
+					return false
 				}
 			}
 		}
@@ -441,7 +440,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node) error {
 			p.edgeWanted(edge)
 		}
 	}
-	return nil
+	return true
 }
 
 // unmarkDependents 递归地清除节点依赖边的访问标记，并将所有依赖节点添加到 dependents 集合中。

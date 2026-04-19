@@ -34,7 +34,7 @@ func (l *DyndepLoader) LoadDyndeps(node *Node) error {
 }
 
 // loadDyndeps 内部实现，可传入已有的 DyndepFile 映射
-func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile) error {
+func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) bool {
 	// 标记不再等待 dyndep
 	node.DyndepPending = false
 
@@ -44,8 +44,8 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile) error {
 	}
 
 	// 加载 dyndep 文件
-	if err := l.loadDyndepFile(node, ddf); err != nil {
-		return err
+	if !l.loadDyndepFile(node, ddf, err) {
+		return false
 	}
 
 	// 更新所有以该节点作为 dyndep 绑定的边
@@ -55,27 +55,29 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile) error {
 		}
 		dyndeps, ok := (*ddf)[edge]
 		if !ok {
-			return fmt.Errorf("'%s' not mentioned in its dyndep file '%s'",
+			*err = fmt.Sprintf("'%s' not mentioned in its dyndep file '%s'",
 				edge.Outputs[0].Path, node.Path)
+			return false
 		}
 		dyndeps.Used = true
-		if err := l.UpdateEdge(edge, dyndeps); err != nil {
-			return err
+		if !l.UpdateEdge(edge, dyndeps, err) {
+			return false
 		}
 	}
 
 	// 拒绝 dyndep 文件中多余的边
 	for edge, dyndeps := range *ddf {
 		if !dyndeps.Used {
-			return fmt.Errorf("dyndep file '%s' mentions output '%s' whose build statement does not have a dyndep binding for the file",
+			*err = fmt.Sprintf("dyndep file '%s' mentions output '%s' whose build statement does not have a dyndep binding for the file",
 				node.Path, edge.Outputs[0].Path)
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 // UpdateEdge 更新边，对应 C++ 的 UpdateEdge
-func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
+func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps, err *string) bool {
 	// 添加 restat 绑定（如果 dyndep 中指定了 restat = 1）
 	if dyndeps.Restat {
 		// 确保边有自己的 BindingEnv（通常在解析时已创建）
@@ -92,7 +94,8 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
 	// 为每个隐式输出设置产生它的边（如果已经被其他边产生，则报错）
 	for _, out := range dyndeps.ImplicitOutputs {
 		if out.InEdge != nil {
-			return fmt.Errorf("multiple rules generate %s", out.Path)
+			*err = fmt.Sprintf("multiple rules generate %s", out.Path)
+			return false
 		}
 		out.set_in_edge(edge)
 	}
@@ -115,11 +118,11 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps) error {
 		in.AddOutEdge(edge)
 	}
 
-	return nil
+	return true
 }
 
 // loadDyndepFile 读取文件内容并调用解析器。
-func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile) error {
+func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile, err *string) bool {
 	parser := NewDyndepParser(l.state, l.diskInterface, ddf)
-	return parser.Load(node.Path, nil)
+	return parser.Load(node.Path, err, nil)
 }

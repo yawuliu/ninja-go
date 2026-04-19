@@ -1,8 +1,8 @@
 package builder
 
 import (
-	"errors"
 	"fmt"
+	"strings"
 )
 
 type Token int
@@ -104,9 +104,52 @@ func (l *Lexer) SetManifestVersion(major, minor int) {
 	l.manifestVersionMinor = minor
 }
 
-func (l *Lexer) Error(msg string) error {
-	line, col := l.lineColumnOf(l.lastPos)
-	return fmt.Errorf("%s:%d:%d: %s", l.filename, line, col, msg)
+func (l *Lexer) Error(message string, err *string) bool {
+	// Compute line and column.
+	input := l.yyinput
+	lastPos := l.lastPos // byte index, -1 if no token yet
+
+	line := 1
+	lineStart := 0
+	for i := 0; i < lastPos; i++ {
+		if input[i] == '\n' {
+			line++
+			lineStart = i + 1
+		}
+	}
+
+	col := 0
+	if lastPos >= 0 {
+		col = lastPos - lineStart
+	}
+
+	// Build error header: "filename:line: message\n"
+	*err = fmt.Sprintf("%s:%d: %s\n", l.filename, line, message)
+
+	// Add context line.
+	const truncateCol = 72
+	if col > 0 && col < truncateCol {
+		// Extract the line from lineStart up to next newline or end, max truncateCol chars.
+		lineEnd := lineStart + truncateCol
+		if lineEnd > len(input) {
+			lineEnd = len(input)
+		}
+		// Stop at newline.
+		for i := lineStart; i < lineEnd && i < len(input); i++ {
+			if input[i] == '\n' {
+				lineEnd = i
+				break
+			}
+		}
+		lineText := input[lineStart:lineEnd]
+		if lineEnd-lineStart == truncateCol && lineEnd < len(input) && input[lineEnd] != '\n' {
+			lineText += "..."
+		}
+		*err += lineText + "\n"
+		*err += strings.Repeat(" ", col) + "^ near here"
+	}
+
+	return false
 }
 
 func (l *Lexer) lineColumnOf(offset int) (int, int) {
@@ -922,7 +965,7 @@ var myybm = [256]byte{
 const kMinNewlineEscapeVersionMajor = 1
 const kMinNewlineEscapeVersionMinor = 14
 
-func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
+func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 	var p = l.ofs_
 	var marker int
 	var start int
@@ -930,7 +973,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		start = p
 		if p >= len(l.yyinput) {
 			l.lastPos = start
-			return errors.New("unexpected EOF")
+			return l.Error("unexpected EOF", err)
 		}
 
 		{
@@ -942,7 +985,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			if yych <= '\r' {
 				if yych <= 0x00 {
 					l.lastPos = start
-					return errors.New("unexpected EOF")
+					return l.Error("unexpected EOF", err)
 				}
 				if yych <= '\n' {
 					goto yy69
@@ -989,7 +1032,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 			}
 			{
 				l.lastPos = start
-				return errors.New(l.DescribeLastError())
+				return l.Error(l.DescribeLastError(), err)
 			}
 		yy71:
 			p++
@@ -1050,7 +1093,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		yy74:
 			{
 				l.lastPos = start
-				return errors.New("bad $-escape (literal $ must be written as $$)")
+				return l.Error("bad $-escape (literal $ must be written as $$)", err)
 			}
 		yy75:
 			p++
@@ -1103,7 +1146,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 					if (l.manifestVersionMajor < kMinNewlineEscapeVersionMajor) ||
 						(l.manifestVersionMajor == kMinNewlineEscapeVersionMajor &&
 							l.manifestVersionMinor < kMinNewlineEscapeVersionMinor) {
-						return errors.New("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14")
+						return l.Error("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14", err)
 					}
 					l.newlineVersionChecked = true
 				}
@@ -1152,26 +1195,24 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool) error {
 		l.EatWhitespace()
 	}
 	// Non-path strings end in newlines, so there's no whitespace to eat.
-	return nil
+	return true
 }
 
 // / Read a path (complete with $escapes).
 // / Returns false only on error, returned path may be empty if a delimiter
 // / (space, newline) is hit.
-func (l *Lexer) ReadPath(path *EvalString) (bool, error) {
-	err := l.ReadEvalString(path, true)
-	if err != nil {
-		return false, err
+func (l *Lexer) ReadPath(path *EvalString, err *string) bool {
+	if !l.ReadEvalString(path, true, err) {
+		return false
 	}
-	return true, nil
+	return true
 }
 
 // / Read the value side of a var = value line (complete with $escapes).
 // / Returns false only on error.
-func (l *Lexer) ReadVarValue(value *EvalString) (bool, error) {
-	err := l.ReadEvalString(value, false)
-	if err != nil {
-		return false, err
+func (l *Lexer) ReadVarValue(value *EvalString, err *string) bool {
+	if !l.ReadEvalString(value, false, err) {
+		return false
 	}
-	return true, nil
+	return true
 }
