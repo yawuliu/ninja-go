@@ -46,7 +46,10 @@ func TestPlan_AddTarget(t *testing.T) {
 	plan := NewPlan(nil)
 
 	// 创建简单图: in -> out
-	rule := &Rule{Name: "cc", Command: "gcc $in -o $out"}
+	rule := NewRule("cc")
+	cmdEval := &EvalString{}
+	cmdEval.AddText("gcc $in -o $out")
+	rule.AddBinding("command", cmdEval)
 	edge := state.AddEdge(rule)
 	inNode := state.AddNode("in.c", 0)
 	outNode := state.AddNode("out.o", 0)
@@ -263,7 +266,6 @@ func TestPlan_MoreToDo(t *testing.T) {
 	assert.False(t, plan.MoreToDo())
 
 	// 添加 wanted 边
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
 	plan.wantedEdges = 1
 	plan.commandEdges = 1
 

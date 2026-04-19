@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"ninja-go/pkg/util"
 	"os"
 	"testing"
 
@@ -19,11 +20,11 @@ func newMockFileSystemForParser() *mockFileSystemForParser {
 	}
 }
 
-func (m *mockFileSystemForParser) Open(name string) (File, error) {
+func (m *mockFileSystemForParser) Open(name string) (util.File, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFileSystemForParser) Create(name string) (File, error) {
+func (m *mockFileSystemForParser) Create(name string) (util.File, error) {
 	return nil, nil
 }
 
@@ -54,6 +55,14 @@ func (m *mockFileSystemForParser) Remove(path string) error {
 
 func (m *mockFileSystemForParser) MkdirAll(path string, perm os.FileMode) error {
 	return nil
+}
+
+func (m *mockFileSystemForParser) MakeDirs(path string) error {
+	return nil
+}
+
+func (m *mockFileSystemForParser) AllowStatCache(allow bool) bool {
+	return false
 }
 
 func (m *mockFileSystemForParser) AddFile(path string, content string) {

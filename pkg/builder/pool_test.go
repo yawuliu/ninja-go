@@ -188,7 +188,7 @@ func TestDefaultPool(t *testing.T) {
 }
 
 // TestConsolePool 测试控制台池
-func TestConsolePool(t *testing.T) {
+func TestConsolePool_Creation(t *testing.T) {
 	assert.NotNil(t, ConsolePool)
 	assert.Equal(t, "console", ConsolePool.Name)
 	assert.Equal(t, 1, ConsolePool.Depth)

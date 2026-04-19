@@ -3,9 +3,12 @@ package builder
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"ninja-go/pkg/util"
 )
 
 // mockFSIntegration 用于集成测试的增强 mock 文件系统
@@ -23,7 +26,7 @@ func newMockFSIntegration() *mockFSIntegration {
 	}
 }
 
-func (m *mockFSIntegration) Create(path string, content string) {
+func (m *mockFSIntegration) CreateFile(path string, content string) {
 	m.files[path] = content
 	m.mtimes[path] = m.nextMtime
 	m.nextMtime++
@@ -41,7 +44,7 @@ func (m *mockFSIntegration) ReadFile(path string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFSIntegration) WriteFile(path string, data []byte, perm uint32) error {
+func (m *mockFSIntegration) WriteFile(path string, data []byte, perm os.FileMode) error {
 	m.files[path] = string(data)
 	m.mtimes[path] = m.nextMtime
 	m.nextMtime++
@@ -60,10 +63,54 @@ func (m *mockFSIntegration) Stat(path string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }
 
+func (m *mockFSIntegration) Open(name string) (util.File, error) {
+	return nil, os.ErrNotExist
+}
+
+func (m *mockFSIntegration) Create(name string) (util.File, error) {
+	return nil, nil
+}
+
+func (m *mockFSIntegration) Truncate(name string, size int64) error {
+	return nil
+}
+
+func (m *mockFSIntegration) Remove(path string) error {
+	delete(m.files, path)
+	return nil
+}
+
+func (m *mockFSIntegration) MkdirAll(path string, perm os.FileMode) error {
+	return nil
+}
+
+func (m *mockFSIntegration) MakeDirs(path string) error {
+	return nil
+}
+
+func (m *mockFSIntegration) AllowStatCache(allow bool) bool {
+	return false
+}
+
+// mockFileInfo 用于测试的 mock 文件信息
+type mockFileInfo struct {
+	name  string
+	size  int64
+	mode  os.FileMode
+	mtime int64
+}
+
+func (m *mockFileInfo) Name() string       { return m.name }
+func (m *mockFileInfo) Size() int64        { return m.size }
+func (m *mockFileInfo) Mode() os.FileMode  { return m.mode }
+func (m *mockFileInfo) ModTime() time.Time { return time.Unix(m.mtime, 0) }
+func (m *mockFileInfo) IsDir() bool        { return false }
+func (m *mockFileInfo) Sys() interface{}   { return nil }
+
 // TestIntegration_SimpleBuild 测试简单构建
 func TestIntegration_SimpleBuild(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("foo.c", "int main() { return 0; }")
+	fs.CreateFile("foo.c", "int main() { return 0; }")
 
 	state := NewState()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
@@ -90,8 +137,8 @@ build foo.o: cc foo.c
 // TestIntegration_MultiStepBuild 测试多步构建
 func TestIntegration_MultiStepBuild(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("main.c", "int main() { return 0; }")
-	fs.Create("util.c", "void util() {}")
+	fs.CreateFile("main.c", "int main() { return 0; }")
+	fs.CreateFile("util.c", "void util() {}")
 
 	state := NewState()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
@@ -130,8 +177,8 @@ build prog: link main.o util.o
 // TestIntegration_ImplicitDeps 测试隐式依赖
 func TestIntegration_ImplicitDeps(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("foo.c", "#include \"foo.h\"\n")
-	fs.Create("foo.h", "void foo();")
+	fs.CreateFile("foo.c", "#include \"foo.h\"\n")
+	fs.CreateFile("foo.h", "void foo();")
 
 	state := NewState()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
@@ -155,8 +202,8 @@ build foo.o: cc foo.c | foo.h
 // TestIntegration_OrderOnlyDeps 测试 order-only 依赖
 func TestIntegration_OrderOnlyDeps(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("foo.c", "")
-	fs.Create("stamp", "")
+	fs.CreateFile("foo.c", "")
+	fs.CreateFile("stamp", "")
 
 	state := NewState()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
@@ -284,9 +331,9 @@ build prog: link foo.o bar.o baz.o
 // TestIntegration_Dyndep 测试动态依赖
 func TestIntegration_Dyndep(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("foo.c", "")
-	fs.Create("foo.dd", "ninja_dyndep_version = 1\nbuild foo.o: dyndep | foo.h\n")
-	fs.Create("foo.h", "")
+	fs.CreateFile("foo.c", "")
+	fs.CreateFile("foo.dd", "ninja_dyndep_version = 1\nbuild foo.o: dyndep | foo.h\n")
+	fs.CreateFile("foo.h", "")
 
 	state := NewState()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
@@ -618,7 +665,7 @@ build $builddir/foo.o: cc foo.c
 // TestIntegration_SubninjaIsolation 测试 subninja 作用域隔离
 func TestIntegration_SubninjaIsolation(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("sub.ninja", `
+	fs.CreateFile("sub.ninja", `
 local_var = in_sub
 build sub.o: cc sub.c
 `)
@@ -641,7 +688,7 @@ global_var = after
 // TestIntegration_IncludeSharing 测试 include 作用域共享
 func TestIntegration_IncludeSharing(t *testing.T) {
 	fs := newMockFSIntegration()
-	fs.Create("common.ninja", `
+	fs.CreateFile("common.ninja", `
 common_var = shared
 `)
 

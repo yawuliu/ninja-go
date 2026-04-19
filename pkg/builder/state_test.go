@@ -384,8 +384,7 @@ func TestNode_UpdatePhonyMtime(t *testing.T) {
 // TestEdge_EvaluateCommand 测试命令求值
 func TestEdge_EvaluateCommand(t *testing.T) {
 	rule := &Rule{
-		Name:    "cc",
-		Command: "gcc $in -o $out",
+		Name: "cc",
 	}
 	edge := &Edge{
 		Rule: rule,
@@ -404,8 +403,7 @@ func TestEdge_EvaluateCommand(t *testing.T) {
 // TestEdge_GetBinding 测试变量绑定
 func TestEdge_GetBinding(t *testing.T) {
 	rule := &Rule{
-		Name:    "cc",
-		Command: "gcc -c",
+		Name: "cc",
 	}
 	edge := &Edge{
 		Rule: rule,
