@@ -469,6 +469,9 @@ func (p *ManifestParser) ParseEdge() error {
 		if !found {
 			return p.lexer.Error("dyndep '" + dyndep + "' is not an input")
 		}
+		if edge.DyndepFile.GeneratedByDepLoader == false {
+			panic(errors.New("dyndep '" + dyndep + "' is not a dependency"))
+		}
 	}
 
 	return nil

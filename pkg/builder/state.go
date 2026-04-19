@@ -149,6 +149,8 @@ func (s *State) AddOut(edge *Edge, path string, slashBits uint64) error {
 func (s *State) AddValidation(edge *Edge, path string, slashBits uint64) {
 	node := s.GetNode(path, slashBits)
 	edge.Validations = append(edge.Validations, node)
+	node.AddValidationOutEdge(edge)
+	node.GeneratedByDepLoader = false
 }
 
 func (s *State) AddDefault(path string) error {
