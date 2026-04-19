@@ -1,0 +1,1 @@
+"C:\Program Files\JetBrains\CLion-2025.1\bin\ninja\win\x64\ninja.exe" -n -f simple.ninja
