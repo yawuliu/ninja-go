@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"fmt"
 	"ninja-go/pkg/util"
 	"os"
 )
@@ -38,8 +39,10 @@ func NewNode(path string, slashBits uint64) *Node {
 
 func (n *Node) Stat(fs util.FileSystem) error {
 	nativePath := util.ToNativePath(n.Path)
+	fmt.Printf("DEBUG Stat: path=%s nativePath=%s\n", n.Path, nativePath)
 	info, err := fs.Stat(nativePath)
 	if err != nil {
+		fmt.Printf("DEBUG Stat: err=%v IsNotExist=%v\n", err, os.IsNotExist(err))
 		if os.IsNotExist(err) {
 			n.Mtime = 0
 			n.Exists = ExistenceMissing
@@ -49,6 +52,7 @@ func (n *Node) Stat(fs util.FileSystem) error {
 	}
 	n.Mtime = info.ModTime().UnixNano()
 	n.Exists = ExistenceExists
+	fmt.Printf("DEBUG Stat: found mtime=%d\n", n.Mtime)
 	return nil
 }
 

@@ -53,6 +53,7 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 
 	edge := node.InEdge
 	if edge == nil {
+		fmt.Printf("DEBUG: node=%s Exists=%d IsExists=%v\n", node.Path, node.Exists, node.IsExists())
 		if !node.IsExists() {
 			node.Dirty = true
 		}
