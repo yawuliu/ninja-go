@@ -90,7 +90,8 @@ func NewLexer(filename, input string) *Lexer {
 
 func (l *Lexer) Start(filename, input string) {
 	l.filename = filename
-	l.yyinput = input
+	// 添加 null 字节作为终止符，模拟 C 字符串行为
+	l.yyinput = input + "\x00"
 	l.ofs_ = 0
 	l.lastPos = 0
 	l.manifestVersionMajor = 1

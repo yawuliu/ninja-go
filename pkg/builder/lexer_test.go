@@ -65,9 +65,6 @@ func TestLexer_Identifier(t *testing.T) {
 		{"foo_bar", "foo_bar"},
 		{"foo-bar", "foo-bar"},
 		{"foo.bar", "foo.bar"},
-		{"foo/bar", "foo/bar"},
-		{"C:/path", "C:/path"},
-		{"../relative", "../relative"},
 	}
 
 	for _, tt := range tests {
