@@ -30,9 +30,9 @@ func NormalizePath(path string) string {
 
 // ToNativePath 将内部正斜杠路径转换为操作系统原生路径
 func ToNativePath(path string) string {
-	//if runtime.GOOS == "windows" {
-	//	return strings.ReplaceAll(path, "/", "\\")
-	//}
+	if runtime.GOOS == "windows" {
+		return strings.ReplaceAll(path, "/", "\\")
+	}
 	return path
 }
 

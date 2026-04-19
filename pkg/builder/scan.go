@@ -46,6 +46,11 @@ func (s *DependencyScan) RecomputeDirty(node *Node, validationNodes *[]*Node) (b
 }
 
 func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node) (bool, error) {
+	// 确保节点状态已统计
+	if err := node.StatIfNecessary(s.disk_interface_); err != nil {
+		return false, err
+	}
+
 	edge := node.InEdge
 	if edge == nil {
 		if !node.IsExists() {
@@ -100,14 +105,43 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 	}
 
 	// 递归处理输入
+	var mostRecentInput *Node
 	for _, in := range edge.Inputs {
+		// 确保输入节点状态已统计
+		if err := in.StatIfNecessary(s.disk_interface_); err != nil {
+			return false, err
+		}
 		if flag, err := s.recomputeNodeDirty(in, stack, validationNodes); err != nil {
 			return flag, err
 		}
+		// 找到最新的输入
+		if mostRecentInput == nil || in.Mtime > mostRecentInput.Mtime {
+			mostRecentInput = in
+		}
 	}
 
-	// 脏标记计算（略）
-	// ...
+	// 计算输出是否 dirty
+	dirty := false
+	if !edge.DepsMissing {
+		// 检查是否有输出不存在或比输入旧
+		outputsDirty, err := s.RecomputeOutputsDirty(edge, mostRecentInput)
+		if err != nil {
+			return false, err
+		}
+		if outputsDirty {
+			dirty = true
+		}
+	}
+
+	// 标记边和输出节点的状态
+	if dirty {
+		edge.OutputsReady = false
+		for _, out := range edge.Outputs {
+			out.Dirty = true
+		}
+	} else {
+		edge.OutputsReady = true
+	}
 
 	edge.Mark = VisitDone
 	*stack = (*stack)[:len(*stack)-1]
@@ -229,6 +263,11 @@ func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node
 // command 是边的完整命令（用于比较命令哈希），output 是输出节点。
 // 返回 true 表示需要重新构建，false 表示 clean。
 func (s *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node, command string, output *Node) (bool, error) {
+	// 确保节点状态已统计
+	if err := output.StatIfNecessary(s.disk_interface_); err != nil {
+		return false, err
+	}
+
 	// 处理 phony 边
 	if edge.IsPhony() {
 		// phony 边不写入任何输出。只有当没有输入、没有验证边且输出文件不存在时，才标记为脏。

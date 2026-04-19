@@ -37,7 +37,8 @@ func NewNode(path string, slashBits uint64) *Node {
 }
 
 func (n *Node) Stat(fs util.FileSystem) error {
-	info, err := fs.Stat(n.Path)
+	nativePath := util.ToNativePath(n.Path)
+	info, err := fs.Stat(nativePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			n.Mtime = 0

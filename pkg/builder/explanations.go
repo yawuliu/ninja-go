@@ -56,24 +56,27 @@ func NewOptionalExplanations(expl *Explanations) OptionalExplanations {
 }
 
 // Record 如果内部指针非空，则记录解释信息
-func (o OptionalExplanations) Record(item interface{}, format string, args ...interface{}) {
-	if o.expl != nil {
-		o.expl.Record(item, format, args...)
+func (o *OptionalExplanations) Record(item interface{}, format string, args ...interface{}) {
+	if o == nil || o.expl == nil {
+		return
 	}
+	o.expl.Record(item, format, args...)
 }
 
 // RecordArgs 同上
-func (o OptionalExplanations) RecordArgs(item interface{}, format string, args ...interface{}) {
-	if o.expl != nil {
-		o.expl.RecordArgs(item, format, args...)
+func (o *OptionalExplanations) RecordArgs(item interface{}, format string, args ...interface{}) {
+	if o == nil || o.expl == nil {
+		return
 	}
+	o.expl.RecordArgs(item, format, args...)
 }
 
 // LookupAndAppend 如果内部指针非空，则查找并追加
-func (o OptionalExplanations) LookupAndAppend(item interface{}, out *[]string) {
-	if o.expl != nil {
-		o.expl.LookupAndAppend(item, out)
+func (o *OptionalExplanations) LookupAndAppend(item interface{}, out *[]string) {
+	if o == nil || o.expl == nil {
+		return
 	}
+	o.expl.LookupAndAppend(item, out)
 }
 
 // Ptr 返回内部的 Explanations 指针（可能为 nil）
