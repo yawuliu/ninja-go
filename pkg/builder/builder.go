@@ -58,9 +58,21 @@ func (b *Builder) Destruct() {
 	b.status.SetExplanations(nil)
 }
 
+func (b *Builder) AddTargetByName(name string) (*Node, error) {
+	node := b.state.LookupNode(name)
+	if node == nil {
+		return nil, fmt.Errorf("unknown target: '%s'", name)
+	}
+	if succ, err := b.AddTarget(node); !succ && err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
 func (b *Builder) AddTarget(target *Node) (bool, error) {
 	var validationNodes []*Node
-	if err := b.scan.RecomputeDirty(target, &validationNodes); err != nil {
+	if succ, err := b.scan.RecomputeDirty(target, &validationNodes); !succ && err != nil {
 		return false, err
 	}
 	if edge := target.InEdge; edge == nil || !edge.OutputsReady {

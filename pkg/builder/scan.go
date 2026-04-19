@@ -30,36 +30,36 @@ func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 	}
 }
 
-func (s *DependencyScan) RecomputeDirty(node *Node, validationNodes *[]*Node) error {
+func (s *DependencyScan) RecomputeDirty(node *Node, validationNodes *[]*Node) (bool, error) {
 	// 使用栈进行深度优先遍历
 	stack := []*Node{node}
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		if err := s.recomputeNodeDirty(current, &stack, validationNodes); err != nil {
-			return err
+		if succ, err := s.recomputeNodeDirty(current, &stack, validationNodes); !succ && err != nil {
+			return false, err
 		}
 	}
-	return nil
+	return true, nil
 }
 
-func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node) error {
+func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node) (bool, error) {
 	edge := node.InEdge
 	if edge == nil {
 		if !node.IsExists() {
 			node.Dirty = true
 		}
-		return nil
+		return true, nil
 	}
 
 	if edge.Mark == VisitDone {
-		return nil
+		return true, nil
 	}
 
-	if edge.Mark == VisitInStack {
+	if err := s.VerifyDAG(node, *stack); err != nil {
 		// 检测循环
-		return s.VerifyDAG(node, *stack)
+		return false, err
 	}
 
 	// 添加验证节点
@@ -68,10 +68,34 @@ func (s *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validati
 	edge.Mark = VisitInStack
 	*stack = append(*stack, node)
 
+	dirty := false
+	edge.OutputsReady = true
+	edge.DepsMissing = false
 	// 加载 dyndep 等（简化）
 	if !edge.DepsLoaded {
+		// This is our first encounter with this edge.
 		edge.DepsLoaded = true
-		// ... 加载 depfile 和 dyndep
+		// If there is a pending dyndep file, visit it now:
+		// * If the dyndep file is ready then load it now to get any
+		//   additional inputs and outputs for this and other edges.
+		//   Once the dyndep file is loaded it will no longer be pending
+		//   if any other edges encounter it, but they will already have
+		//   been updated.
+		// * If the dyndep file is not ready then since is known to be an
+		//   input to this edge, the edge will not be considered ready below.
+		//   Later during the build the dyndep file will become ready and be
+		//   loaded to update this edge before it can possibly be scheduled.
+		if edge.DyndepFile!=nil && edge.DyndepFile.DyndepPending {
+			if (!s.RecomputeNodeDirty(edge.DyndepFile, stack, validationNodes)) {
+				return false
+			}
+			if !edge->dyndep_->in_edge() || edge->dyndep_->in_edge()->outputs_ready() {
+				// The dyndep file is ready, so load it now.
+				if !s.LoadDyndeps(edge->dyndep_) {
+					return false
+				}
+			}
+		}
 	}
 
 	// 递归处理输入
