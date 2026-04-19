@@ -47,15 +47,6 @@ func NewManifestParser(state *State, file_reader util.FileSystem, options Manife
 	return m
 }
 
-//func NewManifestParser(state *State, fileReader util.FileSystem, options ManifestParserOptions) *ManifestParser {
-//	return &ManifestParser{
-//		state:      state,
-//		fileReader: fileReader,
-//		options:    options,
-//		env:        NewBindingEnv(nil),
-//	}
-//}
-
 func (p *ManifestParser) Load(filename string, err *string, parent *BaseParser) bool {
 	// 读取文件内容
 	content, read_err := p.fileReader.ReadFile(filename)

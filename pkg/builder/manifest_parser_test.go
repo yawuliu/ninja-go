@@ -73,9 +73,9 @@ func TestManifestParser_ParseEmpty(t *testing.T) {
 	state := NewState()
 	fs := newMockFileSystemForParser()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
-
-	err := parser.ParseTest("")
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest("", &err)
+	require.Equal(t, err, "")
 }
 
 func TestManifestParser_ParseRule(t *testing.T) {
@@ -86,8 +86,9 @@ func TestManifestParser_ParseRule(t *testing.T) {
 	input := `rule cc
   command = gcc $in -o $out
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证规则被添加
 	rule := state.Bindings.LookupRule("cc")
@@ -106,8 +107,9 @@ func TestManifestParser_ParseRuleWithMultipleBindings(t *testing.T) {
   depfile = $out.d
   deps = gcc
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	rule := state.Bindings.LookupRule("cc")
 	require.NotNil(t, rule)
@@ -128,9 +130,10 @@ func TestManifestParser_ParseRule_Duplicate(t *testing.T) {
 rule cc
   command = clang $in -o $out
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate rule")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "duplicate rule")
 }
 
 func TestManifestParser_ParseRule_MissingCommand(t *testing.T) {
@@ -141,9 +144,10 @@ func TestManifestParser_ParseRule_MissingCommand(t *testing.T) {
 	input := `rule cc
   description = CC $out
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected 'command'")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "expected 'command'")
 }
 
 func TestManifestParser_ParseRule_RspfileMismatch(t *testing.T) {
@@ -155,9 +159,10 @@ func TestManifestParser_ParseRule_RspfileMismatch(t *testing.T) {
   command = gcc @$rspfile -o $out
   rspfile = $out.rsp
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "rspfile and rspfile_content need to be both specified")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "rspfile and rspfile_content need to be both specified")
 }
 
 func TestManifestParser_ParseBuild(t *testing.T) {
@@ -170,8 +175,9 @@ func TestManifestParser_ParseBuild(t *testing.T) {
 
 build foo.o: cc foo.c
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证边被创建
 	require.Len(t, state.Edges, 1)
@@ -193,8 +199,9 @@ func TestManifestParser_ParseBuild_MultipleInputs(t *testing.T) {
 
 build prog: link foo.o bar.o baz.o
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Inputs, 3)
@@ -213,8 +220,9 @@ func TestManifestParser_ParseBuild_MultipleOutputs(t *testing.T) {
 
 build out1 out2 out3: gen input.txt
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Outputs, 3)
@@ -233,8 +241,9 @@ func TestManifestParser_ParseBuild_ImplicitInputs(t *testing.T) {
 
 build foo.o: cc foo.c | header.h config.h
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Inputs, 3)
@@ -254,8 +263,9 @@ func TestManifestParser_ParseBuild_OrderOnlyInputs(t *testing.T) {
 
 build foo.o: cc foo.c || stamp
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Inputs, 2)
@@ -274,8 +284,9 @@ func TestManifestParser_ParseBuild_ImplicitOutputs(t *testing.T) {
 
 build foo.o | foo.h: gen foo.c
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Outputs, 2)
@@ -294,8 +305,9 @@ func TestManifestParser_ParseBuild_Validations(t *testing.T) {
 
 build foo.o: cc foo.c |@ validate.py
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.Len(t, edge.Validations, 1)
@@ -313,8 +325,9 @@ func TestManifestParser_ParseBuild_EdgeVariables(t *testing.T) {
 build foo.o: cc foo.c
   flags = -O2 -Wall
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	cmd := edge.EvaluateCommand(false)
@@ -328,9 +341,10 @@ func TestManifestParser_ParseBuild_UnknownRule(t *testing.T) {
 
 	input := `build foo.o: unknown foo.c
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown build rule")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "unknown build rule")
 }
 
 func TestManifestParser_ParseBuild_MissingOutputs(t *testing.T) {
@@ -343,9 +357,10 @@ func TestManifestParser_ParseBuild_MissingOutputs(t *testing.T) {
 
 build : cc foo.c
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected path")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "expected path")
 }
 
 func TestManifestParser_ParseDefault(t *testing.T) {
@@ -360,8 +375,9 @@ build foo.o: cc foo.c
 
 default foo.o
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证默认目标
 	require.Len(t, state.Defaults, 1)
@@ -381,8 +397,9 @@ build bar.o: cc bar.c
 
 default foo.o bar.o
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	require.Len(t, state.Defaults, 2)
 	assert.Equal(t, "foo.o", state.Defaults[0].Path)
@@ -396,9 +413,10 @@ func TestManifestParser_ParseDefault_UnknownTarget(t *testing.T) {
 
 	input := `default nonexistent
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown target")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "unknown target")
 }
 
 func TestManifestParser_ParsePool(t *testing.T) {
@@ -409,8 +427,9 @@ func TestManifestParser_ParsePool(t *testing.T) {
 	input := `pool link_pool
   depth = 4
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证池被创建
 	pool := state.LookupPool("link_pool")
@@ -430,9 +449,10 @@ func TestManifestParser_ParsePool_Duplicate(t *testing.T) {
 pool mypool
   depth = 4
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate pool")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "duplicate pool")
 }
 
 func TestManifestParser_ParsePool_MissingDepth(t *testing.T) {
@@ -443,9 +463,10 @@ func TestManifestParser_ParsePool_MissingDepth(t *testing.T) {
 	input := `pool mypool
   other = value
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected 'depth'")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "expected 'depth'")
 }
 
 func TestManifestParser_ParsePool_InvalidDepth(t *testing.T) {
@@ -456,9 +477,10 @@ func TestManifestParser_ParsePool_InvalidDepth(t *testing.T) {
 	input := `pool mypool
   depth = -1
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid pool depth")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "invalid pool depth")
 }
 
 func TestManifestParser_ParseVariable(t *testing.T) {
@@ -469,8 +491,9 @@ func TestManifestParser_ParseVariable(t *testing.T) {
 	input := `cc = gcc
 flags = -O2
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证变量被设置
 	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
@@ -486,8 +509,9 @@ func TestManifestParser_ParseVariable_Reference(t *testing.T) {
 ccflags = -O2
 command = $cc $ccflags
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证变量引用被正确展开
 	cmd := state.Bindings.LookupVariable("command")
@@ -501,8 +525,9 @@ func TestManifestParser_ParseVersion(t *testing.T) {
 
 	input := `ninja_required_version = 1.14
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证版本被设置到 lexer
 	assert.Equal(t, 1, parser.lexer.manifestVersionMajor)
@@ -517,8 +542,9 @@ func TestManifestParser_ParseInclude(t *testing.T) {
 
 	input := `include included.ninja
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证包含的文件被解析
 	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
@@ -534,8 +560,9 @@ func TestManifestParser_ParseSubninja(t *testing.T) {
 subninja sub.ninja
 global = after
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// subninja 中的变量不应该影响父级
 	assert.Equal(t, "", state.Bindings.LookupVariable("local"))
@@ -553,8 +580,9 @@ rule cc
   # Another comment
   description = CC $out
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证规则被正确解析
 	rule := state.Bindings.LookupRule("cc")
@@ -575,8 +603,9 @@ rule link
 
 build prog: link foo.o bar.o
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	require.NotNil(t, edge.Pool)
@@ -594,9 +623,10 @@ func TestManifestParser_ParseBuild_UnknownPool(t *testing.T) {
 
 build prog: link foo.o
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown pool name")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "unknown pool name")
 }
 
 func TestManifestParser_ParseBuild_Phony(t *testing.T) {
@@ -606,8 +636,9 @@ func TestManifestParser_ParseBuild_Phony(t *testing.T) {
 
 	input := `build all: phony foo.o bar.o
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	edge := state.Edges[0]
 	assert.Equal(t, "phony", edge.Rule.Name)
@@ -620,8 +651,9 @@ func TestManifestParser_ParseBuild_PhonyCycleWarn(t *testing.T) {
 
 	input := `build all: phony all
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 自引用应该被处理（警告模式下）
 	edge := state.Edges[0]
@@ -652,8 +684,9 @@ build prog: link foo.o bar.o
 
 default prog
 `
-	err := parser.ParseTest(input)
-	require.NoError(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.Equal(t, err, "")
 
 	// 验证所有边被创建
 	assert.Len(t, state.Edges, 3)
@@ -670,8 +703,9 @@ func TestManifestParser_ParseError_SyntaxError(t *testing.T) {
 
 	input := `build foo.o cc foo.c
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
 }
 
 func TestManifestParser_ParseError_EmptyPath(t *testing.T) {
@@ -684,7 +718,8 @@ func TestManifestParser_ParseError_EmptyPath(t *testing.T) {
 
 build $: cc foo.c
 `
-	err := parser.ParseTest(input)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "empty path")
+	var err string
+	parser.ParseTest(input, &err)
+	require.NotEqual(t, err, "")
+	assert.Contains(t, err, "empty path")
 }

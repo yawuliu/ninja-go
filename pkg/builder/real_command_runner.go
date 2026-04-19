@@ -154,7 +154,7 @@ func (r *RealCommandRunner) StartCommand(edge *Edge) bool {
 	return true
 }
 
-func (r *RealCommandRunner) WaitForCommand() (*CommandResult, error) {
+func (r *RealCommandRunner) WaitForCommand(result *CommandResult) bool {
 	for {
 		subproc := r.subprocs.NextFinished()
 		if subproc != nil {

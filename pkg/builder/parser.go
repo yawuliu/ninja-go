@@ -30,34 +30,32 @@ func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
 }
 
 // Load 加载文件，如果 parent 非空则使用其 Lexer 进行错误报告
-func (b *BaseParser) Load(filename string, parent *BaseParser) error {
-	// 读取文件内容
-	content, err := b.FileReader.ReadFile(filename)
-	if err != nil {
-		errMsg := fmt.Sprintf("loading '%s': %v", filename, err)
+func (b *BaseParser) Load(filename string, err *string, parent *BaseParser) bool {
+	content, read_err := b.FileReader.ReadFile(filename)
+	if read_err != nil {
+		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
 		if parent != nil {
-			parent.lexer.Error(errMsg)
+			parent.lexer.Error(*err, err)
 		}
-		return fmt.Errorf("%s", errMsg)
+		return false
 	}
-	return b.Parse(filename, string(content))
+	return b.Parse(filename, string(content), err)
 }
 
 // ExpectToken 期望下一个 token 为指定类型，否则返回错误
-func (b *BaseParser) ExpectToken(expected Token) error {
+func (b *BaseParser) ExpectToken(expected Token, err *string) bool {
 	tok := b.lexer.ReadToken()
 	if tok != expected {
-		msg := fmt.Sprintf("expected %s, got %s%s",
-			expected.String(),
-			tok.String(),
-			TokenErrorHint(expected))
-		return b.lexer.Error(msg)
+		message := "expected " + expected.String()
+		message += ", got " + tok.String()
+		message += TokenErrorHint(expected)
+		return b.lexer.Error(message, err)
 	}
-	return nil
+	return true
 }
 
 // Parse 方法需要由具体解析器实现（如 ManifestParser、DyndepParser）
 // 这里仅作为占位，实际应在子类型中覆盖
-func (b *BaseParser) Parse(filename, input string) error {
+func (b *BaseParser) Parse(filename, input string, err *string) bool {
 	panic("Parse method must be implemented by concrete parser")
 }
