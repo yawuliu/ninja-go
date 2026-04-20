@@ -282,12 +282,12 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 	depsType := edge.GetBinding("deps")
 	depsPrefix := edge.GetBinding("msvc_deps_prefix")
 	if depsType != "" {
-		extractErr := b.extractDeps(result, depsType, depsPrefix, &depsNodes)
-		if extractErr != nil && result.Status == ExitSuccess {
+		var extract_err string
+		if !b.extractDeps(result, depsType, depsPrefix, &depsNodes, &extract_err) && result.Status == ExitSuccess {
 			if result.Output != "" {
 				result.Output += "\n"
 			}
-			result.Output += extractErr.Error()
+			result.Output += extract_err
 			result.Status = ExitFailure
 		}
 	}
@@ -381,65 +381,66 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 // KeepDepfile 控制是否保留 depfile 文件（调试用）
 var g_keep_depfile = false
 
-func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string, depsNodes *[]*Node) error {
-	switch depsType {
-	case "msvc":
+func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string, depsNodes *[]*Node, err *string) bool {
+	if depsType == "msvc" {
 		parser := NewCLParser()
-		filteredOutput, includes, err := parser.Parse(result.Output, depsPrefix)
-		if err != nil {
-			return err
+		var output string
+		if !parser.Parse(result.Output, depsPrefix, &output, err) {
+			return false
 		}
-		result.Output = filteredOutput
-		// 将所有 includes 添加到 depsNodes，slash_bits 全为 1（表示所有反斜杠都保留）
-		for _, inc := range includes {
-			node := b.state.GetNode(inc, ^uint64(0))
-			*depsNodes = append(*depsNodes, node)
+		result.Output = output
+		for include := range parser.includes {
+			// ~0 is assuming that with MSVC-parsed headers, it's ok to always make
+			// all backslashes (as some of the slashes will certainly be backslashes
+			// anyway). This could be fixed if necessary with some additional
+			// complexity in IncludesNormalize::Relativize.
+			*depsNodes = append(*depsNodes, b.state.GetNode(include, ^uint(0)))
 		}
-		return nil
-
-	case "gcc":
+	} else if depsType == "gcc" {
 		depfile := result.Edge.GetUnescapedDepfile()
 		if depfile == "" {
-			return errors.New("edge with deps=gcc but no depfile makes no sense")
+			*err = "edge with deps=gcc but no depfile makes no sense"
+			return false
 		}
 
-		// 读取 depfile 内容，缺失时视为空
-		content, err := b.disk.ReadFile(depfile)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// 文件不存在，无依赖可提取
-				return nil
-			}
-			return fmt.Errorf("reading depfile %s: %v", depfile, err)
+		// Read depfile content. Treat a missing depfile as empty.
+		var content string
+		status := b.disk.ReadFile(depfile, &content, err)
+		if status == util.StatusNotFound {
+			*err = "" // clear error
+		} else if status == util.StatusOtherError {
+			return false
 		}
-		if len(content) == 0 {
-			return nil
-		}
-
-		parser := &DepfileParser{}
-		if err := parser.Parse(string(content)); err != nil {
-			return fmt.Errorf("parsing depfile %s: %v", depfile, err)
+		if content == "" {
+			return true
 		}
 
-		// 将依赖节点添加到 depsNodes
-		for _, in := range parser.Ins {
-			// 规范化路径并获取节点
-			norm, slashBits := util.CanonicalizePath(in)
-			node := b.state.GetNode(norm, slashBits)
-			*depsNodes = append(*depsNodes, node)
+		deps := NewDepfileParser(b.config.DepfileParserOptions)
+		if !deps.Parse(content, err) {
+			return false
 		}
 
-		// 如果不保留 depfile，则删除它
+		// XXX check depfile matches expected output.
+		*depsNodes = make([]*Node, 0, len(deps.Ins))
+		for _, input := range deps.Ins {
+			// Convert StringPiece to mutable string for canonicalization
+			pathStr := string(input)
+			slashBits := uint64(0)
+			canonicalized := util.CanonicalizePath(pathStr, &slashBits) // assume helper exists
+			*depsNodes = append(*depsNodes, b.state.GetNode(canonicalized, slashBits))
+		}
+
 		if !g_keep_depfile {
-			if b.disk.RemoveFile(depfile) < 0 {
-				return fmt.Errorf("deleting depfile %s: %v", depfile, err)
+			if errRemove := b.disk.RemoveFile(depfile); errRemove != 0 {
+				*err = "deleting depfile  failed \n"
+				return false
 			}
 		}
-		return nil
-
-	default:
-		return fmt.Errorf("unknown deps type '%s'", depsType)
+	} else {
+		panic("unknown deps type '" + depsType + "'")
 	}
+
+	return true
 }
 
 func (b *Builder) LoadDyndeps(node *Node, err *string) bool {

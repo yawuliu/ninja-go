@@ -73,7 +73,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, status builder.Status) (bo
 	}
 
 	// 只有当节点现在变脏时才认为清单被重建（可能被 restat 清理）
-	if !node.Dirty {
+	if !node.dirty_ {
 		// 重置状态以避免问题（如 https://github.com/ninja-build/ninja/issues/874）
 		n.state_.Reset()
 		return false, nil

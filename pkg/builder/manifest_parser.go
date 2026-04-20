@@ -49,15 +49,16 @@ func NewManifestParser(state *State, file_reader util.FileSystem, options Manife
 
 func (p *ManifestParser) Load(filename string, err *string, parent *Lexer) bool {
 	// 读取文件内容
-	content, read_err := p.fileReader.ReadFile(filename)
-	if read_err != nil {
-		*err = "loading '" + filename + "': " + read_err.Error()
+	var content string
+	status := p.fileReader.ReadFile(filename, &content, err)
+	if status != util.StatusOkay {
+		*err = "loading '" + filename + "': " + *err
 		if parent != nil {
 			parent.Error(*err, err)
 		}
 		return false
 	}
-	return p.Parse(filename, string(content), err)
+	return p.Parse(filename, content, err)
 }
 
 func (p *ManifestParser) ParseTest(input string, err *string) bool {

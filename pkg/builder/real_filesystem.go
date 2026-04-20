@@ -62,13 +62,18 @@ func (fs *RealFileSystem) Truncate(name string, size int64) error {
 	return os.Truncate(name, size)
 }
 
-func (fs *RealFileSystem) ReadFile(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+func (fs *RealFileSystem) ReadFile(path string, contents *string, err *string) util.FileReaderStatus {
+	_, stat_err := os.Stat(path)
+	if stat_err != nil && os.IsNotExist(stat_err) {
+		return util.StatusNotFound
+	}
+	data, read_err := os.ReadFile(path)
+	if read_err != nil {
+		return util.StatusOtherError
 	}
 	data = append(data, 0)
-	return data, nil
+	*contents = string(data)
+	return util.StatusOkay
 }
 
 func (fs *RealFileSystem) Remove(path string) error {

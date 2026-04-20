@@ -1,9 +1,5 @@
 package builder
 
-import (
-	"strings"
-)
-
 // DepfileParserOptions 目前为空，保留用于扩展
 type DepfileParserOptions struct{}
 
@@ -11,154 +7,440 @@ type DepfileParserOptions struct{}
 type DepfileParser struct {
 	Outs    []string
 	Ins     []string
-	options DepfileParserOptions
+	options *DepfileParserOptions
 }
 
 // NewDepfileParser 创建解析器实例
-func NewDepfileParser(options DepfileParserOptions) *DepfileParser {
+func NewDepfileParser(options *DepfileParserOptions) *DepfileParser {
 	return &DepfileParser{
 		options: options,
 	}
 }
 
 // Parse 解析 depfile 内容，返回错误（如果有）
-func (p *DepfileParser) Parse(content string) error {
-	p.Outs = nil
-	p.Ins = nil
-	in := []rune(content)
-	pos := 0
-	n := len(in)
-	parsingTargets := true
+func (p *DepfileParser) Parse(content string, err *string) bool {
+	// in: current parser input point.
+	// end: end of input.
+	// parsing_targets: whether we are parsing targets or dependencies.
+	b := []byte(content)
+	in := 0
+	end := len(b)
 	haveTarget := false
+	parsingTargets := true
 	poisonedInput := false
-	isFirstLine := true
+	isEmpty := true
+	length := 0
+	n := 0
+	for in < end {
+		haveNewline := false
+		// out: current output point (typically same as in, but can fall behind as we de-escape backslashes).
+		out := in
+		// filename: start of the current parsed filename.
+		filename := out
 
-	for pos < n {
-		// 跳过前导空格
-		for pos < n && (in[pos] == ' ' || in[pos] == '\t') {
-			pos++
+		// Re2c generated scanner (translated to Go using goto)
+		// yybm table
+		yybm := [256]byte{
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
+			0, 128, 128, 0, 0, 128, 128, 128,
+			128, 128, 0, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 0, 0, 128, 0, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 0, 128, 0, 128,
+			0, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 0, 128, 128, 0,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
+			128, 128, 128, 128, 128, 128, 128, 128,
 		}
-		if pos >= n {
-			break
+
+		var yych byte
+		var yymarker int
+		start := in
+		yych = b[in]
+		if (yybm[yych] & 128) != 0 {
+			goto yy5
 		}
-		// start := ofs_
-		// 解析一个 token（文件名），处理转义和续行
-		var token strings.Builder
-		escaped := false
-		// lineContinuation := false
-		for pos < n {
-			ch := in[pos]
-			if escaped {
-				// 转义字符处理
-				switch ch {
-				case ' ', '#', ':', '\\':
-					token.WriteRune(ch)
-				default:
-					token.WriteRune('\\')
-					token.WriteRune(ch)
+		if yych <= '\r' {
+			if yych <= '\t' {
+				if yych >= 0x01 {
+					goto yy1
 				}
-				escaped = false
-				pos++
-				continue
-			}
-			if ch == '\\' {
-				// 检查是否续行：反斜杠后跟换行符
-				if pos+1 < n && (in[pos+1] == '\n' || in[pos+1] == '\r') {
-					// 续行：跳过反斜杠和换行符
-					pos += 2
-					// 跳过续行后的空白
-					for pos < n && (in[pos] == ' ' || in[pos] == '\t') {
-						pos++
-					}
-					// lineContinuation = true
-					continue
+			} else {
+				if yych <= '\n' {
+					goto yy3
 				}
-				// 普通转义
-				escaped = true
-				pos++
-				continue
+				if yych <= '\f' {
+					goto yy1
+				}
+				goto yy4
 			}
-			if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == ':' {
-				// 分隔符，结束当前 token
-				break
+		} else {
+			if yych <= '$' {
+				if yych <= '#' {
+					goto yy1
+				}
+				goto yy7
+			} else {
+				if yych <= '>' {
+					goto yy1
+				}
+				if yych <= '\\' {
+					goto yy8
+				}
+				goto yy1
 			}
-			token.WriteRune(ch)
-			pos++
 		}
-		// 处理 token 结束后的可能冒号或换行
-		// 跳过当前 token 后的空白
-		for pos < n && (in[pos] == ' ' || in[pos] == '\t') {
-			pos++
+		in++
+		goto yy2
+
+	yy1:
+		in++
+	yy2:
+		// For any other character (e.g. whitespace), swallow it here,
+		// allowing the outer logic to loop around again.
+		break
+
+	yy3:
+		in++
+		// A newline ends the current file name and the current rule.
+		haveNewline = true
+		break
+
+	yy4:
+		yych = b[in+1]
+		if yych == '\n' {
+			goto yy3
 		}
-		// 检查是否遇到冒号
-		if pos < n && in[pos] == ':' {
-			// 冒号标志着从目标切换到依赖
+		goto yy2
+
+	yy5:
+		yych = b[in+1]
+		if (yybm[yych] & 128) != 0 {
+			in++
+			goto yy5
+		}
+	yy6:
+		// Got a span of plain text.
+		length = in - start
+		// Need to shift it over if we're overwriting backslashes.
+		if out < start {
+			copy(b[out:out+length], b[start:start+length])
+		}
+		out += length
+		continue
+
+	yy7:
+		yych = b[in+1]
+		if yych == '$' {
+			in++
+			goto yy9
+		}
+		goto yy2
+
+	yy8:
+		yymarker = in
+		yych = b[in+1]
+		if yych <= ' ' {
+			if yych <= '\n' {
+				if yych <= 0x00 {
+					goto yy2
+				}
+				if yych <= '\t' {
+					goto yy10
+				}
+				goto yy11
+			} else {
+				if yych == '\r' {
+					goto yy12
+				}
+				if yych <= 0x1F {
+					goto yy10
+				}
+				goto yy13
+			}
+		} else {
+			if yych <= '9' {
+				if yych == '#' {
+					goto yy14
+				}
+				goto yy10
+			} else {
+				if yych <= ':' {
+					goto yy15
+				}
+				if yych == '\\' {
+					goto yy17
+				}
+				goto yy10
+			}
+		}
+	yy9:
+		in++
+		// De-escape dollar character.
+		b[out] = '$'
+		out++
+		continue
+
+	yy10:
+		in++
+		goto yy6
+
+	yy11:
+		in++
+		// A line continuation ends the current file name.
+		break
+
+	yy12:
+		yych = b[in+2]
+		if yych == '\n' {
+			in += 2
+			goto yy11
+		}
+		in = yymarker
+		goto yy2
+
+	yy13:
+		in++
+		// 2N+1 backslashes plus space -> N backslashes plus space.
+		length = in - start
+		n = length/2 - 1
+		if out < start {
+			for i := 0; i < n; i++ {
+				b[out+i] = '\\'
+			}
+		}
+		out += n
+		b[out] = ' '
+		out++
+		continue
+
+	yy14:
+		in++
+		// De-escape hash sign, but preserve other leading backslashes.
+		length = in - start
+		if length > 2 && out < start {
+			for i := 0; i < length-2; i++ {
+				b[out+i] = '\\'
+			}
+		}
+		out += length - 2
+		b[out] = '#'
+		out++
+		continue
+
+	yy15:
+		yych = b[in+1]
+		if yych <= '\f' {
+			if yych <= 0x00 {
+				goto yy18
+			}
+			if yych <= 0x08 {
+				goto yy16
+			}
+			if yych <= '\n' {
+				goto yy18
+			}
+		} else {
+			if yych <= '\r' {
+				goto yy18
+			}
+			if yych == ' ' {
+				goto yy18
+			}
+		}
+	yy16:
+		// De-escape colon sign, but preserve other leading backslashes.
+		length = in - start
+		if length > 2 && out < start {
+			for i := 0; i < length-2; i++ {
+				b[out+i] = '\\'
+			}
+		}
+		out += length - 2
+		b[out] = ':'
+		out++
+		continue
+
+	yy17:
+		yych = b[in+1]
+		if yych <= ' ' {
+			if yych <= '\n' {
+				if yych <= 0x00 {
+					goto yy6
+				}
+				if yych <= '\t' {
+					goto yy10
+				}
+				goto yy6
+			} else {
+				if yych == '\r' {
+					goto yy6
+				}
+				if yych <= 0x1F {
+					goto yy10
+				}
+				goto yy19
+			}
+		} else {
+			if yych <= '9' {
+				if yych == '#' {
+					goto yy14
+				}
+				goto yy10
+			} else {
+				if yych <= ':' {
+					goto yy15
+				}
+				if yych == '\\' {
+					goto yy20
+				}
+				goto yy10
+			}
+		}
+	yy18:
+		in++
+		// Backslash followed by : and whitespace.
+		// It is therefore normal text and not an escaped colon
+		length = in - start - 1
+		if out < start {
+			copy(b[out:out+length], b[start:start+length])
+		}
+		out += length
+		if b[in-1] == '\n' {
+			haveNewline = true
+		}
+		continue
+
+	yy19:
+		in++
+		// 2N backslashes plus space -> 2N backslashes, end of filename.
+		length = in - start
+		if out < start {
+			for i := 0; i < length-1; i++ {
+				b[out+i] = '\\'
+			}
+		}
+		out += length - 1
+		continue
+
+	yy20:
+		yych = b[in+1]
+		if yych <= ' ' {
+			if yych <= '\n' {
+				if yych <= 0x00 {
+					goto yy6
+				}
+				if yych <= '\t' {
+					goto yy10
+				}
+				goto yy6
+			} else {
+				if yych == '\r' {
+					goto yy6
+				}
+				if yych <= 0x1F {
+					goto yy10
+				}
+				goto yy13
+			}
+		} else {
+			if yych <= '9' {
+				if yych == '#' {
+					goto yy14
+				}
+				goto yy10
+			} else {
+				if yych <= ':' {
+					goto yy15
+				}
+				if yych == '\\' {
+					goto yy17
+				}
+				goto yy10
+			}
+		}
+		// end of re2c
+
+		len := out - filename
+		isDependency := !parsingTargets
+		if len > 0 && b[filename+len-1] == ':' {
+			len-- // Strip off trailing colon, if any.
 			parsingTargets = false
 			haveTarget = true
-			pos++ // 跳过冒号
-			// 跳过冒号后的空白
-			for pos < n && (in[pos] == ' ' || in[pos] == '\t') {
-				pos++
-			}
-			continue
 		}
-		// 如果 token 非空，添加到列表
-		tokenStr := token.String()
-		if tokenStr != "" {
-			if parsingTargets {
-				// 目标：去重
-				found := false
-				for _, out := range p.Outs {
-					if out == tokenStr {
-						found = true
-						break
+
+		if len > 0 {
+			isEmpty = false
+			piece := string(b[filename : filename+len])
+			// If we've seen this as an input before, skip it.
+			found := false
+			for _, in := range p.Ins {
+				if in == piece {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if isDependency {
+					if poisonedInput {
+						*err = "inputs may not also have inputs"
+						return false
+					}
+					// New input.
+					p.Ins = append(p.Ins, piece)
+				} else {
+					// Check for a new output.
+					foundOut := false
+					for _, out := range p.Outs {
+						if out == piece {
+							foundOut = true
+							break
+						}
+					}
+					if !foundOut {
+						p.Outs = append(p.Outs, piece)
 					}
 				}
-				if !found {
-					p.Outs = append(p.Outs, tokenStr)
-				}
-			} else {
-				// 依赖：检查是否被污染
-				if poisonedInput {
-					return &DepfileError{Msg: "inputs may not also have inputs"}
-				}
-				// 去重
-				found := false
-				for _, in := range p.Ins {
-					if in == tokenStr {
-						found = true
-						break
-					}
-				}
-				if !found {
-					p.Ins = append(p.Ins, tokenStr)
-				}
+			} else if !isDependency {
+				// We've passed an input on the left side; reject new inputs.
+				poisonedInput = true
 			}
 		}
-		// 处理换行符（结束当前规则）
-		if pos < n && (in[pos] == '\n' || in[pos] == '\r') {
-			// 跳过换行符
-			if pos+1 < n && in[pos] == '\r' && in[pos+1] == '\n' {
-				pos += 2
-			} else {
-				pos++
-			}
-			// 重置状态，开始下一个规则
+
+		if haveNewline {
+			// A newline ends a rule so the next filename will be a new target.
 			parsingTargets = true
 			poisonedInput = false
-			isFirstLine = false
-			continue
 		}
-		// 如果行尾没有换行符但遇到 EOF，也要结束规则
-		if pos >= n {
-			break
-		}
-		// 否则继续循环，可能在同一行有多个 token
 	}
-	if !haveTarget && !isFirstLine {
-		return &DepfileError{Msg: "expected ':' in depfile"}
+
+	if !haveTarget && !isEmpty {
+		*err = "expected ':' in depfile"
+		return false
 	}
-	return nil
+	return true
 }
 
 // DepfileError 自定义错误类型

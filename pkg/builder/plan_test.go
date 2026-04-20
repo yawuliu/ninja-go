@@ -60,7 +60,7 @@ func TestPlan_AddTarget(t *testing.T) {
 	state.AddOut(edge, "out.o", 0, &err)
 
 	// 标记 out 为 dirty
-	outNode.Dirty = true
+	outNode.dirty_ = true
 
 	// 添加目标
 	ok := plan.AddTarget(outNode, &err)
@@ -91,10 +91,10 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 	state.AddOut(edge, "out.o", 0, &err)
 
 	// 标记输入为 dirty 且没有生成边（源文件）
-	inNode.Dirty = true
+	inNode.dirty_ = true
 	inNode.GeneratedByDepLoader = false
 	// 标记输出为 dirty 以触发构建检查
-	outNode.Dirty = true
+	outNode.dirty_ = true
 
 	// 添加目标应该失败
 	ok := plan.AddTarget(outNode, &err)
@@ -254,7 +254,7 @@ func TestPlan_computeCriticalPath(t *testing.T) {
 	edge2.Outputs = []*Node{cNode}
 
 	// 添加目标
-	cNode.Dirty = true
+	cNode.dirty_ = true
 	var err string
 	plan.AddTarget(cNode, &err)
 
@@ -314,15 +314,15 @@ func TestPlan_CleanNode(t *testing.T) {
 	plan.want[edge] = WantToFinish
 
 	// 清理节点
-	inNode.Dirty = true
-	outNode.Dirty = true
+	inNode.dirty_ = true
+	outNode.dirty_ = true
 
 	var err string
 	plan.CleanNode(scanner, inNode, &err)
 	require.Equal(t, err, "")
 
 	// 输入节点应该被标记为 clean
-	assert.False(t, inNode.Dirty)
+	assert.False(t, inNode.dirty_)
 }
 
 // TestPlan_DyndepsLoaded 测试动态依赖加载
@@ -456,8 +456,8 @@ func TestPlan_AddTarget_Recursive(t *testing.T) {
 	edge2.Outputs = []*Node{aNode}
 
 	// 标记为 dirty
-	aNode.Dirty = true
-	bNode.Dirty = true
+	aNode.dirty_ = true
+	bNode.dirty_ = true
 
 	// 添加最终目标
 	var err string
@@ -508,7 +508,7 @@ func TestPlan_AddTarget_DyndepPending(t *testing.T) {
 
 	// 设置 dyndep 待处理（不影响基本测试）
 	outNode.DyndepPending = true
-	outNode.Dirty = true
+	outNode.dirty_ = true
 
 	// 添加目标
 	var err string

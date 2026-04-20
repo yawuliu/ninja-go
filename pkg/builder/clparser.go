@@ -64,7 +64,7 @@ func FilterInputFilename(filename string) bool {
 //	filteredOutput: 过滤后的输出（保留非相关行）
 //	includes: 规范化后的包含文件路径列表
 //	error: 错误信息
-func (p *CLParser) Parse(output, depsPrefix string) (string, []string, error) {
+func (p *CLParser) Parse(output, depsPrefix string, filtered_output, err *string) bool {
 	p.includes = make(map[string]bool)
 	var filtered strings.Builder
 	lines := strings.Split(output, "\n")
@@ -82,9 +82,10 @@ func (p *CLParser) Parse(output, depsPrefix string) (string, []string, error) {
 				// 使用 IncludesNormalize 的简化：先转换为绝对路径再规范化
 				// 这里简化：直接规范化（相对路径基于当前目录）
 				// 实际应使用 IncludesNormalize 的 Relativize 逻辑
-				abs, err := filepath.Abs(include)
-				if err != nil {
-					return "", nil, fmt.Errorf("normalizing include path: %v", err)
+				abs, abs_err := filepath.Abs(include)
+				if abs_err != nil {
+					*err = fmt.Sprintf("normalizing include path: %v", abs_err)
+					return false
 				}
 				normalized, _ = util.CanonicalizePath(abs)
 			} else {
@@ -107,5 +108,5 @@ func (p *CLParser) Parse(output, depsPrefix string) (string, []string, error) {
 	for inc := range p.includes {
 		includeList = append(includeList, inc)
 	}
-	return filtered.String(), includeList, nil
+	return true
 }

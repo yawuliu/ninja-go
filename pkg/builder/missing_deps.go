@@ -94,12 +94,14 @@ func (s *Scanner) loadDepfileDeps(edge *Edge) []*Node {
 	}
 	// 展开 $out 等变量（简化：直接替换，实际应使用 edge.Env）
 	depfile = strings.ReplaceAll(depfile, "$out", edge.Outputs[0].Path)
-	content, err := s.disk.ReadFile(depfile)
-	if err != nil {
+	var content string
+	var err string
+	status := s.disk.ReadFile(depfile, &content, &err)
+	if status != util.StatusOkay {
 		return nil
 	}
-	parser := NewDepfileParser(DepfileParserOptions{})
-	if err := parser.Parse(string(content)); err != nil {
+	parser := NewDepfileParser(&DepfileParserOptions{})
+	if !parser.Parse(content, &err) {
 		return nil
 	}
 	var nodes []*Node

@@ -190,16 +190,13 @@ func MSVCHelperMain(args []string) int {
 
 	if outputFile != "" {
 		parser := NewCLParser()
-		filtered, includes, err := parser.Parse(output, depsPrefix)
-		if err != nil {
+		var err string
+		var filtered string
+		if !parser.Parse(output, depsPrefix, &filtered, &err) {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			return 1
 		}
 		output = filtered
-		if err := WriteDepFile(outputFile, includes); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			return 1
-		}
 	}
 
 	if output != "" {

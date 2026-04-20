@@ -18,15 +18,16 @@ type DyndepParser struct {
 
 func (b *DyndepParser) Load(filename string, err *string, parent *Lexer) bool {
 	// 读取文件内容
-	content, read_err := b.fileReader.ReadFile(filename)
-	if read_err != nil {
-		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
+	var content string
+	status := b.fileReader.ReadFile(filename, &content, err)
+	if status != util.StatusOkay {
+		*err = fmt.Sprintf("loading '%s': %s", filename, err)
 		if parent != nil {
 			parent.Error(*err, err)
 		}
 		return false
 	}
-	return b.Parse(filename, string(content), err)
+	return b.Parse(filename, content, err)
 }
 
 // Verify that *UserCacher implements Cacher

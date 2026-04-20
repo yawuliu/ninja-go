@@ -31,15 +31,16 @@ func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
 
 // Load 加载文件，如果 parent 非空则使用其 Lexer 进行错误报告
 func (b *BaseParser) Load(filename string, err *string, parent *Lexer) bool {
-	content, read_err := b.FileReader.ReadFile(filename)
-	if read_err != nil {
-		*err = fmt.Sprintf("loading '%s': %v", filename, read_err)
+	var content string
+	status := b.FileReader.ReadFile(filename, &content, err)
+	if status != util.StatusOkay {
+		*err = fmt.Sprintf("loading '%s': %s", filename, *err)
 		if parent != nil {
 			parent.Error(*err, err)
 		}
 		return false
 	}
-	return b.Parse(filename, string(content), err)
+	return b.Parse(filename, content, err)
 }
 
 // ExpectToken 期望下一个 token 为指定类型，否则返回错误

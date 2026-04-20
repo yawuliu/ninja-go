@@ -1,10 +1,8 @@
 package builder
 
 import (
-	"fmt"
 	"ninja-go/pkg/util"
 	"os"
-	"strings"
 )
 
 type DependencyScan struct {
@@ -72,14 +70,14 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			return false
 		}
 		if !node.Exists() {
-			ds.explanations_.Record(node, "%s has no in-edge and is missing", node.Path())
+			ds.explanations_.Record(node, "%s has no in-edge and is missing", node.Path)
 		}
 		node.SetDirty(!node.Exists())
 		return true
 	}
 
 	// If we already finished this edge then we are done.
-	if edge.Mark == EdgeVisitDone {
+	if edge.Mark == VisitDone {
 		return true
 	}
 
@@ -95,7 +93,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 	*validationNodes = append(*validationNodes, edge.Validations...)
 
 	// Mark the edge temporarily while in the call stack.
-	edge.Mark = EdgeVisitInStack
+	edge.Mark = VisitInStack
 	*stack = append(*stack, node)
 
 	dirty := false
@@ -163,10 +161,10 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			// If a regular input is dirty (or missing), we're dirty.
 			// Otherwise consider mtime.
 			if i.Dirty() {
-				ds.explanations_.Record(node, "%s is dirty", i.Path())
+				ds.explanations_.Record(node, "%s is dirty", i.Path)
 				dirty = true
 			} else {
-				if mostRecentInput == nil || i.Mtime() > mostRecentInput.Mtime() {
+				if mostRecentInput == nil || i.Mtime > mostRecentInput.Mtime {
 					mostRecentInput = i
 				}
 			}
@@ -195,7 +193,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 	}
 
 	// Mark the edge as finished during this walk now that it will no longer be in the call stack.
-	edge.Mark = EdgeVisitDone
+	edge.Mark = VisitDone
 	if (*stack)[len(*stack)-1] != node {
 		panic("assertion failed: stack back is not node")
 	}
@@ -241,7 +239,7 @@ func (l *ImplicitDepLoader) LoadDeps(edge *Edge, err *string) bool {
 func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 	// NOTE: deps are only supported for single-target edges.
 	output := edge.Outputs[0]
-	var deps *DepsLogDeps
+	var deps *Deps
 	if l.depsLog != nil {
 		deps = l.depsLog.GetDeps(output)
 	}
@@ -280,13 +278,11 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	// METRIC_RECORD("depfile load") - ignored
 
 	// Read depfile content. Treat a missing depfile as empty.
-	content, readErr := l.diskInterface.ReadFile(path, err)
-	switch {
-	case readErr == nil:
-		// Okay
-	case os.IsNotExist(readErr):
+	var content string
+	status := l.diskInterface.ReadFile(path, &content, err)
+	if status == util.StatusNotFound {
 		*err = "" // clear error
-	default:
+	} else if status == util.StatusOtherError {
 		*err = "loading '" + path + "': " + *err
 		return false
 	}
@@ -350,45 +346,48 @@ func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile, err *string) 
 	return s.dyndepLoader.loadDyndeps(node, ddf, err)
 }
 
-func (s *DependencyScan) VerifyDAG(node *Node, stack []*Node) error {
+func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool {
 	edge := node.InEdge
 	if edge == nil {
-		return nil
-	}
-	if edge.Mark != VisitInStack {
-		return nil
+		panic("assertion failed: edge != nil")
 	}
 
-	// Find the start of the cycle in the stack
+	// If we have no temporary mark on the edge then we do not yet have a cycle.
+	if edge.Mark != VisitInStack {
+		return true
+	}
+
+	// We have this edge earlier in the call stack. Find it.
 	startIdx := -1
-	for i, n := range stack {
+	for i, n := range *stack {
 		if n.InEdge == edge {
 			startIdx = i
 			break
 		}
 	}
 	if startIdx == -1 {
-		// Should not happen, but return error
-		return fmt.Errorf("internal error: edge not found in stack")
+		panic("assertion failed: start != stack.end()")
 	}
 
-	// Replace the start node with the current node for clearer error message
-	stack[startIdx] = node
+	// Make the cycle clear by reporting its start as the node at its end
+	// instead of some other output of the starting edge.
+	(*stack)[startIdx] = node
 
-	// Build error message
-	var msg strings.Builder
-	msg.WriteString("dependency cycle: ")
-	for i := startIdx; i < len(stack); i++ {
-		msg.WriteString(stack[i].Path)
-		msg.WriteString(" -> ")
+	// Construct the error message rejecting the cycle.
+	*err = "dependency cycle: "
+	for i := startIdx; i < len(*stack); i++ {
+		*err += (*stack)[i].Path
+		*err += " -> "
 	}
-	msg.WriteString(stack[startIdx].Path)
+	*err += (*stack)[startIdx].Path
 
-	if startIdx+1 == len(stack) && edge.MaybePhonyCycleDiagnostic() {
-		msg.WriteString(" [-w phonycycle=err]")
+	if startIdx+1 == len(*stack) && edge.MaybePhonyCycleDiagnostic() {
+		// The manifest parser would have filtered out the self-referencing
+		// input if it were not configured to allow the error.
+		*err += " [-w phonycycle=err]"
 	}
 
-	return fmt.Errorf("%s", msg.String())
+	return false
 }
 
 func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node, outputs_dirty *bool, err *string) bool {

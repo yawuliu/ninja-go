@@ -9,7 +9,7 @@ type Node struct {
 	SlashBits            uint64
 	Mtime                int64
 	exists_              int8 // -1 unknown, 0 missing, 1 exists
-	Dirty                bool
+	dirty_               bool
 	DyndepPending        bool
 	GeneratedByDepLoader bool
 	ID                   int
@@ -64,7 +64,7 @@ func (n *Node) StatIfNecessary(fs util.FileSystem, err *string) bool {
 func (n *Node) ResetState() {
 	n.Mtime = -1
 	n.exists_ = ExistenceUnknown
-	n.Dirty = false
+	n.dirty_ = false
 }
 
 func (n *Node) MarkMissing() {
@@ -92,8 +92,8 @@ func (n *Node) AddValidationOutEdge(e *Edge) {
 	n.ValidationOutEdges = append(n.ValidationOutEdges, e)
 }
 
-func (n *Node) IsDirty() bool {
-	return n.Dirty
+func (n *Node) Dirty() bool {
+	return n.dirty_
 }
 
 // UpdatePhonyMtime 更新 phony 节点的 mtime。
@@ -108,3 +108,6 @@ func (n *Node) UpdatePhonyMtime(mtime int64) {
 
 func (n *Node) in_edge() *Edge         { return n.InEdge }
 func (n *Node) set_in_edge(edge *Edge) { n.InEdge = edge }
+
+func (n *Node) SetDirty(dirty bool) { n.dirty_ = dirty }
+func (n *Node) MarkDirty()          { n.dirty_ = true }

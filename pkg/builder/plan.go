@@ -54,7 +54,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk
 	edge := node.InEdge
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
-		if node.Dirty && !node.GeneratedByDepLoader {
+		if node.dirty_ && !node.GeneratedByDepLoader {
 			var ref string
 			if dependent != nil {
 				ref = ", needed by '" + dependent.Path + "',"
@@ -78,7 +78,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk
 		return false
 	}
 
-	if node.Dirty && want == WantNothing {
+	if node.dirty_ && want == WantNothing {
 		p.want[edge] = WantToStart
 		p.edgeWanted(edge)
 	}
@@ -280,7 +280,7 @@ func (p *Plan) CommandEdgeCount() int {
 
 // CleanNode 将节点标记为 clean，并递归清理所有依赖该节点的边（如果这些边不再 dirty）。
 func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
-	node.Dirty = false
+	node.dirty_ = false
 
 	for _, outEdge := range node.OutEdges {
 		// 忽略不在计划中的边，或者已经被标记为不想要的边
@@ -299,7 +299,7 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 		end := len(outEdge.Inputs) - outEdge.OrderOnlyDeps
 		allClean := true
 		for i := begin; i < end; i++ {
-			if outEdge.Inputs[i].Dirty {
+			if outEdge.Inputs[i].dirty_ {
 				allClean = false
 				break
 			}
@@ -422,7 +422,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 			}
 		}
 
-		if !n.Dirty {
+		if !n.dirty_ {
 			continue
 		}
 

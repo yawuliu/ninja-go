@@ -190,7 +190,7 @@ func TestState_Reset(t *testing.T) {
 
 	// 创建一些节点和边
 	node := state.AddNode("foo.txt", 0)
-	node.Dirty = true
+	node.dirty_ = true
 	node.Mtime = 12345
 	node.exists_ = 1
 
@@ -204,7 +204,7 @@ func TestState_Reset(t *testing.T) {
 	state.Reset()
 
 	// 验证状态被重置
-	assert.False(t, node.Dirty)
+	assert.False(t, node.dirty_)
 	assert.Equal(t, int64(-1), node.Mtime)
 	assert.Equal(t, int8(-1), node.Exists)
 
@@ -308,13 +308,13 @@ func TestNode_ResetState(t *testing.T) {
 	node := NewNode("test.txt", 0)
 	node.Mtime = 12345
 	node.exists_ = 1
-	node.Dirty = true
+	node.dirty_ = true
 
 	node.ResetState()
 
 	assert.Equal(t, int64(-1), node.Mtime)
 	assert.Equal(t, int8(-1), node.Exists)
-	assert.False(t, node.Dirty)
+	assert.False(t, node.dirty_)
 }
 
 // TestNode_MarkMissing 测试标记为缺失
