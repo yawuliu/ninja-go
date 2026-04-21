@@ -19,7 +19,7 @@ func NewCLParser() *CLParser {
 
 // FilterShowIncludes 从一行输出中提取包含文件路径（如果该行是 /showIncludes 输出）
 func FilterShowIncludes(line, depsPrefix string) string {
-	const kDepsPrefixEnglish = "Note: including file: "
+	const kDepsPrefixEnglish = "Note: including log_file_: "
 	prefix := depsPrefix
 	if prefix == "" {
 		prefix = kDepsPrefixEnglish

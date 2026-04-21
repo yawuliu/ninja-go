@@ -40,7 +40,7 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 
 	// 记录解释（可选）
 	if l.explanations != nil {
-		l.explanations.Record(node, "loading dyndep file '%s'", node.Path)
+		l.explanations.Record(node, "loading dyndep log_file_ '%s'", node.Path)
 	}
 
 	// 加载 dyndep 文件
@@ -55,7 +55,7 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 		}
 		dyndeps, ok := (*ddf)[edge]
 		if !ok {
-			*err = fmt.Sprintf("'%s' not mentioned in its dyndep file '%s'",
+			*err = fmt.Sprintf("'%s' not mentioned in its dyndep log_file_ '%s'",
 				edge.Outputs[0].Path, node.Path)
 			return false
 		}
@@ -68,7 +68,7 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 	// 拒绝 dyndep 文件中多余的边
 	for edge, dyndeps := range *ddf {
 		if !dyndeps.Used {
-			*err = fmt.Sprintf("dyndep file '%s' mentions output '%s' whose build statement does not have a dyndep binding for the file",
+			*err = fmt.Sprintf("dyndep log_file_ '%s' mentions output '%s' whose build statement does not have a dyndep binding for the log_file_",
 				node.Path, edge.Outputs[0].Path)
 			return false
 		}

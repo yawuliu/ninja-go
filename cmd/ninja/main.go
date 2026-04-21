@@ -141,7 +141,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *builder.Node {
 
 	// 节点不存在，构建错误信息
 	decanon := util.PathDecanonicalized(path, slashBits)
-	*err := fmt.Sprintf("unknown target '%s'", decanon)
+	*err = fmt.Sprintf("unknown target '%s'", decanon)
 	if path == "clean" {
 		*err += ", did you mean 'ninja -t clean'?"
 	} else if path == "help" {
@@ -156,30 +156,27 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *builder.Node {
 }
 
 // CollectTargetsFromArgs 将命令行参数转换为 Node 列表，如果无参数则使用默认目标。
-func (n *NinjaMain) CollectTargetsFromArgs(args []string, targets []*builder.Node, err *string) {
+func (n *NinjaMain) CollectTargetsFromArgs(args []string, targets *[]*builder.Node, err *string) bool {
 	if len(args) == 0 {
-		defaults := n.state_.DefaultNodes()
-		if len(defaults) == 0 {
-			return nil, fmt.Errorf("no default nodes specified")
-		}
-		return defaults, nil
+		*targets = n.state_.DefaultNodes(err)
+		return *err == ""
 	}
 
-	var targets []*builder.Node
 	for _, arg := range args {
 		node := n.CollectTarget(arg, err)
 		if *err != "" {
 			return false
 		}
-		targets = append(targets, node)
+		*targets = append(*targets, node)
 	}
-	return targets, nil
+	return true
 }
 
 // ToolGraph 输出 graphviz dot 文件（用于可视化依赖图）。
 func (n *NinjaMain) ToolGraph(options *Options, args []string) int {
-	nodes, err := n.CollectTargetsFromArgs(args)
-	if err != nil {
+	var err string
+	var nodes []*builder.Node
+	if !n.CollectTargetsFromArgs(args, &nodes, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -339,12 +336,11 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 			}
 		}
 	} else {
-		collected, err := n.CollectTargetsFromArgs(args)
-		if err != nil {
+		var err string
+		if !n.CollectTargetsFromArgs(args, &nodes, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 			return 1
 		}
-		nodes = collected
 	}
 
 	disk := &builder.RealFileSystem{}
@@ -361,12 +357,12 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.Path, err)
 		}
 		status := "VALID"
-		if mtime == 0 || mtime > deps.mtime {
+		if mtime == 0 || mtime > deps.GetMtime() {
 			status = "STALE"
 		}
 		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
-			node.Path, len(deps.nodes), deps.mtime, status)
-		for _, dep := range deps.nodes {
+			node.Path, deps.GetNodeCount(), deps.GetMtime(), status)
+		for _, dep := range deps.GetNodes() {
 			fmt.Printf("    %s\n", dep.Path)
 		}
 		fmt.Println()
@@ -376,8 +372,10 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 
 // ToolMissingDeps 检查依赖日志中是否存在缺失的生成文件依赖。
 func (n *NinjaMain) ToolMissingDeps(options *Options, args []string) int {
-	nodes, err := n.CollectTargetsFromArgs(args)
-	if err != nil {
+	var err string
+	var nodes []*builder.Node
+
+	if !n.CollectTargetsFromArgs(args, &nodes, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -537,9 +535,9 @@ options:
 			newArgs = append(newArgs, args[i])
 		}
 	}
-
-	nodes, err := n.CollectTargetsFromArgs(newArgs)
-	if err != nil {
+	var nodes []*builder.Node
+	var err string
+	if !n.CollectTargetsFromArgs(newArgs, &nodes, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -586,8 +584,9 @@ Options:
 		}
 	}
 
-	nodes, err := n.CollectTargetsFromArgs(newArgs)
-	if err != nil {
+	var nodes []*builder.Node
+	var err string
+	if !n.CollectTargetsFromArgs(newArgs, &nodes, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -653,8 +652,9 @@ Options:
 		}
 	}
 
-	nodes, err := n.CollectTargetsFromArgs(newArgs)
-	if err != nil {
+	var nodes []*builder.Node
+	var err string
+	if !n.CollectTargetsFromArgs(newArgs, &nodes, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -934,8 +934,9 @@ options:
 	case ActionEmitCommands:
 		collector := builder.NewCommandCollector()
 		for _, targetArg := range compdb.Targets {
-			node, err := n.CollectTarget(targetArg)
-			if err != nil {
+			var err string
+			node := n.CollectTarget(targetArg, &err)
+			if err != "" {
 				fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 				return 1
 			}
@@ -973,6 +974,9 @@ func (n *NinjaMain) ToolUrtle(options *Options, args []string) int {
 	return 0
 }
 
+const EXIT_SUCCESS = 0
+const EXIT_FAILURE = 1
+
 // ToolRestat 重新统计构建日志中指定输出文件的 mtime。
 func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	// 解析选项
@@ -982,13 +986,13 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 		if args[i] == "--builddir" {
 			if i+1 >= len(args) {
 				fmt.Fprintln(os.Stderr, "ninja: --builddir requires an argument")
-				return 1
+				return EXIT_FAILURE
 			}
 			buildDir = args[i+1]
 			i++
 		} else if args[i] == "-h" || args[i] == "--help" {
 			fmt.Println("usage: ninja -t restat [--builddir=DIR] [outputs]")
-			return 1
+			return EXIT_FAILURE
 		} else {
 			outputs = append(outputs, args[i])
 		}
@@ -1000,31 +1004,39 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	}
 
 	// 加载构建日志
-	if err := n.build_log_.Load(logPath); err != nil {
+	var err string
+	status := n.build_log_.Load(logPath, &err)
+	if status == builder.LOAD_ERROR {
 		// 如果文件不存在，忽略
-		if os.IsNotExist(err) {
-			return 0
-		}
 		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
-		return 1
+		return EXIT_FAILURE
+	}
+	if status == builder.LOAD_NOT_FOUND {
+		// Nothing to restat, ignore this
+		return EXIT_SUCCESS
+	}
+	if err != "" {
+		// Hack: Load() can return a warning via err by returning LOAD_SUCCESS.
+		fmt.Printf("%s", err)
+		err = ""
 	}
 
 	// 调用 Restat 更新记录
-	var err string
-	if !n.build_log_.Restat(logPath, n.disk_interface_, outputs, &err) {
+	success := n.build_log_.Restat(logPath, n.disk_interface_, outputs, &err)
+	if !success {
 		fmt.Fprintf(os.Stderr, "ninja: failed restat: %v\n", err)
-		return 1
+		return EXIT_FAILURE
 	}
 
 	// 如果不是 dry run，重新打开日志文件用于写入
 	if !n.config_.DryRun {
 		if !n.build_log_.OpenForWrite(logPath, n, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
-			return 1
+			return EXIT_FAILURE
 		}
 	}
 
-	return 0
+	return EXIT_SUCCESS
 }
 
 type When int
@@ -1172,32 +1184,37 @@ func warningEnable(name string, options *Options) bool {
 
 // OpenBuildLog 加载并可选地重新压实构建日志，然后在非 dry-run 模式下打开写入。
 func (n *NinjaMain) OpenBuildLog(recompactOnly bool) bool {
-	logPath := ".ninja_log"
+	log_path := ".ninja_log"
 	if n.build_dir_ != "" {
-		logPath = n.build_dir_ + "/" + logPath
+		log_path = n.build_dir_ + "/" + log_path
 	}
 
 	// 加载日志
-	load_err := n.build_log_.Load(logPath)
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
+	var err string
+	status := n.build_log_.Load(log_path, &err)
+	if status == builder.LOAD_ERROR {
+		fmt.Printf("loading build log %s: %s", log_path, err)
 		return false
 	}
-	// 如果 Load 返回了警告（例如版本过旧），这里假设错误信息已经输出，不再处理
+	if err != "" {
+		// Hack: Load() can return a warning via err by returning LOAD_SUCCESS.
+		fmt.Printf("%s", err)
+		err = ""
+	}
 
 	if recompactOnly {
-		if os.IsNotExist(err) {
+		if status == builder.LOAD_NOT_FOUND {
 			return true
 		}
-		if err := n.build_log_.Recompact(logPath, n); err != nil {
+		success := n.build_log_.Recompact(log_path, n, &err)
+		if !success {
 			fmt.Fprintf(os.Stderr, "ninja: failed recompaction: %v\n", err)
-			return false
 		}
-		return true
+		return success
 	}
 
 	if !n.config_.DryRun {
-		if !n.build_log_.OpenForWrite(logPath, n, &err) {
+		if !n.build_log_.OpenForWrite(log_path, n, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
 			return false
 		}
@@ -1213,26 +1230,32 @@ func (n *NinjaMain) OpenDepsLog(recompactOnly bool) bool {
 	}
 
 	// 加载日志
-	err := n.deps_log_.Load(n.state_) // path,
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "ninja: loading deps log %s: %v\n", path, err)
+	var err string
+	status := n.deps_log_.Load(path, n.state_, &err) // path,
+	if status == builder.LOAD_ERROR {
+		fmt.Printf("loading deps log %s: %s", path, err)
 		return false
+	}
+	if err != "" {
+		// Hack: Load() can return a warning via err by returning LOAD_SUCCESS.
+		fmt.Printf("%s", err)
+		err = ""
 	}
 	// 忽略警告（假设已输出）
 
 	if recompactOnly {
-		if os.IsNotExist(err) {
+		if status == builder.LOAD_NOT_FOUND {
 			return true
 		}
-		if err := n.deps_log_.Recompact(path); err != nil {
+		success := n.deps_log_.Recompact(path, &err)
+		if !success {
 			fmt.Fprintf(os.Stderr, "ninja: failed recompaction: %v\n", err)
-			return false
 		}
-		return true
+		return success
 	}
 
 	if !n.config_.DryRun {
-		if err := n.deps_log_.OpenForWrite(path); err != nil {
+		if !n.deps_log_.OpenForWrite(path, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening deps log: %v\n", err)
 			return false
 		}
@@ -1305,8 +1328,10 @@ func (n *NinjaMain) SetupJobserverClient(status builder.Status) builder.Jobserve
 // RunBuild 执行构建流程，返回退出状态码。
 func (n *NinjaMain) RunBuild(args []string, status builder.Status) builder.ExitStatus {
 	// 收集目标节点
-	targets, err := n.CollectTargetsFromArgs(args)
-	if err != nil {
+	var err string
+	var targets []*builder.Node
+	n.CollectTargetsFromArgs(args, &targets, &err)
+	if err != "" {
 		status.Error("%v", err)
 		return builder.ExitFailure
 	}
@@ -1325,7 +1350,7 @@ func (n *NinjaMain) RunBuild(args []string, status builder.Status) builder.ExitS
 
 	// 添加目标到构建计划
 	for _, target := range targets {
-		if succ, err := ibuilder.AddTarget(target); !succ && err != nil {
+		if !ibuilder.AddTarget(target, &err) {
 			status.Error("%v", err)
 			return builder.ExitFailure
 		}
@@ -1343,11 +1368,12 @@ func (n *NinjaMain) RunBuild(args []string, status builder.Status) builder.ExitS
 	}
 
 	// 执行构建
-	exitStatus, buildErr := ibuilder.Build()
+	var buildErr string
+	exitStatus := ibuilder.Build(&buildErr)
 	if exitStatus != builder.ExitSuccess {
-		if buildErr != nil {
+		if buildErr != "" {
 			status.Info("build stopped: %v.", buildErr)
-			if strings.Contains(buildErr.Error(), "interrupted by user") {
+			if strings.Contains(buildErr, "interrupted by user") {
 				return builder.ExitInterrupted
 			}
 		}
@@ -1589,7 +1615,8 @@ func realMain() int {
 			parserOpts.PhonyCycleAction = builder.PhonyCycleActionError
 		}
 		manifestParser := builder.NewManifestParser(ninja.state_, ninja.disk_interface_, parserOpts)
-		if err := manifestParser.Load(options.input_file, nil); err != nil {
+		var err string
+		if !manifestParser.Load(options.input_file, &err, nil) {
 			status.Error("%v", err)
 			return 1
 		}
@@ -1619,8 +1646,8 @@ func realMain() int {
 		}
 
 		// 尝试重建清单文件
-		rebuilt, err := ninja.RebuildManifest(options.input_file, status)
-		if err != nil {
+		rebuilt := ninja.RebuildManifest(options.input_file, &err, status)
+		if err != "" {
 			status.Error("rebuilding '%s': %v", options.input_file, err)
 			return 1
 		}

@@ -177,8 +177,12 @@ func GetWorkingDirectory() string {
 }
 
 // Truncate 将文件截断到指定大小。
-func Truncate(path string, size int64) error {
-	return os.Truncate(path, size)
+func Truncate(path string, size int64, err *string) bool {
+	if truncErr := os.Truncate(path, size); truncErr != nil {
+		*err = truncErr.Error()
+		return false
+	}
+	return true
 }
 
 // ReplaceContent 原子替换文件内容：先写临时文件，再重命名。

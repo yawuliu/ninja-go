@@ -124,7 +124,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 
 	yy3:
 		in++
-		// A newline ends the current file name and the current rule.
+		// A newline ends the current log_file_ name and the current rule.
 		haveNewline = true
 		break
 
@@ -209,7 +209,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 
 	yy11:
 		in++
-		// A line continuation ends the current file name.
+		// A line continuation ends the current log_file_ name.
 		break
 
 	yy12:

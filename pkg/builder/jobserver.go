@@ -111,7 +111,7 @@ func ParseMakeFlagsValue(makeflagsEnv string) (Config, error) {
 		if strings.HasPrefix(arg, "--jobserver-fds=") {
 			value := strings.TrimPrefix(arg, "--jobserver-fds=")
 			if !parseFileDescriptorPair(value, &config) {
-				return config, errors.New("invalid file descriptor pair: " + value)
+				return config, errors.New("invalid log_file_ descriptor pair: " + value)
 			}
 			config.Mode = ModePipe
 			continue

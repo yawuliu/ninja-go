@@ -37,6 +37,7 @@ func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 		status:             status,
 		start_time_millis_: start_time_millis,
 		lockFilePath:       ".ninja_lock",
+		running_edges_:     make(map[*Edge]int),
 	}
 	b.lockFilePath = ".ninja_lock"
 	build_dir := state.Bindings.LookupVariable("builddir")
@@ -221,7 +222,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 		return false
 	}
 
-	// Create response file, if needed
+	// Create response log_file_, if needed
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" {
 		content := edge.GetBinding("rspfile_content")
@@ -290,7 +291,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 
 		// restat and generator rules must restat the outputs after the build
 		// has finished. if recordMtime == 0, then there was an error while
-		// attempting to touch/stat the temp file when the edge started and
+		// attempting to touch/stat the temp log_file_ when the edge started and
 		// we should fall back to recording the outputs' current mtime in the
 		// log.
 		if recordMtime == 0 || restat || generator {
@@ -322,7 +323,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		return false
 	}
 
-	// Delete any left over response file.
+	// Delete any left over response log_file_.
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" && !g_keep_rsp {
 		b.disk.RemoveFile(rspfile)

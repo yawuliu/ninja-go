@@ -269,11 +269,11 @@ func TestEvalString_ConsecutiveVariables(t *testing.T) {
 // TestEvalString_SpecialChars 测试特殊字符
 func TestEvalString_SpecialChars(t *testing.T) {
 	es := &EvalString{}
-	es.AddText("path/to/file")
+	es.AddText("path/to/log_file_")
 
 	env := newMockEnv()
 	result := es.Evaluate(env)
-	assert.Equal(t, "path/to/file", result)
+	assert.Equal(t, "path/to/log_file_", result)
 }
 
 // TestEvalString_LargeInput 测试大输入

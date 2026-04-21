@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// kFileSignature is the file signature written at the beginning of the deps log.
+	// kFileSignature is the log_file_ signature written at the beginning of the deps log.
 	kFileSignature = "# ninjadeps\n"
 	// kFileSignatureSize is the length of the signature (excluding null terminator).
 	kFileSignatureSize = len(kFileSignature)
@@ -32,6 +32,16 @@ func NewDeps(mtime int64, node_count int) *Deps {
 	d := &Deps{mtime: mtime, node_count: node_count}
 	d.nodes = make([]*Node, node_count)
 	return d
+}
+
+func (d *Deps) GetMtime() int64 {
+	return d.mtime
+}
+func (d *Deps) GetNodeCount() int {
+	return d.node_count
+}
+func (d *Deps) GetNodes() []*Node {
+	return d.nodes
 }
 
 type DepsLog struct {
@@ -235,175 +245,171 @@ func (dl *DepsLog) RecordId(node *Node) bool {
 }
 
 // Load 从磁盘加载 .ninja_deps 文件
-func (dl *DepsLog) Load(state *State) error {
-	f, err := os.Open(dl.filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
+	// METRIC_RECORD(".ninja_deps load") - ignored
+
+	f, errOpen := os.Open(path)
+	if errOpen != nil {
+		if os.IsNotExist(errOpen) {
+			return LOAD_NOT_FOUND
 		}
-		return err
+		*err = errOpen.Error()
+		return LOAD_ERROR
 	}
 	defer f.Close()
 
-	// 读取签名
-	var sig [kFileSignatureSize]byte
-	if _, err := f.Read(sig[:]); err != nil {
-		return err
-	}
-	if string(sig[:]) != kFileSignature {
-		// 无效签名，删除文件并视为空
+	// Read signature
+	sigBuf := make([]byte, kFileSignatureSize)
+	if _, errRead := f.Read(sigBuf); errRead != nil || !bytes.Equal(sigBuf, []byte(kFileSignature)) {
+		// Invalid header
 		f.Close()
-		os.Remove(dl.filePath)
-		return nil
-	}
-	var version int
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil {
-		return err
-	}
-	if version != kCurrentVersion {
-		// 版本不匹配，删除文件并视为空
-		f.Close()
-		os.Remove(dl.filePath)
-		return nil
+		os.Remove(path)
+		*err = "bad deps log signature or version; starting over"
+		return LOAD_SUCCESS
 	}
 
-	dl.mu.Lock()
-	defer dl.mu.Unlock()
-	dl.deps = []*Deps{}
-	dl.nodes = []*Node{}
-	dl.reverseDeps = make(map[int][]int)
-	offset := int64(len(kFileSignature) + 4) // 已读字节数
-	uniqueCount := 0
-	totalCount := 0
+	// Read version
+	var version int
+	if read_err := binary.Read(f, binary.LittleEndian, &version); read_err != nil || version != kCurrentVersion {
+		f.Close()
+		if version == 1 {
+			*err = "deps log version change; rebuilding"
+		} else {
+			*err = "bad deps log signature or version; starting over"
+		}
+		os.Remove(path)
+		return LOAD_SUCCESS
+	}
+
+	offset, _ := f.Seek(0, os.SEEK_CUR) // current log_file_ position after version
+	readFailed := false
+	uniqueDepRecordCount := 0
+	totalDepRecordCount := 0
+
+	buf := make([]byte, kMaxRecordSize+1)
 
 	for {
 		var size uint32
 		if err := binary.Read(f, binary.LittleEndian, &size); err != nil {
-			if err.Error() == "EOF" {
-				break
+			if err.Error() != "EOF" {
+				readFailed = true
 			}
-			return err
+			break
 		}
 		isDeps := (size >> 31) != 0
 		size = size & 0x7FFFFFFF
+
 		if size > kMaxRecordSize {
-			// 文件损坏，尝试截断恢复
+			readFailed = true
 			break
 		}
-		record := make([]byte, size)
-		if _, err := f.Read(record); err != nil {
-			// 读取失败，截断到当前偏移
+		if _, errRead := f.Read(buf[:size]); errRead != nil {
+			readFailed = true
 			break
 		}
-		r := bytes.NewReader(record)
-		offset += int64(size) + 4
+		// Update offset after reading this record
+		offset += int64(4 + size)
 
 		if isDeps {
-			// 依赖记录
-			var outID int32
-			if err := binary.Read(r, binary.LittleEndian, &outID); err != nil {
+			if size%4 != 0 {
+				readFailed = true
 				break
 			}
-			var mtimeLow, mtimeHigh uint32
-			if err := binary.Read(r, binary.LittleEndian, &mtimeLow); err != nil {
+			data := make([]int32, size/4)
+			if err := binary.Read(bytes.NewReader(buf[:size]), binary.LittleEndian, &data); err != nil {
+				readFailed = true
 				break
 			}
-			if err := binary.Read(r, binary.LittleEndian, &mtimeHigh); err != nil {
-				break
-			}
-			mtime := int64(mtimeHigh)<<32 | int64(mtimeLow)
-			depCount := (size - 12) / 4
-			if depCount > 0 {
-				depIDs := make([]int32, depCount)
-				for i := 0; i < int(depCount); i++ {
-					if err := binary.Read(r, binary.LittleEndian, &depIDs[i]); err != nil {
-						break
-					}
-				}
-				// 检查所有依赖节点 ID 是否有效
-				valid := true
-				for _, id := range depIDs {
-					if int(id) >= len(dl.nodes) || dl.nodes[id] == nil {
-						valid = false
-						break
-					}
-				}
-				if !valid {
+			outID := int(data[0])
+			mtimeLow := uint64(uint32(data[1]))
+			mtimeHigh := uint64(uint32(data[2]))
+			mtime := int64((mtimeHigh << 32) | mtimeLow)
+			depsCount := len(data) - 3
+
+			// Validate node ids
+			valid := true
+			for i := 0; i < depsCount; i++ {
+				nodeID := int(data[3+i])
+				if nodeID >= len(d.nodes) || d.nodes[nodeID] == nil {
+					valid = false
 					break
 				}
-				// 获取输出节点
-				if int(outID) >= len(dl.nodes) || dl.nodes[outID] == nil {
-					break
-				}
-				outNode := dl.nodes[outID]
-				var deps []*Node
-				for _, id := range depIDs {
-					deps = append(deps, dl.nodes[id])
-				}
-				idx := outNode.id_
-				dl.ensureCapacity(idx)
-				dl.deps[idx] = &Deps{mtime: mtime, nodes: deps}
-				dl.nodes[idx] = outNode
-				for _, dep := range deps {
-					dl.reverseDeps[dep.id_] = append(dl.reverseDeps[dep.id_], idx)
-				}
-				totalCount++
-				uniqueCount++
+			}
+			if !valid {
+				readFailed = true
+				break
+			}
+
+			deps := &Deps{mtime: mtime, node_count: depsCount, nodes: make([]*Node, depsCount)}
+			for i := 0; i < depsCount; i++ {
+				deps.nodes[i] = d.nodes[int(data[3+i])]
+			}
+			totalDepRecordCount++
+			if !d.UpdateDeps(outID, deps) {
+				uniqueDepRecordCount++
 			}
 		} else {
-			// 节点记录
-			// 读取路径直到 null
-			var pathBytes []byte
-			for {
-				b, err := r.ReadByte()
-				if err != nil {
-					break
-				}
-				if b == 0 {
-					break
-				}
-				pathBytes = append(pathBytes, b)
-			}
-			if len(pathBytes) == 0 {
+			// Node record
+			pathSize := int(size - 4)
+			if pathSize <= 0 {
+				readFailed = true
 				break
 			}
-			path := string(pathBytes)
-			// 跳过填充
-			padding := (4 - (len(path)+1)%4) % 4
-			if _, err := r.Seek(int64(padding), os.SEEK_CUR); err != nil {
-				break
+			// Trim up to 3 trailing null bytes (padding)
+			for pathSize > 0 && buf[pathSize-1] == 0 {
+				pathSize--
 			}
+			nodePath := string(buf[:pathSize])
+			// Checksum is last 4 bytes of the record
 			var checksum uint32
-			if err := binary.Read(r, binary.LittleEndian, &checksum); err != nil {
+			if err := binary.Read(bytes.NewReader(buf[size-4:size]), binary.LittleEndian, &checksum); err != nil {
+				readFailed = true
 				break
 			}
-			expectedID := int(^checksum)
-			// 创建节点
-			node := state.GetNode(path, 0) // slash_bits 不重要
-			if node.id_ >= 0 {
-				// 节点已有 ID，冲突
+			expectedID := int(^checksum) // unary complement
+			actualID := len(d.nodes)
+			if expectedID != actualID {
+				readFailed = true
 				break
 			}
-			node.id_ = expectedID
-			dl.ensureCapacity(expectedID)
-			dl.nodes[expectedID] = node
+			node := state.GetNode(nodePath, 0) // slash_bits = 0
+			if node.id() >= 0 {
+				// Already has an id, conflict
+				readFailed = true
+				break
+			}
+			node.set_id(actualID)
+			d.nodes = append(d.nodes, node)
 		}
 	}
 
-	// 如果读取失败，截断文件到最后一个有效记录位置
-	if offset > 0 {
-		if err := os.Truncate(dl.filePath, offset); err != nil {
-			return err
+	if readFailed {
+		// Determine error message
+		var errMsg string
+		if fErr := f.Close(); fErr != nil {
+			errMsg = fErr.Error()
+		} else {
+			errMsg = "premature end of log_file_"
 		}
+		*err = errMsg
+
+		// Truncate log_file_ to last known good offset
+		if !util.Truncate(path, offset, err) {
+			return LOAD_ERROR
+		}
+		*err += "; recovering"
+		return LOAD_SUCCESS
 	}
 
-	// 判断是否需要 recompact
+	// Decide if recompaction is needed
 	const kMinCompactionEntryCount = 1000
 	const kCompactionRatio = 3
-	if totalCount > kMinCompactionEntryCount && totalCount > uniqueCount*kCompactionRatio {
-		dl.needsRecompaction = true
+	if totalDepRecordCount > kMinCompactionEntryCount &&
+		totalDepRecordCount > uniqueDepRecordCount*kCompactionRatio {
+		d.needsRecompaction = true
 	}
-	return nil
+
+	return LOAD_SUCCESS
 }
 
 // GetDeps 获取输出节点的依赖
@@ -511,19 +517,19 @@ func (d *DepsLog) OpenForWriteIfNeeded() bool {
 
 	// Set buffer size to kMaxRecordSize+1 (simulate setvbuf)
 	// In Go we can't set buffer on os.File directly; we rely on Sync after writes.
-	// For consistency, we'll just use the file as is.
+	// For consistency, we'll just use the log_file_ as is.
 
 	// Set close-on-exec
 	if fd := d.file.Fd(); fd > 0 {
 		syscall.CloseOnExec(syscall.Handle(fd))
 	}
 
-	// In append mode, file pointer is already at end; but ensure we're at end.
+	// In append mode, log_file_ pointer is already at end; but ensure we're at end.
 	if _, err := d.file.Seek(0, os.SEEK_END); err != nil {
 		return false
 	}
 
-	// Check if file is empty
+	// Check if log_file_ is empty
 	stat, err := d.file.Stat()
 	if err != nil {
 		return false

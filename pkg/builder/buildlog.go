@@ -3,7 +3,6 @@ package builder
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -37,7 +36,7 @@ type LogEntry struct {
 type BuildLog struct {
 	mu                sync.RWMutex
 	filePath          string
-	file              *os.File
+	log_file_         *os.File
 	entries           map[string]*LogEntry
 	needsRecompaction bool
 }
@@ -52,9 +51,9 @@ func NewBuildLog(path string) *BuildLog {
 // Close 关闭日志文件
 func (bl *BuildLog) Close() error {
 	bl.openForWriteIfNeeded() // 确保文件已创建（即使没有记录）
-	if bl.file != nil {
-		err := bl.file.Close()
-		bl.file = nil
+	if bl.log_file_ != nil {
+		err := bl.log_file_.Close()
+		bl.log_file_ = nil
 		return err
 	}
 	return nil
@@ -67,8 +66,8 @@ func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser, err *string) bo
 			return false
 		}
 	}
-	if bl.file == nil {
-		panic(errors.New("build log not opened"))
+	if bl.log_file_ != nil {
+		panic("log_file_ should be nil")
 	}
 	bl.filePath = path
 	return true
@@ -76,14 +75,14 @@ func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser, err *string) bo
 
 // openForWriteIfNeeded 在首次写入时打开文件并写入签名
 func (bl *BuildLog) openForWriteIfNeeded() bool {
-	if bl.file != nil || bl.filePath == "" {
+	if bl.log_file_ != nil || bl.filePath == "" {
 		return true
 	}
 	f, err := os.OpenFile(bl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return false
 	}
-	bl.file = f
+	bl.log_file_ = f
 	// 检查文件是否为空
 	info, err := f.Stat()
 	if err != nil {
@@ -124,11 +123,11 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool 
 		if !bl.openForWriteIfNeeded() {
 			return false
 		}
-		if bl.file != nil {
-			if !bl.writeEntry(bl.file, entry) {
+		if bl.log_file_ != nil {
+			if !bl.writeEntry(bl.log_file_, entry) {
 				return false
 			}
-			if err := bl.file.Sync(); err != nil {
+			if err := bl.log_file_.Sync(); err != nil {
 				return false
 			}
 		}

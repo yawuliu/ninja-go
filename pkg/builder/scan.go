@@ -103,13 +103,13 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 		// This is our first encounter with this edge.
 		edge.DepsLoaded = true
 
-		// If there is a pending dyndep file, visit it now.
+		// If there is a pending dyndep log_file_, visit it now.
 		if edge.DyndepFile != nil && edge.DyndepFile.DyndepPending {
 			if !ds.recomputeNodeDirty(edge.DyndepFile, stack, validationNodes, err) {
 				return false
 			}
 			if edge.DyndepFile.InEdge == nil || edge.DyndepFile.InEdge.OutputsReady {
-				// The dyndep file is ready, so load it now.
+				// The dyndep log_file_ is ready, so load it now.
 				if !ds.LoadDyndeps(edge.DyndepFile, err) {
 					return false
 				}
@@ -466,7 +466,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 	// previous run and stored the command start time in the build log.
 	// We don't want to consider a restat rule's outputs as dirty unless
 	// an input changed since the last run, so we'll skip checking the
-	// output file's actual mtime and simply check the recorded mtime from
+	// output log_file_'s actual mtime and simply check the recorded mtime from
 	// the log against the most recent input's mtime (see below)
 	usedRestat := false
 	if edge.GetBindingBool("restat") && ds.buildLog != nil {
@@ -502,7 +502,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime {
 				// May also be dirty due to the mtime in the log being older than the
 				// mtime of the most recent input. This can occur even when the mtime
-				// on disk is newer if a previous run wrote to the output file but
+				// on disk is newer if a previous run wrote to the output log_file_ but
 				// exited with an error or was interrupted. If this was a restat rule,
 				// then we only check the recorded mtime against the most recent input
 				// mtime and ignore the actual output's mtime above.
