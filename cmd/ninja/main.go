@@ -48,38 +48,40 @@ type NinjaMain struct {
 
 // RebuildManifest 如果必要则重新构建清单文件。
 // 返回 true 表示清单已被重建。
-func (n *NinjaMain) RebuildManifest(inputFile string, status builder.Status) (bool, error) {
+func (n *NinjaMain) RebuildManifest(inputFile string, err *string, status builder.Status) bool {
 	path := inputFile
 	if path == "" {
-		return false, fmt.Errorf("empty path")
+		*err = "empty path"
+		return false
 	}
-	norm, _ := util.CanonicalizePath(path)
-	node := n.state_.LookupNode(norm)
+	var slash_bits uint64
+	util.CanonicalizePathString(&path, &slash_bits)
+	node := n.state_.LookupNode(path)
 	if node == nil {
-		return false, nil
+		return false
 	}
 
-	builder := builder.NewBuilder(n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
-	if succ, err := builder.AddTarget(node); !succ {
-		return false, err
+	bd := builder.NewBuilder(n.state_, n.config_, n.build_log_, n.deps_log_, n.start_time_millis_, n.disk_interface_, status)
+	if !bd.AddTarget(node, err) {
+		return false
 	}
 
-	if builder.AlreadyUpToDate() {
-		return false, nil // 没有重建
+	if bd.AlreadyUpToDate() {
+		return false
 	}
 
-	if _, err := builder.Build(); err != nil {
-		return false, err
+	if bd.Build(err) != builder.ExitSuccess {
+		return false
 	}
 
 	// 只有当节点现在变脏时才认为清单被重建（可能被 restat 清理）
-	if !node.dirty_ {
+	if !node.Dirty() {
 		// 重置状态以避免问题（如 https://github.com/ninja-build/ninja/issues/874）
 		n.state_.Reset()
-		return false, nil
+		return false
 	}
 
-	return true, nil
+	return true
 }
 
 // ParsePreviousElapsedTimes 从构建日志中加载每条边上次构建的耗时，用于 ETA 预测。
@@ -90,67 +92,71 @@ func (n *NinjaMain) ParsePreviousElapsedTimes() {
 			if logEntry == nil {
 				continue // 可能该边的其他输出有记录，继续检查下一个输出
 			}
-			edge.PrevElapsedTimeMillis = logEntry.EndTime - logEntry.StartTime
+			edge.PrevElapsedTimeMillis = int64(logEntry.EndTime - logEntry.StartTime)
 			break // 只要找到一个输出有记录即可，继续下一条边
 		}
 	}
 }
 
 // CollectTarget 将命令行路径转换为 Node，支持特殊语法 "foo.cc^"（取第一个输出）。
-func (n *NinjaMain) CollectTarget(cpath string) (*builder.Node, error) {
+func (n *NinjaMain) CollectTarget(cpath string, err *string) *builder.Node {
 	path := cpath
 	if path == "" {
-		return nil, fmt.Errorf("empty path")
+		*err = "empty path"
+		return nil
 	}
-	norm, slashBits := util.CanonicalizePath(path)
+	var slashBits uint64
+	util.CanonicalizePathString(&path, &slashBits)
 
 	// 特殊语法：以 '^' 结尾表示取该节点的第一个输出
 	firstDependent := false
-	if len(norm) > 0 && norm[len(norm)-1] == '^' {
-		norm = norm[:len(norm)-1]
+	if len(path) > 0 && path[len(path)-1] == '^' {
+		path = path[:len(path)-1]
 		firstDependent = true
 	}
 
-	node := n.state_.LookupNode(norm)
+	node := n.state_.LookupNode(path)
 	if node != nil {
 		if firstDependent {
 			if len(node.OutEdges) == 0 {
 				// 没有出边，尝试从 deps log 中查找反向依赖
 				revNode := n.deps_log_.GetFirstReverseDepsNode(node)
 				if revNode == nil {
-					return nil, fmt.Errorf("'%s' has no out edge", norm)
+					*err = "'" + path + "' has no out edge"
+					return nil
 				}
 				node = revNode
 			} else {
 				edge := node.OutEdges[0]
 				if len(edge.Outputs) == 0 {
 					// 不应发生，防御性代码
-					return nil, fmt.Errorf("edge has no outputs")
+					panic("edge has no outputs")
+					return nil
 				}
 				node = edge.Outputs[0]
 			}
 		}
-		return node, nil
+		return node
 	}
 
 	// 节点不存在，构建错误信息
-	decanon := util.PathDecanonicalized(norm, slashBits)
-	errMsg := fmt.Sprintf("unknown target '%s'", decanon)
-	if norm == "clean" {
-		errMsg += ", did you mean 'ninja -t clean'?"
-	} else if norm == "help" {
-		errMsg += ", did you mean 'ninja -h'?"
+	decanon := util.PathDecanonicalized(path, slashBits)
+	*err := fmt.Sprintf("unknown target '%s'", decanon)
+	if path == "clean" {
+		*err += ", did you mean 'ninja -t clean'?"
+	} else if path == "help" {
+		*err += ", did you mean 'ninja -h'?"
 	} else {
-		suggestion := n.state_.SpellcheckNode(norm)
+		suggestion := n.state_.SpellcheckNode(path)
 		if suggestion != nil {
-			errMsg += fmt.Sprintf(", did you mean '%s'?", suggestion.Path)
+			*err += fmt.Sprintf(", did you mean '%s'?", suggestion.Path)
 		}
 	}
-	return nil, fmt.Errorf("%s", errMsg)
+	return nil
 }
 
 // CollectTargetsFromArgs 将命令行参数转换为 Node 列表，如果无参数则使用默认目标。
-func (n *NinjaMain) CollectTargetsFromArgs(args []string) ([]*builder.Node, error) {
+func (n *NinjaMain) CollectTargetsFromArgs(args []string, targets []*builder.Node, err *string) {
 	if len(args) == 0 {
 		defaults := n.state_.DefaultNodes()
 		if len(defaults) == 0 {
@@ -161,9 +167,9 @@ func (n *NinjaMain) CollectTargetsFromArgs(args []string) ([]*builder.Node, erro
 
 	var targets []*builder.Node
 	for _, arg := range args {
-		node, err := n.CollectTarget(arg)
-		if err != nil {
-			return nil, err
+		node := n.CollectTarget(arg, err)
+		if *err != "" {
+			return false
 		}
 		targets = append(targets, node)
 	}
@@ -197,8 +203,9 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 	dyndepLoader := builder.NewDyndepLoader(n.state_, n.disk_interface_)
 
 	for _, arg := range args {
-		node, err := n.CollectTarget(arg)
-		if err != nil {
+		var err string
+		node := n.CollectTarget(arg, &err)
+		if err != "" {
 			fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 			return 1
 		}
@@ -207,7 +214,7 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 		if edge := node.InEdge; edge != nil {
 			// 如果边有挂起的 dyndep 文件，尝试加载
 			if edge.DyndepFile != nil && edge.DyndepFile.DyndepPending {
-				if err := dyndepLoader.LoadDyndeps(edge.DyndepFile); err != nil {
+				if !dyndepLoader.LoadDyndeps(edge.DyndepFile, &err) {
 					fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)
 				}
 			}
@@ -347,19 +354,19 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 			fmt.Printf("%s: deps not found\n", node.Path)
 			continue
 		}
-
-		mtime, err := disk.Stat(node.Path)
-		if err != nil {
+		var err string
+		mtime := disk.Stat(node.Path, &err)
+		if err != "" {
 			// 记录错误但继续（与 C++ 中忽略 Stat 错误一致）
 			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.Path, err)
 		}
 		status := "VALID"
-		if mtime.ModTime().IsZero() || mtime.ModTime().UnixNano() > deps.Mtime {
+		if mtime == 0 || mtime > deps.mtime {
 			status = "STALE"
 		}
 		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
-			node.Path, len(deps.Nodes), deps.Mtime, status)
-		for _, dep := range deps.Nodes {
+			node.Path, len(deps.nodes), deps.mtime, status)
+		for _, dep := range deps.nodes {
 			fmt.Printf("    %s\n", dep.Path)
 		}
 		fmt.Println()
@@ -425,9 +432,9 @@ func (n *NinjaMain) ToolTargets(options *Options, args []string) int {
 			return 1
 		}
 	}
-
-	rootNodes, err := n.state_.RootNodes()
-	if err != nil {
+	var err string
+	rootNodes := n.state_.RootNodes(&err)
+	if err != "" {
 		fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 		return 1
 	}
@@ -1003,14 +1010,15 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	}
 
 	// 调用 Restat 更新记录
-	if err := n.build_log_.Restat(logPath, n.disk_interface_, outputs); err != nil {
+	var err string
+	if !n.build_log_.Restat(logPath, n.disk_interface_, outputs, &err) {
 		fmt.Fprintf(os.Stderr, "ninja: failed restat: %v\n", err)
 		return 1
 	}
 
 	// 如果不是 dry run，重新打开日志文件用于写入
 	if !n.config_.DryRun {
-		if err := n.build_log_.OpenForWrite(logPath, n); err != nil {
+		if !n.build_log_.OpenForWrite(logPath, n, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
 			return 1
 		}
@@ -1170,7 +1178,7 @@ func (n *NinjaMain) OpenBuildLog(recompactOnly bool) bool {
 	}
 
 	// 加载日志
-	err := n.build_log_.Load(logPath)
+	load_err := n.build_log_.Load(logPath)
 	if err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
 		return false
@@ -1189,7 +1197,7 @@ func (n *NinjaMain) OpenBuildLog(recompactOnly bool) bool {
 	}
 
 	if !n.config_.DryRun {
-		if err := n.build_log_.OpenForWrite(logPath, n); err != nil {
+		if !n.build_log_.OpenForWrite(logPath, n, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
 			return false
 		}

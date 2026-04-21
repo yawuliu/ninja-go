@@ -193,16 +193,17 @@ func (c *Cleaner) CleanTargets(targetNames []string) int {
 	c.Reset()
 	c.PrintHeader()
 	c.LoadDyndeps()
-	for _, name := range targetNames {
-		norm, _ := util.CanonicalizePath(name)
-		target := c.state.LookupNode(norm)
+	for _, target_name := range targetNames {
+		var slash_bits uint64
+		util.CanonicalizePathString(&target_name, &slash_bits)
+		target := c.state.LookupNode(target_name)
 		if target == nil {
-			fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", name)
+			fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", target_name)
 			c.status = 1
 			continue
 		}
 		if c.IsVerbose() {
-			fmt.Printf("Target %s\n", norm)
+			fmt.Printf("Target %s\n", target_name)
 		}
 		c.DoCleanTarget(target)
 	}

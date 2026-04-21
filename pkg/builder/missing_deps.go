@@ -75,7 +75,7 @@ func (s *Scanner) ProcessNode(node *Node) {
 	if depsType != "" {
 		deps := s.depsLog.GetDeps(node)
 		if deps != nil {
-			s.processNodeDeps(node, deps.Nodes)
+			s.processNodeDeps(node, deps.nodes)
 		}
 	} else {
 		// 从 depfile 加载依赖
@@ -106,8 +106,9 @@ func (s *Scanner) loadDepfileDeps(edge *Edge) []*Node {
 	}
 	var nodes []*Node
 	for _, in := range parser.Ins {
-		norm, _ := util.CanonicalizePath(in)
-		node := s.state.GetNode(norm, 0)
+		var slashBits uint64
+		util.CanonicalizePathString(&in, &slashBits)
+		node := s.state.GetNode(in, 0)
 		nodes = append(nodes, node)
 	}
 	return nodes

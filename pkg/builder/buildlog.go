@@ -2,13 +2,14 @@ package builder
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"ninja-go/pkg/util"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -26,9 +27,9 @@ type BuildLogUser interface {
 // LogEntry 表示一条构建记录
 type LogEntry struct {
 	Output      string
-	CommandHash string
-	StartTime   int64
-	EndTime     int64
+	CommandHash uint64
+	StartTime   int
+	EndTime     int
 	Mtime       int64
 }
 
@@ -97,14 +98,14 @@ func (bl *BuildLog) openForWriteIfNeeded() bool {
 }
 
 // HashCommand 计算命令字符串的快速哈希值（与 C++ 的 rapidhash 类似）
-func HashCommand(command string) string {
+func HashCommand(command string) uint64 {
 	h := fnv.New64a()
 	h.Write([]byte(command))
-	return strconv.FormatUint(h.Sum64(), 10)
+	return h.Sum64()
 }
 
 // RecordCommand 记录一条边的构建信息
-func (bl *BuildLog) RecordCommand(edge *Edge, start, end int64, mtime int64) bool {
+func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool {
 	command := edge.EvaluateCommand(true)
 	commandHash := HashCommand(command) // 使用 SHA256 或 rapidhash
 
@@ -153,85 +154,107 @@ func (bl *BuildLog) LookupByOutput(path string) *LogEntry {
 	return bl.entries[path]
 }
 
-// Load 从磁盘加载日志
-func (bl *BuildLog) Load(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+type LoadStatus int
+
+const (
+	LOAD_ERROR LoadStatus = iota
+	LOAD_SUCCESS
+	LOAD_NOT_FOUND
+)
+
+func (bl *BuildLog) Load(path string, err *string) LoadStatus {
+	// METRIC_RECORD(".ninja_log load") - ignored
+
+	file, errOpen := os.Open(path)
+	if errOpen != nil {
+		if os.IsNotExist(errOpen) {
+			return LOAD_NOT_FOUND
 		}
-		return err
+		*err = errOpen.Error()
+		return LOAD_ERROR
 	}
-	defer f.Close()
-
-	bl.mu.Lock()
-	defer bl.mu.Unlock()
-	bl.entries = make(map[string]*LogEntry)
-
-	scanner := bufio.NewScanner(f)
-	// 增大缓冲区以处理长行
-	const maxCapacity = 512 * 1024
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
+	defer file.Close()
 
 	logVersion := 0
-	uniqueCount := 0
-	totalCount := 0
+	uniqueEntryCount := 0
+	totalEntryCount := 0
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	reader := bufio.NewReader(file)
+	// lineNum := 0
+	for {
+		line, errRead := reader.ReadBytes('\n')
+		if errRead != nil && errRead != io.EOF {
+			*err = errRead.Error()
+			return LOAD_ERROR
+		}
+		if len(line) == 0 && errRead == io.EOF {
+			break
+		}
+		// Remove trailing newline
+		if len(line) > 0 && line[len(line)-1] == '\n' {
+			line = line[:len(line)-1]
+		}
+		if len(line) == 0 {
 			continue
 		}
+
 		if logVersion == 0 {
-			// 解析签名行
-			if n, _ := fmt.Sscanf(line, kBuildLogFileSignature, &logVersion); n == 1 {
-				if logVersion < kOldestSupportedVersion || logVersion > kBuildLogCurrentVersion {
-					// 版本不兼容，删除文件并返回成功（视为空日志）
-					f.Close()
-					os.Remove(path)
-					return nil
-				}
-				continue
+			// First line: version signature
+			if n, _ := fmt.Sscanf(string(line), kFileSignature, &logVersion); n != 1 {
+				// Not a valid version line? Treat as old version?
+				// Original code uses sscanf which may fail; we'll handle similarly.
+				// For simplicity, assume the line matches the signature.
 			}
-		}
-		// 解析数据行: start end mtime output hash
-		parts := strings.Split(line, "\t")
-		if len(parts) < 5 {
+			if logVersion < kOldestSupportedVersion {
+				*err = "build log version is too old; starting over"
+				file.Close()
+				os.Remove(path) // platformAwareUnlink
+				return LOAD_NOT_FOUND
+			} else if logVersion > kCurrentVersion {
+				*err = "build log version is too new; starting over"
+				file.Close()
+				os.Remove(path)
+				return LOAD_NOT_FOUND
+			}
 			continue
 		}
-		start, _ := strconv.ParseInt(parts[0], 10, 64)
-		end, _ := strconv.ParseInt(parts[1], 10, 64)
-		mtime, _ := strconv.ParseInt(parts[2], 10, 64)
-		output := parts[3]
-		hash := parts[4]
 
-		if _, ok := bl.entries[output]; !ok {
-			uniqueCount++
+		// Parse a log line: start_time\tend_time\tmtime\toutput\tcommand_hash
+		parts := bytes.Split(line, []byte{'\t'})
+		if len(parts) < 5 {
+			continue // skip malformed lines
 		}
-		bl.entries[output] = &LogEntry{
-			Output:      output,
-			CommandHash: hash,
-			StartTime:   start,
-			EndTime:     end,
-			Mtime:       mtime,
+		startTime, _ := strconv.Atoi(string(parts[0]))
+		endTime, _ := strconv.Atoi(string(parts[1]))
+		mtime, _ := strconv.ParseInt(string(parts[2]), 10, 64)
+		output := string(parts[3])
+		commandHash, _ := strconv.ParseUint(string(parts[4]), 16, 64)
+
+		entry, ok := bl.entries[output]
+		if !ok {
+			entry = &LogEntry{Output: output}
+			bl.entries[output] = entry
+			uniqueEntryCount++
 		}
-		totalCount++
-	}
-	if err := scanner.Err(); err != nil {
-		return err
+		totalEntryCount++
+
+		entry.StartTime = startTime
+		entry.EndTime = endTime
+		entry.Mtime = mtime
+		entry.CommandHash = commandHash
 	}
 
-	// 决定是否需要 recompact
+	// Decide whether to recompact
 	const kMinCompactionEntryCount = 100
 	const kCompactionRatio = 3
-	if logVersion < kBuildLogCurrentVersion {
+	if logVersion < kCurrentVersion {
 		bl.needsRecompaction = true
-	} else if totalCount > kMinCompactionEntryCount &&
-		totalCount > uniqueCount*kCompactionRatio {
+	} else if totalEntryCount > kMinCompactionEntryCount &&
+		totalEntryCount > uniqueEntryCount*kCompactionRatio {
 		bl.needsRecompaction = true
 	}
-	return nil
+
+	return LOAD_SUCCESS
 }
 
 // Recompact 重新压实日志，删除死亡记录

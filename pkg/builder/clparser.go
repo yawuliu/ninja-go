@@ -1,9 +1,7 @@
 package builder
 
 import (
-	"fmt"
 	"ninja-go/pkg/util"
-	"path/filepath"
 	"strings"
 )
 
@@ -78,19 +76,8 @@ func (p *CLParser) Parse(output, depsPrefix string, filtered_output, err *string
 			seenShowIncludes = true
 			// 规范化路径
 			normalized := include
-			if util.IsWindows() {
-				// 使用 IncludesNormalize 的简化：先转换为绝对路径再规范化
-				// 这里简化：直接规范化（相对路径基于当前目录）
-				// 实际应使用 IncludesNormalize 的 Relativize 逻辑
-				abs, abs_err := filepath.Abs(include)
-				if abs_err != nil {
-					*err = fmt.Sprintf("normalizing include path: %v", abs_err)
-					return false
-				}
-				normalized, _ = util.CanonicalizePath(abs)
-			} else {
-				normalized, _ = util.CanonicalizePath(include)
-			}
+			var slash_bits uint64
+			util.CanonicalizePathString(&normalized, &slash_bits)
 			if !IsSystemInclude(normalized) {
 				p.includes[normalized] = true
 			}

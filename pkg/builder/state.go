@@ -71,7 +71,7 @@ func (s *State) AddNode(path string, slashBits uint64) *Node {
 		return n
 	}
 	n := NewNode(path, slashBits)
-	n.ID = s.nextID
+	n.id_ = s.nextID
 	s.nextID++
 	s.Paths[path] = n
 	s.nodesByID = append(s.nodesByID, n)
@@ -96,7 +96,7 @@ func (s *State) GetNode(path string, slashBits uint64) *Node {
 	n := &Node{
 		Path:                 norm,
 		SlashBits:            slashBits,
-		ID:                   s.nextID,
+		id_:                  s.nextID,
 		GeneratedByDepLoader: true,
 	}
 	s.nextID++

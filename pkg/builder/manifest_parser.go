@@ -383,8 +383,9 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if path == "" || path == ":" {
 			return p.lexer.Error("empty path", err)
 		}
-		norm, slashBits := util.CanonicalizePath(path)
-		if !p.state.AddOut(edge, norm, slashBits, err) {
+		var slashBits uint64
+		util.CanonicalizePathString(&path, &slashBits)
+		if !p.state.AddOut(edge, path, slashBits, err) {
 			return p.lexer.Error(*err, err)
 		}
 	}
@@ -403,8 +404,9 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if path == "" {
 			return p.lexer.Error("empty path", err)
 		}
-		norm, slashBits := util.CanonicalizePath(path)
-		p.state.AddIn(edge, norm, slashBits)
+		var slashBits uint64
+		util.CanonicalizePathString(&path, &slashBits)
+		p.state.AddIn(edge, path, slashBits)
 	}
 	edge.ImplicitDeps = implicit
 	edge.OrderOnlyDeps = orderOnly
@@ -415,8 +417,9 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if path == "" {
 			return p.lexer.Error("empty path", err)
 		}
-		norm, slashBits := util.CanonicalizePath(path)
-		p.state.AddValidation(edge, norm, slashBits)
+		var slashBits uint64
+		util.CanonicalizePathString(&path, &slashBits)
+		p.state.AddValidation(edge, path, slashBits)
 	}
 
 	// 16. 处理 phony 自引用（兼容旧 CMake）
@@ -440,8 +443,9 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 	// 17. 处理 dyndep 绑定
 	dyndep := edge.GetUnescapedDyndep()
 	if dyndep != "" {
-		norm, slashBits := util.CanonicalizePath(dyndep)
-		dyndepNode := p.state.GetNode(norm, slashBits)
+		var slashBits uint64
+		util.CanonicalizePathString(&dyndep, &slashBits)
+		dyndepNode := p.state.GetNode(dyndep, slashBits)
 		edge.DyndepFile = dyndepNode
 		dyndepNode.DyndepPending = true
 		// 验证 dyndep 节点必须是边的输入之一
@@ -481,9 +485,10 @@ func (p *ManifestParser) ParseDefault(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		// 规范化路径（slash_bits 在默认目标中不使用，因为只做查找）
-		norm, _ := util.CanonicalizePath(path)
+		var slashBits uint64
+		util.CanonicalizePathString(&path, &slashBits)
 		var default_err string
-		if !p.state.AddDefault(norm, &default_err) {
+		if !p.state.AddDefault(path, &default_err) {
 			return p.lexer.Error(default_err, err)
 		}
 

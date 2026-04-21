@@ -12,7 +12,7 @@ type Node struct {
 	dirty_               bool
 	DyndepPending        bool
 	GeneratedByDepLoader bool
-	ID                   int
+	id_                  int
 	InEdge               *Edge
 	OutEdges             []*Edge
 	ValidationOutEdges   []*Edge
@@ -31,9 +31,11 @@ func NewNode(path string, slashBits uint64) *Node {
 		Mtime:                -1,
 		exists_:              ExistenceUnknown,
 		GeneratedByDepLoader: true,
-		ID:                   -1,
+		id_:                  -1,
 	}
 }
+func (n *Node) id() int       { return n.id_ }
+func (n *Node) set_id(id int) { n.id_ = id }
 
 func (n *Node) Stat(diskInterface util.FileSystem, err *string) bool {
 	n.Mtime = diskInterface.Stat(n.Path, err)

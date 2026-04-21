@@ -38,13 +38,13 @@ func TestState_AddNode(t *testing.T) {
 	node1 := state.AddNode("foo.txt", 0)
 	require.NotNil(t, node1)
 	assert.Equal(t, "foo.txt", node1.Path)
-	assert.Equal(t, 0, node1.ID)
+	assert.Equal(t, 0, node1.id_)
 
 	// 添加另一个节点
 	node2 := state.AddNode("bar.txt", 0)
 	require.NotNil(t, node2)
 	assert.Equal(t, "bar.txt", node2.Path)
-	assert.Equal(t, 1, node2.ID)
+	assert.Equal(t, 1, node2.id_)
 
 	// 重复添加应该返回已有节点
 	node3 := state.AddNode("foo.txt", 0)
@@ -74,10 +74,10 @@ func TestState_GetNodeByID(t *testing.T) {
 	node2 := state.AddNode("bar.txt", 0)
 
 	// 通过 ID 获取
-	found1 := state.GetNodeByID(node1.ID)
+	found1 := state.GetNodeByID(node1.id_)
 	assert.Equal(t, node1, found1)
 
-	found2 := state.GetNodeByID(node2.ID)
+	found2 := state.GetNodeByID(node2.id_)
 	assert.Equal(t, node2, found2)
 
 	// 无效 ID
@@ -300,7 +300,7 @@ func TestNode_NewNode(t *testing.T) {
 	assert.Equal(t, int64(-1), node.Mtime)
 	assert.Equal(t, int8(-1), node.Exists)
 	assert.True(t, node.GeneratedByDepLoader)
-	assert.Equal(t, -1, node.ID)
+	assert.Equal(t, -1, node.id_)
 }
 
 // TestNode_ResetState 测试节点状态重置

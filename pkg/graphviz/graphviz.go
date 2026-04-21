@@ -56,7 +56,8 @@ func (g *GraphViz) AddTarget(node *builder.Node) {
 
 	// 如果边有挂起的 dyndep 文件，尝试加载
 	if edge.DyndepFile != nil && edge.DyndepFile.DyndepPending {
-		if err := g.dyndepLoader.LoadDyndeps(edge.DyndepFile); err != nil {
+		var err string
+		if !g.dyndepLoader.LoadDyndeps(edge.DyndepFile, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)
 		}
 	}

@@ -87,10 +87,17 @@ func (s *ScopedMetric) Close() {
 	s.metric.Count++
 	s.metric.Sum += dt
 }
+func HighResTimer() int64 {
+	return time.Now().UnixNano()
+}
+
+func TimerToMicros(dt int64) int64 {
+	return time.Duration(dt).Microseconds()
+}
 
 // GetTimeMillis 返回当前时间毫秒数（自 Unix 纪元）
 func GetTimeMillis() int64 {
-	return time.Now().UnixNano() / 1e6
+	return time.Now().UnixMilli()
 }
 
 // Stopwatch 简单秒表

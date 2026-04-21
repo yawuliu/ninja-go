@@ -132,16 +132,17 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 	if path == "" {
 		return p.lexer.Error("empty path", err)
 	}
-	norm, _ := util.CanonicalizePath(path)
-	node := p.state.LookupNode(norm)
+	var slash_bits uint64
+	util.CanonicalizePathString(&path, &slash_bits)
+	node := p.state.LookupNode(path)
 	if node == nil || node.InEdge == nil {
-		return p.lexer.Error("no build statement exists for '"+norm+"'", err)
+		return p.lexer.Error("no build statement exists for '"+path+"'", err)
 	}
 	edge := node.InEdge
 
 	// 检查重复
 	if _, ok := (*p.dyndepFile)[edge]; ok {
-		return p.lexer.Error("multiple statements for '"+norm+"'", err)
+		return p.lexer.Error("multiple statements for '"+path+"'", err)
 	}
 	info := &Dyndeps{}
 	(*p.dyndepFile)[edge] = info
@@ -234,8 +235,9 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 		if path == "" {
 			return p.lexer.Error("empty path", err)
 		}
-		norm, slashBits := util.CanonicalizePath(path)
-		node := p.state.GetNode(norm, slashBits)
+		var slash_bits uint64
+		util.CanonicalizePathString(&path, &slash_bits)
+		node := p.state.GetNode(path, slash_bits)
 		info.ImplicitInputs = append(info.ImplicitInputs, node)
 	}
 
@@ -245,8 +247,9 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 		if path == "" {
 			return p.lexer.Error("empty path", err)
 		}
-		norm, slashBits := util.CanonicalizePath(path)
-		node := p.state.GetNode(norm, slashBits)
+		var slash_bits uint64
+		util.CanonicalizePathString(&path, &slash_bits)
+		node := p.state.GetNode(path, slash_bits)
 		info.ImplicitOutputs = append(info.ImplicitOutputs, node)
 	}
 

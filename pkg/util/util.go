@@ -30,153 +30,6 @@ func Info(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stdout, "ninja: "+msg+"\n", args...)
 }
 
-// CanonicalizePath 规范化路径，将连续的 '/' 合并，解析 '.' 和 '..'，
-// 并将 Windows 反斜杠转为正斜杠，同时记录反斜杠位置用于恢复。
-func CanonicalizePath(path string) (string, uint64) {
-	if path == "" {
-		return "", 0
-	}
-	// 转换为字节切片以便修改
-	buf := []byte(path)
-	n := len(buf)
-	if n == 0 {
-		return "", 0
-	}
-	// 输出位置
-	dst := 0
-	// 记录起始位置（用于处理根目录）
-	dstStart := 0
-	src := 0
-	// 解析绝对路径前缀
-	if IsPathSeparator(buf[src]) {
-		if runtime.GOOS == "windows" && src+1 < n && IsPathSeparator(buf[src+1]) {
-			// Windows 网络路径 //server/share，保留前两个斜杠
-			buf[dst] = buf[src]
-			dst++
-			src++
-			buf[dst] = buf[src]
-			dst++
-			src++
-		} else {
-			// 普通绝对路径，保留一个斜杠
-			buf[dst] = buf[src]
-			dst++
-			src++
-		}
-		dstStart = dst
-	} else {
-		// 跳过开头的 "../" 序列
-		for src+3 <= n && buf[src] == '.' && buf[src+1] == '.' && IsPathSeparator(buf[src+2]) {
-			// 复制 "../" 到输出（但后续可能被回退？不，这里直接跳过，因为要保留？）
-			// C++ 中跳过开头的 "../" 但不复制，我们这里也跳过不复制
-			src += 3
-		}
-	}
-	// 记录每个组件的起始位置（用于处理 ..）
-	compStarts := []int{dst}
-	for src < n {
-		// 查找下一个分隔符
-		nextSep := src
-		for nextSep < n && !IsPathSeparator(buf[nextSep]) {
-			nextSep++
-		}
-		if nextSep == n {
-			// 最后一个组件，跳出循环单独处理
-			break
-		}
-		// 组件长度（不包括尾部分隔符）
-		compLen := nextSep - src
-		if compLen == 0 {
-			// 空组件（连续分隔符），忽略
-			src = nextSep + 1
-			continue
-		}
-		if compLen == 1 && buf[src] == '.' {
-			// 忽略 '.' 组件
-			src = nextSep + 1
-			continue
-		}
-		if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
-			if len(compStarts) > 1 {
-				// 回退一个组件
-				compStarts = compStarts[:len(compStarts)-1]
-				dst = compStarts[len(compStarts)-1]
-			} else {
-				// 保留开头的 '..'
-				buf[dst] = '.'
-				dst++
-				buf[dst] = '.'
-				dst++
-				buf[dst] = '/'
-				dst++
-				compStarts = append(compStarts, dst)
-			}
-			src = nextSep + 1
-			continue
-		}
-		// 普通组件：复制组件和尾部分隔符
-		if dst != src {
-			copy(buf[dst:], buf[src:nextSep+1])
-		}
-		dst += compLen + 1
-		src = nextSep + 1
-		compStarts = append(compStarts, dst)
-	}
-	// 处理最后一个组件（没有尾部分隔符）
-	if src < n {
-		compLen := n - src
-		if compLen == 1 && buf[src] == '.' {
-			// 忽略末尾 '.'
-		} else if compLen == 2 && buf[src] == '.' && buf[src+1] == '.' {
-			if len(compStarts) > 1 {
-				// 回退一个组件
-				compStarts = compStarts[:len(compStarts)-1]
-				dst = compStarts[len(compStarts)-1]
-			} else {
-				buf[dst] = '.'
-				dst++
-				buf[dst] = '.'
-				dst++
-			}
-		} else {
-			if dst != src {
-				copy(buf[dst:], buf[src:n])
-			}
-			dst += compLen
-		}
-	}
-	// 移除末尾多余的分隔符（但保留根目录的单个分隔符）
-	if dst > dstStart && IsPathSeparator(buf[dst-1]) {
-		dst--
-	}
-	if dst == 0 {
-		buf[0] = '.'
-		dst = 1
-	}
-	result := string(buf[:dst])
-	var slashBits uint64 = 0
-	if runtime.GOOS == "windows" {
-		mask := uint64(1)
-		for i := 0; i < dst; i++ {
-			c := buf[i]
-			if c == '\\' {
-				slashBits |= mask
-				// 将反斜杠转为正斜杠（已在 buf 中修改，但 result 是复制的，需要重新处理？）
-				// 注意：buf 已经被修改，但我们最终要返回规范化后的字符串（正斜杠）
-				// 由于我们在遍历时已经修改了 buf[i] = '/'，所以 result 中已经是正斜杠。
-				// 但我们需要同时返回 slashBits，以便恢复反斜杠位置。
-				buf[i] = '/'
-			}
-			if c == '/' {
-				mask <<= 1
-			}
-		}
-		// 重新生成 result，确保正斜杠
-		result = string(buf[:dst])
-	}
-	return result, slashBits
-}
-
 // IsPathSeparator 判断字符是否为路径分隔符。
 func IsPathSeparator(c byte) bool {
 	return c == '/' || (runtime.GOOS == "windows" && c == '\\')
@@ -398,4 +251,205 @@ func PathDecanonicalized(path string, slashBits uint64) string {
 		}
 	}
 	return string(buf)
+}
+
+// CanonicalizePathString converts a path string to canonical form.
+// It modifies the string in place by converting to a byte slice,
+// calling CanonicalizePathBytes, and updating the string.
+func CanonicalizePathString(path *string, slashBits *uint64) {
+	if path == nil {
+		return
+	}
+	b := []byte(*path)
+	length := len(b)
+	if length > 0 {
+		CanonicalizePathBytes(b, &length, slashBits)
+		*path = string(b[:length])
+	} else {
+		*path = ""
+	}
+}
+
+// CanonicalizePathBytes canonicalizes a path in-place.
+// path: a mutable byte slice representing the path.
+// lenPtr: pointer to the length of the path (updated on return).
+// slashBits: (Windows) bitmask where each set bit indicates a backslash position.
+func CanonicalizePathBytes(path []byte, lenPtr *int, slashBits *uint64) {
+	if lenPtr == nil || *lenPtr == 0 {
+		return
+	}
+	length := *lenPtr
+	start := 0
+	dst := start
+	dstStart := dst
+	src := start
+	end := length
+
+	isPathSeparator := func(c byte) bool {
+		if runtime.GOOS == "windows" {
+			return c == '/' || c == '\\'
+		}
+		return c == '/'
+	}
+
+	// For absolute paths, skip the leading directory separator
+	// as this one should never be removed from the result.
+	if isPathSeparator(path[src]) {
+		if runtime.GOOS == "windows" {
+			// Windows network path starts with //
+			if src+2 <= end && isPathSeparator(path[src+1]) {
+				src += 2
+				dst += 2
+			} else {
+				src++
+				dst++
+			}
+		} else {
+			src++
+			dst++
+		}
+		dstStart = dst
+	} else {
+		// For relative paths, skip any leading ../ as these are quite common
+		for src+3 <= end && path[src] == '.' && path[src+1] == '.' && isPathSeparator(path[src+2]) {
+			src += 3
+			dst += 3
+		}
+	}
+
+	// Loop over all components except the last one
+	componentCount := 0
+	dst0 := dst
+	srcNext := src
+	for src < end {
+		var nextSep int
+		if runtime.GOOS != "windows" {
+			// Use bytes.IndexByte for faster lookup
+			sub := path[src:end]
+			idx := bytes.IndexByte(sub, '/')
+			if idx == -1 {
+				break // last component
+			}
+			nextSep = src + idx
+		} else {
+			// Windows: scan for '/' or '\\'
+			nextSep = src
+			for nextSep < end && !isPathSeparator(path[nextSep]) {
+				nextSep++
+			}
+			if nextSep == end {
+				break
+			}
+		}
+		srcNext = nextSep + 1
+		componentLen := nextSep - src
+
+		if componentLen <= 2 {
+			if componentLen == 0 {
+				// Ignore empty component
+				src = srcNext
+				continue
+			}
+			if path[src] == '.' {
+				if componentLen == 1 {
+					// Ignore '.'
+					src = srcNext
+					continue
+				} else if componentLen == 2 && path[src+1] == '.' {
+					// Process '..'
+					if componentCount > 0 {
+						// Move back to previous component
+						componentCount--
+						for dst > dst0 && !isPathSeparator(path[dst-1]) {
+							dst--
+						}
+						// Also move back the separator
+						if dst > dst0 && isPathSeparator(path[dst-1]) {
+							dst--
+						}
+					} else {
+						// Keep the '..'
+						if dst != src {
+							copy(path[dst:dst+3], path[src:src+3])
+						}
+						dst += 3
+					}
+					src = srcNext
+					continue
+				}
+			}
+		}
+		componentCount++
+
+		// Copy component including trailing separator
+		copyLen := srcNext - src
+		if dst != src {
+			copy(path[dst:dst+copyLen], path[src:srcNext])
+		}
+		dst += copyLen
+		src = srcNext
+	}
+
+	// Handle the last component (no trailing separator)
+	componentLen := end - src
+	if componentLen > 0 {
+		if !(componentLen == 1 && path[src] == '.') && // ignore trailing '.'
+			!(componentLen == 2 && path[src] == '.' && path[src+1] == '.') {
+			// Normal component: copy
+			if dst != src {
+				copy(path[dst:dst+componentLen], path[src:src+componentLen])
+			}
+			dst += componentLen
+		} else if componentLen == 2 && path[src] == '.' && path[src+1] == '.' {
+			// Handle trailing '..'
+			if componentCount > 0 {
+				// Back up
+				for dst > dst0 && !isPathSeparator(path[dst-1]) {
+					dst--
+				}
+				if dst > dst0 && isPathSeparator(path[dst-1]) {
+					dst--
+				}
+			} else {
+				// Keep '..'
+				if dst != src {
+					copy(path[dst:dst+2], path[src:src+2])
+				}
+				dst += 2
+			}
+		}
+	}
+
+	// Remove trailing path separator if any
+	if dst > dstStart && isPathSeparator(path[dst-1]) {
+		dst--
+	}
+
+	if dst == start {
+		path[dst] = '.'
+		dst++
+	}
+
+	*lenPtr = dst - start
+
+	// On Windows, record backslash positions and convert them to '/'
+	if runtime.GOOS == "windows" {
+		var bits uint64 = 0
+		var bitsMask uint64 = 1
+		for i := start; i < start+*lenPtr; i++ {
+			switch path[i] {
+			case '\\':
+				bits |= bitsMask
+				path[i] = '/'
+				fallthrough
+			case '/':
+				bitsMask <<= 1
+			}
+		}
+		if slashBits != nil {
+			*slashBits = bits
+		}
+	} else if slashBits != nil {
+		*slashBits = 0
+	}
 }

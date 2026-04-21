@@ -1,46 +1,42 @@
 package builder
 
 import (
-	"errors"
-	"fmt"
 	"ninja-go/pkg/util"
-	"os"
 	"path"
-	"time"
 )
 
 // Builder 主构建器
 type Builder struct {
-	state         *State
-	config        *BuildConfig
-	buildLog      *BuildLog
-	depsLog       *DepsLog
-	runningEdges  map[*Edge]int64
-	disk          util.FileSystem
-	plan          *Plan
-	status        Status
-	exitCode      ExitStatus
-	explanations  *OptionalExplanations
-	scan          *DependencyScan
-	commandRunner CommandRunner
-	lockFilePath  string
-	jobserver_    JobserverClient
+	state          *State
+	config         *BuildConfig
+	buildLog       *BuildLog
+	depsLog        *DepsLog
+	running_edges_ map[*Edge]int
+	disk           util.FileSystem
+	plan           *Plan
+	status         Status
+	exitCode       ExitStatus
+	explanations   *Explanations
+	scan           *DependencyScan
+	commandRunner  CommandRunner
+	lockFilePath   string
+	jobserver_     JobserverClient
 	/// Time the build started.
-	startTimeMillis int64
+	start_time_millis_ int64
 }
 
 func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 	depsLog *DepsLog, start_time_millis int64,
 	disk_interface util.FileSystem, status Status) *Builder {
 	b := &Builder{
-		state:           state,
-		config:          config,
-		buildLog:        buildLog,
-		depsLog:         depsLog,
-		disk:            disk_interface,
-		status:          status,
-		startTimeMillis: start_time_millis,
-		lockFilePath:    ".ninja_lock",
+		state:              state,
+		config:             config,
+		buildLog:           buildLog,
+		depsLog:            depsLog,
+		disk:               disk_interface,
+		status:             status,
+		start_time_millis_: start_time_millis,
+		lockFilePath:       ".ninja_lock",
 	}
 	b.lockFilePath = ".ninja_lock"
 	build_dir := state.Bindings.LookupVariable("builddir")
@@ -94,18 +90,105 @@ func (b *Builder) AlreadyUpToDate() bool {
 	return !b.plan.MoreToDo()
 }
 
+func (b *Builder) Build(err *string) ExitStatus {
+	if b.AlreadyUpToDate() {
+		return ExitSuccess
+	}
+	b.plan.PrepareQueue()
+
+	if b.commandRunner == nil {
+		if b.config.DryRun {
+			b.commandRunner = NewDryRunCommandRunner()
+		} else {
+			b.commandRunner = NewRealCommandRunner(b.config, b.jobserver_)
+		}
+	}
+
+	b.status.BuildStarted()
+	pendingCommands := 0
+	failuresAllowed := b.config.FailuresAllowed
+
+	for b.plan.MoreToDo() {
+		// 启动命令
+		if failuresAllowed > 0 {
+			for b.commandRunner.CanRunMore() > 0 {
+				edge := b.plan.FindWork()
+				if edge == nil {
+					break
+				}
+				if edge.GetBindingBool("generator") {
+					b.buildLog.Close()
+				}
+				if !b.StartEdge(edge, err) {
+					b.Cleanup()
+					b.status.BuildFinished()
+					return ExitFailure
+				}
+				if edge.IsPhony() {
+					if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
+						b.Cleanup()
+						b.status.BuildFinished()
+						return ExitFailure
+					}
+				} else {
+					pendingCommands++
+				}
+				if pendingCommands == 0 && !b.plan.MoreToDo() {
+					break
+				}
+			}
+		}
+
+		// 等待命令完成
+		if pendingCommands > 0 {
+			var result CommandResult
+			if !b.commandRunner.WaitForCommand(&result) || result.Status == ExitInterrupted {
+				b.Cleanup()
+				b.status.BuildFinished()
+				*err = "interrupted by user"
+				return result.Status
+			}
+			pendingCommands--
+			if !b.FinishCommand(&result, err) {
+				b.Cleanup()
+				b.status.BuildFinished()
+				return result.Status
+			}
+			if !result.Success() {
+				failuresAllowed--
+			}
+			continue
+		}
+
+		// 无法继续
+		b.status.BuildFinished()
+		if failuresAllowed == 0 {
+			if b.config.FailuresAllowed > 1 {
+				*err = "subcommands failed"
+			} else {
+				*err = "subcommand failed"
+			}
+		} else {
+			*err = "stuck [this is a bug]"
+		}
+		return b.exitCode
+	}
+
+	b.status.BuildFinished()
+	return ExitSuccess
+}
+
 func (b *Builder) StartEdge(edge *Edge, err *string) bool {
-	// 启动命令
-	// METRIC_RECORD("StartEdge") - ignored in Go conversion
+	// METRIC_RECORD("StartEdge") - ignored
 
 	if edge.IsPhony() {
 		return true
 	}
 
-	startTimeMillis := GetTimeMillis() - b.startTimeMillis
-	b.runningEdges[edge] = startTimeMillis
+	start_time_millis := GetTimeMillis() - b.start_time_millis_
+	b.running_edges_[edge] = int(start_time_millis)
 
-	b.status.BuildEdgeStarted(edge, startTimeMillis)
+	b.status.BuildEdgeStarted(edge, start_time_millis)
 
 	var buildStart int64
 	if b.config.DryRun {
@@ -114,7 +197,8 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 		buildStart = -1
 	}
 
-	// Create directories necessary for outputs and remember the current filesystem mtime to record later
+	// Create directories necessary for outputs and remember the current
+	// filesystem mtime to record later
 	// XXX: this will block; do we care?
 	for _, o := range edge.Outputs {
 		if !b.disk.MakeDirs(o.Path) {
@@ -155,179 +239,74 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	return true
 }
 
-func (b *Builder) Build(err *string) ExitStatus {
-	if b.AlreadyUpToDate() {
-		return ExitSuccess
-	}
-	b.plan.PrepareQueue()
-
-	if b.commandRunner == nil {
-		if b.config.DryRun {
-			b.commandRunner = NewDryRunCommandRunner()
-		} else {
-			b.commandRunner = NewRealCommandRunner(b.config, b.jobserver_)
-		}
-	}
-
-	b.status.BuildStarted()
-	pendingCommands := 0
-	failuresAllowed := b.config.FailuresAllowed
-
-	for b.plan.MoreToDo() {
-		// 启动命令
-		if failuresAllowed > 0 {
-			for b.commandRunner.CanRunMore() > 0 {
-				edge := b.plan.FindWork()
-				if edge == nil {
-					break
-				}
-				if edge.GetBindingBool("generator") {
-					b.buildLog.Close()
-				}
-				if !b.startEdge(edge, err) {
-					b.Cleanup()
-					b.status.BuildFinished()
-					return ExitFailure
-				}
-				if edge.IsPhony() {
-					if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
-						b.Cleanup()
-						b.status.BuildFinished()
-						return ExitFailure
-					}
-				} else {
-					pendingCommands++
-				}
-				if pendingCommands == 0 && !b.plan.MoreToDo() {
-					break
-				}
-			}
-		}
-
-		// 等待命令完成
-		if pendingCommands > 0 {
-			var result CommandResult
-			if !b.commandRunner.WaitForCommand(&result) || result.Status == ExitInterrupted {
-				b.Cleanup()
-				b.status.BuildFinished()
-				*err = "interrupted by user"
-				return result.Status
-			}
-			pendingCommands--
-			if !b.finishCommand(&result, err) {
-				b.Cleanup()
-				b.status.BuildFinished()
-				return result.Status
-			}
-			if !result.Success() {
-				failuresAllowed--
-			}
-			continue
-		}
-
-		// 无法继续
-		b.status.BuildFinished()
-		if failuresAllowed == 0 {
-			if b.config.FailuresAllowed > 1 {
-				*err = "subcommands failed"
-			} else {
-				*err = "subcommand failed"
-			}
-		} else {
-			*err = "stuck [this is a bug]"
-		}
-		return b.exitCode
-	}
-
-	b.status.BuildFinished()
-	return ExitSuccess
-}
-
-func (b *Builder) startEdge(edge *Edge, err *string) bool {
-	if edge.IsPhony() {
-		return true
-	}
-	start := (time.Now().UnixNano() - b.startTimeMillis) / 1e6
-	b.status.BuildEdgeStarted(edge, start)
-
-	// 创建输出目录
-	for _, out := range edge.Outputs {
-		if !b.disk.MakeDirs(util.DirName(out.Path)) {
-			return false
-		}
-	}
-	// 创建响应文件
-	rspfile := edge.GetBinding("rspfile")
-	if rspfile != "" {
-		content := edge.GetBinding("rspfile_content")
-		if !b.disk.WriteFile(rspfile, content, true) {
-			return false
-		}
-	}
-	// 启动命令
-	if !b.commandRunner.StartCommand(edge) {
-		*err = fmt.Sprintf("command '%s' failed", edge.EvaluateCommand(false))
-		return false
-	}
-	return true
-}
-
 var g_keep_rsp = false
 
-func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
+func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
+	// METRIC_RECORD("FinishCommand") - ignored
+
 	edge := result.Edge
 
-	// 首先提取依赖（必须在命令输出被过滤前执行）
+	// First try to extract dependencies from the result, if any.
+	// This must happen first as it filters the command output (we want
+	// to filter /showIncludes output, even on compile failure) and
+	// extraction itself can fail, which makes the command fail from a
+	// build perspective.
 	var depsNodes []*Node
 	depsType := edge.GetBinding("deps")
 	depsPrefix := edge.GetBinding("msvc_deps_prefix")
 	if depsType != "" {
-		var extract_err string
-		if !b.extractDeps(result, depsType, depsPrefix, &depsNodes, &extract_err) && result.Status == ExitSuccess {
+		var extractErr string
+		if !b.extractDeps(result, depsType, depsPrefix, &depsNodes, &extractErr) && result.Success() {
 			if result.Output != "" {
 				result.Output += "\n"
 			}
-			result.Output += extract_err
+			result.Output += extractErr
 			result.Status = ExitFailure
 		}
 	}
 
-	// 获取边的开始和结束时间
-	startMillis, ok := b.runningEdges[edge]
-	if !ok {
-		*err = fmt.Sprintf("edge %v not found in running edges", edge)
-		return false
+	startTimeMillis, endTimeMillis := int64(0), int64(0)
+	it, ok := b.running_edges_[edge]
+	if ok {
+		startTimeMillis = int64(it)
+		delete(b.running_edges_, edge)
 	}
-	endMillis := time.Now().UnixNano()/1e6 - b.startTimeMillis
-	delete(b.runningEdges, edge)
+	endTimeMillis = GetTimeMillis() - b.start_time_millis_
 
-	// 通知状态
-	b.status.BuildEdgeFinished(edge, startMillis, endMillis, result.Status, result.Output)
+	b.status.BuildEdgeFinished(edge, startTimeMillis, endTimeMillis, result.Status, result.Output)
 
-	// 如果命令失败，直接标记边失败并返回
-	if result.Status != ExitSuccess {
+	// The rest of this function only applies to successful commands.
+	if !result.Success() {
 		return b.plan.EdgeFinished(edge, EdgeFailed, err)
 	}
 
-	// 处理 restat 和 generator 规则
-	recordMtime := int64(0)
+	// Restat the edge outputs
+	var recordMtime int64 = 0
 	if !b.config.DryRun {
 		restat := edge.GetBindingBool("restat")
 		generator := edge.GetBindingBool("generator")
 		nodeCleaned := false
 		recordMtime = edge.CommandStartTime
 
+		// restat and generator rules must restat the outputs after the build
+		// has finished. if recordMtime == 0, then there was an error while
+		// attempting to touch/stat the temp file when the edge started and
+		// we should fall back to recording the outputs' current mtime in the
+		// log.
 		if recordMtime == 0 || restat || generator {
-			for _, out := range edge.Outputs {
-				newMtime := b.disk.Stat(out.Path, err)
+			for _, o := range edge.Outputs {
+				newMtime := b.disk.Stat(o.Path, err)
 				if newMtime == -1 {
 					return false
 				}
 				if newMtime > recordMtime {
 					recordMtime = newMtime
 				}
-				if out.Mtime == newMtime && restat {
-					if !b.plan.CleanNode(b.scan, out, err) {
+				if o.Mtime == newMtime && restat {
+					// The rule command did not change the output. Propagate the clean
+					// state through the build graph.
+					// Note that this also applies to nonexistent outputs (mtime == 0).
+					if !b.plan.CleanNode(b.scan, o, err) {
 						return false
 					}
 					nodeCleaned = true
@@ -339,42 +318,38 @@ func (b *Builder) finishCommand(result *CommandResult, err *string) bool {
 		}
 	}
 
-	// 标记边成功完成
 	if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
 		return false
 	}
 
-	// 删除响应文件
+	// Delete any left over response file.
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" && !g_keep_rsp {
 		b.disk.RemoveFile(rspfile)
 	}
 
-	// 记录构建日志
-	if b.buildLog != nil {
-		if !b.buildLog.RecordCommand(edge, startMillis, endMillis, recordMtime) {
-			*err = fmt.Sprintf("error writing to build log: %v", err)
+	if b.scan.buildLog != nil {
+		if !b.scan.buildLog.RecordCommand(edge, int(startTimeMillis), int(endTimeMillis), recordMtime) {
+			*err = "Error writing to build log: " // Need to handle errno appropriately
 			return false
 		}
 	}
 
-	// 记录依赖日志
 	if depsType != "" && !b.config.DryRun {
 		if len(edge.Outputs) == 0 {
 			panic("should have been rejected by parser")
 		}
-		for _, out := range edge.Outputs {
-			depsMtime := b.disk.Stat(out.Path, err)
+		for _, o := range edge.Outputs {
+			depsMtime := b.disk.Stat(o.Path, err)
 			if depsMtime == -1 {
 				return false
 			}
-			if !b.depsLog.RecordDeps(out, depsMtime, len(depsNodes), depsNodes) {
-				*err = fmt.Sprintf("error writing to deps log")
+			if !b.scan.depsLog.RecordDeps1(o, depsMtime, depsNodes) {
+				*err = "Error writing to deps log: "
 				return false
 			}
 		}
 	}
-
 	return true
 }
 
@@ -394,7 +369,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			// all backslashes (as some of the slashes will certainly be backslashes
 			// anyway). This could be fixed if necessary with some additional
 			// complexity in IncludesNormalize::Relativize.
-			*depsNodes = append(*depsNodes, b.state.GetNode(include, ^uint(0)))
+			*depsNodes = append(*depsNodes, b.state.GetNode(include, ^uint64(0)))
 		}
 	} else if depsType == "gcc" {
 		depfile := result.Edge.GetUnescapedDepfile()
@@ -424,10 +399,10 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 		*depsNodes = make([]*Node, 0, len(deps.Ins))
 		for _, input := range deps.Ins {
 			// Convert StringPiece to mutable string for canonicalization
-			pathStr := string(input)
+			pathStr := input
 			slashBits := uint64(0)
-			canonicalized := util.CanonicalizePath(pathStr, &slashBits) // assume helper exists
-			*depsNodes = append(*depsNodes, b.state.GetNode(canonicalized, slashBits))
+			util.CanonicalizePathString(&pathStr, &slashBits) // assume helper exists
+			*depsNodes = append(*depsNodes, b.state.GetNode(pathStr, slashBits))
 		}
 
 		if !g_keep_depfile {

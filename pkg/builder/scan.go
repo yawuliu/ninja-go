@@ -2,7 +2,6 @@ package builder
 
 import (
 	"ninja-go/pkg/util"
-	"os"
 )
 
 type DependencyScan struct {
@@ -12,12 +11,12 @@ type DependencyScan struct {
 	disk_interface_ util.FileSystem
 	depLoader       *ImplicitDepLoader
 	dyndepLoader    *DyndepLoader
-	explanations_   *OptionalExplanations
+	explanations_   *Explanations
 }
 
 func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 	disk_interface util.FileSystem,
-	depfile_parser_options *DepfileParserOptions, explanations *OptionalExplanations) *DependencyScan {
+	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *DependencyScan {
 	return &DependencyScan{
 		state:           state,
 		buildLog:        buildLog,
@@ -206,12 +205,12 @@ type ImplicitDepLoader struct {
 	state                *State
 	depsLog              *DepsLog
 	diskInterface        util.FileSystem
-	depfileParserOptions interface{} // 可忽略
-	explanations         interface{}
+	depfileParserOptions *DepfileParserOptions // 可忽略
+	explanations         *Explanations
 }
 
 func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface util.FileSystem,
-	depfile_parser_options *DepfileParserOptions, explanations *OptionalExplanations) *ImplicitDepLoader {
+	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
 		state:                state,
 		depsLog:              depsLog,
@@ -255,15 +254,15 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 	}
 
 	// Deps are invalid if the output is newer than the deps.
-	if output.Mtime > deps.Mtime {
+	if output.Mtime > deps.mtime {
 		l.explanations.Record(output,
 			"stored deps info out of date for '%s' (%d vs %d)",
-			output.Path, deps.Mtime, output.Mtime)
+			output.Path, deps.mtime, output.Mtime)
 		return false
 	}
 
-	nodes := deps.Nodes
-	nodeCount := deps.NodeCount
+	nodes := deps.nodes
+	nodeCount := deps.node_count
 	// Insert nodes before the order-only dependencies
 	insertPos := len(edge.Inputs) - edge.OrderOnlyDeps
 	edge.Inputs = append(edge.Inputs[:insertPos], append(nodes, edge.Inputs[insertPos:]...)...)
@@ -307,16 +306,18 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 
 	// Canonicalize the primary output path.
 	primaryOut := depfileParser.Outs[0]
-	var canonicalized string
-	util.CanonicalizePath(&canonicalized, primaryOut)
+	primaryOutLen := len(primaryOut)
+	var canonicalized []byte
+	var unused uint64
+	util.CanonicalizePathBytes(canonicalized, &primaryOutLen, &unused)
 	// Update the string slice (depfileParser.outs is a slice of strings, we need to replace)
-	depfileParser.Outs[0] = canonicalized
+	depfileParser.Outs[0] = string(canonicalized)
 
 	// Check that this depfile matches the edge's output.
-	if firstOutput.Path != canonicalized {
+	if firstOutput.Path != string(canonicalized) {
 		l.explanations.Record(firstOutput,
 			"expected depfile '%s' to mention '%s', got '%s'",
-			path, firstOutput.Path, canonicalized)
+			path, firstOutput.Path, string(canonicalized))
 		return false
 	}
 
@@ -335,7 +336,31 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 		}
 	}
 
-	return l.ProcessDepfileDeps(edge, &depfileParser.Ins, err)
+	return l.ProcessDepfileDeps(edge, depfileParser.Ins, err)
+}
+
+func (l *ImplicitDepLoader) ProcessDepfileDeps(edge *Edge, depfileIns []string, err *string) bool {
+	// Preallocate space in edge.inputs for the new implicit dependencies.
+	// In Go, we can simply extend the slice and fill.
+	startIdx := len(edge.Inputs) - edge.OrderOnlyDeps
+	// Make room for len(depfileIns) new items at the insertion point.
+	edge.Inputs = append(edge.Inputs[:startIdx], append(make([]*Node, len(depfileIns)), edge.Inputs[startIdx:]...)...)
+
+	// Add all nodes as implicit dependencies.
+	for i, path := range depfileIns {
+		// Canonicalize the path and get slash bits.
+		var slash_bits uint64
+		pathBytes := []byte(path)
+		pathBytesLen := len(pathBytes)
+		util.CanonicalizePathBytes(pathBytes, &pathBytesLen, &slash_bits)
+		node := l.state.GetNode(string(pathBytes), slash_bits)
+		// Store the node in the preallocated position.
+		edge.Inputs[startIdx+i] = node
+		node.AddOutEdge(edge)
+	}
+	edge.ImplicitDeps += len(depfileIns)
+
+	return true
 }
 
 func (s *DependencyScan) LoadDyndeps(node *Node, err *string) bool {
@@ -435,7 +460,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 		return true
 	}
 
-	var entry *BuildLogEntry
+	var entry *LogEntry
 
 	// If this is a restat rule, we may have cleaned the output in a
 	// previous run and stored the command start time in the build log.
@@ -467,7 +492,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 			entry = ds.buildLog.LookupByOutput(output.Path)
 		}
 		if entry != nil {
-			if !generator && BuildLogHashCommand(command) != entry.CommandHash {
+			if !generator && HashCommand(command) != entry.CommandHash {
 				// May also be dirty due to the command changing since the last build.
 				// But if this is a generator rule, the command changing does not make us dirty.
 				ds.explanations_.Record(output, "command line changed for %s",
