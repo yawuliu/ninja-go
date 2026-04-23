@@ -97,7 +97,7 @@ func TestState_AddEdge(t *testing.T) {
 	require.NotNil(t, edge)
 	assert.Equal(t, rule, edge.Rule)
 	assert.Equal(t, uint64(0), edge.id_)
-	assert.Equal(t, DefaultPool, edge.Pool)
+	assert.Equal(t, kDefaultPool, edge.Pool)
 	assert.Equal(t, state.Bindings, edge.env_)
 
 	// 添加第二条边，id_ 应该递增
@@ -496,11 +496,11 @@ func TestEdge_IsPhony(t *testing.T) {
 // TestEdge_UseConsole 测试控制台池检查
 func TestEdge_UseConsole(t *testing.T) {
 	// Console 池
-	consoleEdge := &Edge{Pool: ConsolePool}
+	consoleEdge := &Edge{Pool: kConsolePool}
 	assert.True(t, consoleEdge.use_console())
 
 	// 默认池
-	defaultEdge := &Edge{Pool: DefaultPool}
+	defaultEdge := &Edge{Pool: kDefaultPool}
 	assert.False(t, defaultEdge.use_console())
 
 	// 无池
