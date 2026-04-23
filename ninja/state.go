@@ -54,7 +54,7 @@ func (s *State) AddEdge(rule *Rule) *Edge {
 	defer s.mu.Unlock()
 	edge := &Edge{
 		Rule: rule,
-		Pool: kDefaultPool,
+		Pool: kConsolePool,
 		env_: s.Bindings,
 		id_:  uint64(len(s.Edges)),
 	}

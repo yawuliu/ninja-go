@@ -1,354 +1,268 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/windows"
-	"io"
 	"ninja-go/ninja/util"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
-	"unsafe"
+	"time"
 )
 
-// Subprocess 表示一个正在运行的子进程。
+// Subprocess 对应 C++ 中的 Subprocess 结构体
 type Subprocess struct {
-	pipe          io.ReadCloser
-	child         *exec.Cmd
-	overlapped    windows.Overlapped
-	isReading     bool
-	useConsole    bool
-	overlappedBuf [4096]byte
-	mu            sync.Mutex
+	cmd        *exec.Cmd
+	useConsole bool          // 是否使用控制台模式（直接继承终端）
+	buf        bytes.Buffer  // 合并 stdout/stderr 的输出缓冲区
+	done       chan struct{} // 用于通知已完成
+	mu         sync.Mutex
+	exitStatus ExitStatus
+	pid        int
+	finished   bool
 }
 
-func NewSubprocess(useConsole bool) *Subprocess {
-	return &Subprocess{
-		pipe:       nil,
-		child:      nil,
-		isReading:  false,
-		useConsole: useConsole,
-	}
+// SubprocessSet 对应 C++ 中的 SubprocessSet 结构体
+type SubprocessSet struct {
+	mu        sync.Mutex
+	running   []*Subprocess    // 正在运行的子进程集合
+	finishedQ []*Subprocess    // 已完成的子进程队列（FIFO）
+	finishCh  chan *Subprocess // 用于接收完成通知的通道
+	wg        sync.WaitGroup   // 等待所有后台 goroutine 结束
 }
 
-func (sp *Subprocess) Start(set *SubprocessSet, command string) error {
-	// 1. 打开空设备用于子进程的 stdin（仅在非控制台模式或需要重定向时）
-	var nullFile *os.File
-	if !sp.useConsole {
-		var err error
-		nullFile, err = os.Open(os.DevNull)
-		if err != nil {
-			return fmt.Errorf("open null device: %w", err)
+var (
+	// 全局中断标志（原子操作）
+	ginterrupted int32
+	// 用于通知中断信号的通道
+	sigChan = make(chan os.Signal, 1)
+)
+
+func init() {
+	// 捕获常见的终止信号
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for range sigChan {
+			atomic.StoreInt32(&ginterrupted, 1)
 		}
-		defer nullFile.Close() // 子进程启动后父进程可安全关闭
+	}()
+}
+
+// IsInterrupted 返回是否收到中断信号
+func IsInterrupted() bool {
+	return atomic.LoadInt32(&ginterrupted) != 0
+}
+
+// HandlePendingInterruption 如果中断标志被设置，则返回错误（模拟 C++ 中的类似行为）
+func HandlePendingInterruption() error {
+	if IsInterrupted() {
+		return errors.New("interrupted by signal")
 	}
-
-	// 2. 构建命令（跨平台通过 shell 执行，以处理复杂命令行）
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		// Windows 使用 cmd /c，注意长命令行限制与原 CreateProcess 略有差异
-		cmd = exec.Command("cmd", "/c", command)
-	} else {
-		// Unix-like 使用 sh -c
-		cmd = exec.Command("sh", "-c", command)
-	}
-
-	// 3. 设置标准输入（非控制台模式重定向到空设备，控制台模式继承父进程）
-	if !sp.useConsole {
-		cmd.Stdin = nullFile
-	} // else: cmd.Stdin 保持 nil，继承父进程的 stdin
-
-	// 4. 设置标准输出和错误
-	if !sp.useConsole {
-		// 创建管道，将子进程的 stdout/stderr 合并写入写端
-		pr, pw, err := os.Pipe()
-		if err != nil {
-			return err
-		}
-		cmd.Stdout = pw
-		cmd.Stderr = pw
-		sp.pipe = pr // 父进程从此读端读取输出
-		// 父进程的写端在子进程启动后立即关闭，子进程会持有其副本
-		defer pw.Close()
-	} else {
-		// 控制台模式：输出直接显示在终端，不捕获
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
-
-	// 5. 设置进程组标志（模拟 CREATE_NEW_PROCESS_GROUP）
-	if !sp.useConsole {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-		if runtime.GOOS == "windows" {
-			// Windows 需要 syscall/windows 包中的常量
-			cmd.SysProcAttr.CreationFlags = 0x00000200 // CREATE_NEW_PROCESS_GROUP
-		} else {
-			// Unix 设置新进程组，使子进程独立于父进程的终端信号
-			// cmd.SysProcAttr.Setpgid = true
-		}
-	}
-
-	// 6. 启动进程
-	err := cmd.Start()
-	if err != nil {
-		// 处理“文件未找到”错误，与原始逻辑一致：视为构建失败而非致命错误
-		if errors.Is(err, exec.ErrNotFound) {
-			// sp.buf = []byte("CreateProcess failed: The system cannot find the file specified.\n")
-			// 清理可能已创建的管道（仅非控制台模式）
-			if sp.pipe != nil {
-				sp.pipe.Close()
-				sp.pipe = nil
-			}
-			return nil // 返回 nil 表示“启动过程已完成”（实际命令未找到）
-		}
-		// 其他错误作为致命错误返回
-		return fmt.Errorf("start command: %w", err)
-	}
-
-	// 7. 保存命令对象，供后续 Wait、Kill 等操作使用
-	sp.child = cmd
 	return nil
 }
 
-func (s *Subprocess) Finish() ExitStatus {
-	if s.child.ProcessState.ExitCode() != 0 {
-		return ExitFailure
+// NewSubprocessSet 创建并初始化 SubprocessSet
+func NewSubprocessSet() *SubprocessSet {
+	ps := &SubprocessSet{
+		finishCh: make(chan *Subprocess, 16), // 带缓冲，避免阻塞
 	}
-	// Wait for process
-	err := s.child.Wait()
-	if err != nil {
-		panic(fmt.Errorf("Wait: %w", err))
-	}
-	var exitCode int = s.child.ProcessState.ExitCode()
-	s.child = nil
-	if exitCode == CONTROL_C_EXIT {
-		return ExitInterrupted
-	}
-	return ExitStatus(exitCode)
+	return ps
 }
 
+// Add 启动一个新的子进程，useConsole 为 true 时进程直接使用终端，无法捕获输出。
+// 返回 *Subprocess，如果启动失败则返回 nil 并设置错误（实际使用时建议返回 error）
+func (ps *SubprocessSet) Add(command string, useConsole bool) (*Subprocess, error) {
+	if IsInterrupted() {
+		return nil, errors.New("already interrupted")
+	}
+
+	sub := &Subprocess{
+		useConsole: useConsole,
+		done:       make(chan struct{}),
+		// ... 其他初始化
+	}
+
+	// 设置命令（根据平台选择 shell）
+	if runtime.GOOS == "windows" {
+		sub.cmd = exec.Command("cmd", "/c", command)
+	} else {
+		sub.cmd = exec.Command("/bin/sh", "-c", command)
+	}
+
+	if useConsole {
+		sub.cmd.Stdin = os.Stdin
+		sub.cmd.Stdout = os.Stdout
+		sub.cmd.Stderr = os.Stderr
+	} else {
+		sub.cmd.Stdout = &sub.buf
+		sub.cmd.Stderr = &sub.buf
+	}
+
+	if err := sub.cmd.Start(); err != nil {
+		return nil, err
+	}
+	sub.pid = sub.cmd.Process.Pid
+
+	// 启动 goroutine 等待进程结束
+	ps.wg.Add(1)
+	go func() {
+		defer ps.wg.Done()
+		err := sub.cmd.Wait()
+		sub.mu.Lock()
+		if err != nil {
+			// 状态判断逻辑（同前）
+			sub.exitStatus = ExitFailure
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+					sub.exitStatus = ExitInterrupted
+				}
+			}
+		} else {
+			sub.exitStatus = ExitSuccess
+		}
+		sub.finished = true
+		sub.mu.Unlock()
+		close(sub.done)
+
+		// 将完成的子进程发送到 finishCh
+		ps.finishCh <- sub
+	}()
+
+	// 关键：判断进程是否已经快速结束
+	// 使用非阻塞 select 检测 done 通道
+	select {
+	case <-sub.done:
+		// 进程已结束，直接加入 finishedQ，不加入 running_
+		ps.mu.Lock()
+		ps.finishedQ = append(ps.finishedQ, sub)
+		ps.mu.Unlock()
+	default:
+		// 进程仍在运行，加入 running_
+		ps.mu.Lock()
+		ps.running = append(ps.running, sub)
+		ps.mu.Unlock()
+	}
+
+	return sub, nil
+}
+
+// Done 返回子进程是否已经结束（非阻塞）
 func (s *Subprocess) Done() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// Finish 等待子进程结束并返回 ExitStatus
+func (s *Subprocess) Finish() ExitStatus {
+	<-s.done
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.pipe == nil
+	return s.exitStatus
 }
 
+// GetOutput 返回子进程的标准输出和标准错误合并后的内容（仅在非控制台模式下有效）
 func (s *Subprocess) GetOutput() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
+	return s.buf.String()
 }
 
-// SubprocessSet 管理一组子进程。
-type SubprocessSet struct {
-	ioport      windows.Handle
-	running     []*Subprocess
-	finished    chan *Subprocess
-	mu          sync.Mutex
-	done        chan struct{}
-	wg          sync.WaitGroup
-	interrupt   bool
-	interruptMu sync.Mutex
-}
-
-var globalSet *SubprocessSet // for console_ handler
-
-func init() {
-	globalSet = nil
-}
-
-// NotifyInterrupted is called by Windows console_ handler
-func NotifyInterrupted(dwCtrlType uint32) uintptr {
-	if dwCtrlType == windows.CTRL_C_EVENT || dwCtrlType == windows.CTRL_BREAK_EVENT {
-		if globalSet != nil {
-			globalSet.Interrupt()
-		}
-		return 1
-	}
-	return 0
-}
-
-func NewSubprocessSet() (*SubprocessSet, error) {
-	ioport, err := windows.CreateIoCompletionPort(windows.InvalidHandle, 0, 0, 1)
-	if err != nil {
-		return nil, fmt.Errorf("CreateIoCompletionPort: %w", err)
-	}
-	set := &SubprocessSet{
-		ioport:   ioport,
-		finished: make(chan *Subprocess, 100),
-		done:     make(chan struct{}),
-	}
-	// Set global for console_ handler
-	globalSet = set
-	// Register console_ handler
-	//handler := windows.NewCallback(NotifyInterrupted)
-	kernel32 := syscall.NewLazyDLL("kernel32.dll")
-	setConsoleCtrlHandler := kernel32.NewProc("SetConsoleCtrlHandler")
-	result, _, err := setConsoleCtrlHandler.Call(syscall.NewCallback(func(controlType uint) uint {
-		NotifyInterrupted(uint32(controlType))
-		return 0
-	}), 1)
-	if result != 1 {
-		return nil, fmt.Errorf("SetConsoleCtrlHandler: result: %d, %w, %v", result, windows.GetLastError(), err)
-	}
-	// Start a goroutine to monitor IOCP
-	set.wg.Add(1)
-	go set.ioWorker()
-	return set, nil
-}
-
-func (s *SubprocessSet) ioWorker() {
-	defer s.wg.Done()
-	var bytes uint32
-	var completionKey uintptr
-	var overlapped *windows.Overlapped
-	for {
-		select {
-		case <-s.done:
-			return
-		default:
-		}
-		// Use GetQueuedCompletionStatus with a timeout or infinite
-		// Since we need to be able to exit, we can use a 100ms loop? But original blocks infinitely.
-		// We'll use a timeout approach to check done channel periodically.
-		// However, for correctness, we can rely on that PostQueuedCompletionStatus will unblock us when interrupted.
-		err := windows.GetQueuedCompletionStatus(s.ioport, &bytes, &completionKey, &overlapped, 100) // 100ms
-		if err != nil {
-			if err == windows.WAIT_TIMEOUT {
-				continue
-			}
-			if err != windows.ERROR_BROKEN_PIPE {
-				// Ignore error? Log maybe
-			}
-		}
-		if completionKey == 0 && overlapped == nil {
-			// Interrupt signal
-			s.interruptMu.Lock()
-			s.interrupt = true
-			s.interruptMu.Unlock()
-			continue
-		}
-		subproc := (*Subprocess)(unsafe.Pointer(completionKey))
-		if subproc != nil {
-			subproc.OnPipeReady()
-			if subproc.Done() {
-				s.mu.Lock()
-				// remove from running
-				for i, p := range s.running {
-					if p == subproc {
-						s.running = append(s.running[:i], s.running[i+1:]...)
-						break
-					}
-				}
-				s.mu.Unlock()
-				s.finished <- subproc
-			}
-		}
-	}
-}
-
-func (s *SubprocessSet) Add(command string, useConsole bool) *Subprocess {
-	subproc := NewSubprocess(useConsole)
-	err := subproc.Start(s, command)
-	if err != nil {
-		// In original code, Start returns false on error and we delete subproc
-		return nil
-	}
-	s.mu.Lock()
-	if subproc.child != nil {
-		s.running = append(s.running, subproc)
-	} else {
-		// process already finished (e.g. file not found)
-		s.finished <- subproc
-	}
-	s.mu.Unlock()
-	return subproc
-}
-
-func (s *SubprocessSet) DoWork() bool {
-	// Original blocks until some I/O completes and returns true if interrupted.
-	// In our model, the worker goroutine handles that and sets interrupt flag.
-	// This method now checks if interrupt has occurred and returns true.
-	s.interruptMu.Lock()
-	interrupted := s.interrupt
-	s.interruptMu.Unlock()
-	if interrupted {
+// DoWork 等待任意子进程状态变化或中断发生。
+// 返回值：如果正常有进程结束返回 true；如果被中断或 context 取消返回 false。
+func (ps *SubprocessSet) DoWork() bool {
+	// 先检查是否有已经完成但尚未被 NextFinished 取走的进程
+	// 这部分进程可能已经通过 finishCh 到达，但用户还没调用 NextFinished。
+	// 我们优先处理已经排队的。
+	ps.mu.Lock()
+	if len(ps.finishedQ) > 0 {
+		ps.mu.Unlock()
 		return true
 	}
-	// Otherwise, we need to wait for any event? Original DoWork waits indefinitely.
-	// But to avoid busy loop, we sleep a little.
-	// For simplicity, we rely on the fact that NextFinished will be called after DoWork.
-	// The typical pattern in ninja is: while ( (subproc = NextFinished()) == NULL ) { DoWork(); }
-	// In that loop, DoWork blocks until something happens. We emulate that by blocking on a channel.
-	// But we already have a goroutine that puts finished subprocesses into a channel.
-	// So DoWork can just return false immediately, because NextFinished will return if any.
-	// To match semantics, we should block until there is any finished subprocess OR interrupt.
-	// However, the original DoWork returns false normally, and true only on interrupt.
-	// We'll implement a blocking wait with a select.
-	select {
-	case <-s.finished:
+	ps.mu.Unlock()
+
+	// 如果已经中断，直接返回 false（模拟 C++ 的 interrupted）
+	if IsInterrupted() {
 		return false
-	case <-s.done:
-		return false
-	default:
-		// No finished yet, but we need to wait? Actually original DoWork does not wait;
-		// it calls DoWork which processes one IOCP event (blocks) and returns.
-		// To simulate, we could read from a channel that receives notifications from the worker.
-		// For simplicity, we'll just sleep a bit; but better to use a sync.Cond.
-		// Given complexity, we'll assume the worker goroutine will fill finished channel,
-		// and NextFinished will return non-nil, so DoWork can return false immediately.
-		// This breaks exact semantics but works in practice.
 	}
-	return false
+
+	// 等待 10ms 后再次检查中断，避免永久阻塞
+	select {
+	case p := <-ps.finishCh:
+		ps.mu.Lock()
+		ps.finishedQ = append(ps.finishedQ, p)
+		for i, rp := range ps.running {
+			if rp == p {
+				ps.running = append(ps.running[:i], ps.running[i+1:]...)
+				break
+			}
+		}
+		ps.mu.Unlock()
+		return true
+	case <-time.After(10 * time.Millisecond):
+		// 超时后返回 true，表示没有中断也没有新进程结束，
+		// 但调用者会重新循环，从而能及时响应中断。
+		return true
+	}
 }
 
-func (s *SubprocessSet) NextFinished() *Subprocess {
-	select {
-	case sub := <-s.finished:
-		return sub
-	default:
+// NextFinished 返回下一个已经完成的子进程，如果没有则返回 nil
+func (ps *SubprocessSet) NextFinished() *Subprocess {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if len(ps.finishedQ) == 0 {
 		return nil
 	}
+	p := ps.finishedQ[0]
+	ps.finishedQ = ps.finishedQ[1:]
+	return p
 }
 
-func (s *SubprocessSet) Interrupt() {
-	// Post a completion status to unblock the IOCP loop
-	if err := windows.PostQueuedCompletionStatus(s.ioport, 0, 0, nil); err != nil {
-		panic(fmt.Errorf("PostQueuedCompletionStatus: %w", windows.GetLastError()))
-	}
-}
+// Clear 终止所有尚未结束的子进程，并等待它们退出。
+// 模拟 C++ 析构行为，释放所有资源。
+func (ps *SubprocessSet) Clear() {
+	// 终止所有还在运行的子进程
+	ps.mu.Lock()
+	runningCopy := make([]*Subprocess, len(ps.running))
+	copy(runningCopy, ps.running)
+	ps.mu.Unlock()
 
-func (s *SubprocessSet) Clear() {
-	// Send CTRL_BREAK to all running processes that are not using console_
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, sub := range s.running {
-		if sub.child != nil && !sub.useConsole {
-			// pid := sub.child.Process.Pid
-			err := sub.child.Process.Signal(os.Interrupt)
-			if err != nil {
-				fmt.Printf("Signal Error: %v\n", err)
+	for _, p := range runningCopy {
+		if !p.Done() && p.cmd != nil && p.cmd.Process != nil {
+			// Windows 直接 Kill；Unix 先 SIGTERM 再 Kill
+			if runtime.GOOS == "windows" {
+				p.cmd.Process.Kill()
+			} else {
+				p.cmd.Process.Signal(syscall.SIGTERM)
+				select {
+				case <-p.done:
+				case <-time.After(100 * time.Millisecond):
+					p.cmd.Process.Kill()
+				}
 			}
 		}
 	}
-	for _, sub := range s.running {
-		sub.Finish()
-	}
-	s.running = nil
-	close(s.done)
-	s.wg.Wait()
-	windows.CloseHandle(s.ioport)
+	ps.wg.Wait()
+
+	ps.mu.Lock()
+	ps.running = nil
+	ps.finishedQ = nil
+	ps.mu.Unlock()
 }
 
-// ---------- ExitStatus constants ----------
-const CONTROL_C_EXIT = 0xC000013A // STATUS_CONTROL_C_EXIT
-
-// ---------- Helper functions ----------
-func Win32Fatal(msg string) {
-	panic(msg)
+// CheckConsoleProcessTerminated 在 C++ 版本中用于轮询控制台子进程。
+// 在 Go 版本中，由于我们统一使用 goroutine + Wait，不再需要单独轮询。
+// 保留此方法仅为满足接口兼容，可直接返回。
+func (ps *SubprocessSet) CheckConsoleProcessTerminated() {
+	// no-op in Go implementation
 }
 
 // RealCommandRunner 真实命令执行器
@@ -364,10 +278,7 @@ type RealCommandRunner struct {
 var _ CommandRunner = (*RealCommandRunner)(nil)
 
 func NewRealCommandRunner(config *BuildConfig, jobserver JobserverClient) *RealCommandRunner {
-	subprocs, err := NewSubprocessSet()
-	if err != nil {
-		panic(err)
-	}
+	subprocs := NewSubprocessSet()
 	return &RealCommandRunner{
 		config:        config,
 		jobserver:     jobserver,
@@ -377,7 +288,7 @@ func NewRealCommandRunner(config *BuildConfig, jobserver JobserverClient) *RealC
 }
 
 func (r *RealCommandRunner) CanRunMore() int {
-	subprocNumber := len(r.subprocs.running) + len(r.subprocs.finished)
+	subprocNumber := len(r.subprocs.running) + len(r.subprocs.finishedQ)
 	capacity := r.config.parallelism - subprocNumber
 	if r.jobserver != nil {
 		capacity = int(^uint(0) >> 1) // 相当于 INT_MAX
@@ -400,8 +311,9 @@ func (r *RealCommandRunner) CanRunMore() int {
 
 func (r *RealCommandRunner) StartCommand(edge *Edge) bool {
 	command := edge.EvaluateCommand(false)
-	subproc := r.subprocs.Add(command, edge.use_console())
-	if subproc == nil {
+	subproc, err := r.subprocs.Add(command, edge.use_console())
+	if err != nil {
+		fmt.Println(err)
 		return false
 	}
 	r.mu.Lock()
