@@ -15,143 +15,140 @@ import (
 	"time"
 )
 
-// Subprocess 对应 C++ 中的 Subprocess 结构体
+// Subprocess 对应 C++ 的 Subprocess
 type Subprocess struct {
 	cmd        *exec.Cmd
-	useConsole bool          // 是否使用控制台模式（直接继承终端）
-	buf        bytes.Buffer  // 合并 stdout/stderr 的输出缓冲区
-	done       chan struct{} // 用于通知已完成
+	useConsole bool
+	buf        bytes.Buffer // 合并 stdout/stderr
+	done       chan struct{}
 	mu         sync.Mutex
 	exitStatus ExitStatus
 	pid        int
 	finished   bool
 }
 
-// SubprocessSet 对应 C++ 中的 SubprocessSet 结构体
+// SubprocessSet 对应 C++ 的 SubprocessSet
 type SubprocessSet struct {
 	mu        sync.Mutex
-	running   []*Subprocess    // 正在运行的子进程集合
-	finishedQ []*Subprocess    // 已完成的子进程队列（FIFO）
-	finishCh  chan *Subprocess // 用于接收完成通知的通道
-	wg        sync.WaitGroup   // 等待所有后台 goroutine 结束
+	running   []*Subprocess
+	finishedQ []*Subprocess
+	finishCh  chan *Subprocess
+	wg        sync.WaitGroup
 }
 
-var (
-	// 全局中断标志（原子操作）
-	ginterrupted int32
-	// 用于通知中断信号的通道
-	sigChan = make(chan os.Signal, 1)
-)
+// 全局中断标志 (原子操作)
+var interrupted int32
+
+// 全局信号通道 (仅用于触发标志设置)
+var sigChan chan os.Signal
 
 func init() {
-	// 捕获常见的终止信号
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	sigChan = make(chan os.Signal, 1)
+	// 跨平台信号注册
+	if runtime.GOOS == "windows" {
+		// Windows 仅处理 Ctrl+C (SIGINT)
+		signal.Notify(sigChan, os.Interrupt)
+	} else {
+		// Unix 处理 SIGINT, SIGTERM, SIGHUP
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	}
 	go func() {
 		for range sigChan {
-			atomic.StoreInt32(&ginterrupted, 1)
+			atomic.StoreInt32(&interrupted, 1)
 		}
 	}()
 }
 
 // IsInterrupted 返回是否收到中断信号
 func IsInterrupted() bool {
-	return atomic.LoadInt32(&ginterrupted) != 0
+	return atomic.LoadInt32(&interrupted) != 0
 }
 
-// HandlePendingInterruption 如果中断标志被设置，则返回错误（模拟 C++ 中的类似行为）
-func HandlePendingInterruption() error {
-	if IsInterrupted() {
-		return errors.New("interrupted by signal")
-	}
-	return nil
-}
-
-// NewSubprocessSet 创建并初始化 SubprocessSet
+// NewSubprocessSet 创建 SubprocessSet
 func NewSubprocessSet() *SubprocessSet {
-	ps := &SubprocessSet{
-		finishCh: make(chan *Subprocess, 16), // 带缓冲，避免阻塞
+	return &SubprocessSet{
+		finishCh: make(chan *Subprocess, 64), // 足够缓冲
 	}
-	return ps
 }
 
-// Add 启动一个新的子进程，useConsole 为 true 时进程直接使用终端，无法捕获输出。
-// 返回 *Subprocess，如果启动失败则返回 nil 并设置错误（实际使用时建议返回 error）
+// Add 启动一个子进程，行为与 C++ 版本一致
 func (ps *SubprocessSet) Add(command string, useConsole bool) (*Subprocess, error) {
 	if IsInterrupted() {
-		return nil, errors.New("already interrupted")
+		return nil, errors.New("interrupted, cannot start new process")
 	}
 
 	sub := &Subprocess{
 		useConsole: useConsole,
 		done:       make(chan struct{}),
-		// ... 其他初始化
 	}
 
-	// 设置命令（根据平台选择 shell）
+	// 构建命令
 	if runtime.GOOS == "windows" {
 		sub.cmd = exec.Command("cmd", "/c", command)
 	} else {
 		sub.cmd = exec.Command("/bin/sh", "-c", command)
 	}
 
+	// 设置标准输入输出
 	if useConsole {
+		// 控制台模式：直接继承终端
 		sub.cmd.Stdin = os.Stdin
 		sub.cmd.Stdout = os.Stdout
 		sub.cmd.Stderr = os.Stderr
 	} else {
+		// 非控制台模式：捕获输出
 		sub.cmd.Stdout = &sub.buf
 		sub.cmd.Stderr = &sub.buf
 	}
 
+	// 启动进程
 	if err := sub.cmd.Start(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start: %w", err)
 	}
 	sub.pid = sub.cmd.Process.Pid
 
-	// 启动 goroutine 等待进程结束
+	// 等待子进程结束的 goroutine
 	ps.wg.Add(1)
 	go func() {
 		defer ps.wg.Done()
 		err := sub.cmd.Wait()
 		sub.mu.Lock()
+		defer sub.mu.Unlock()
 		if err != nil {
-			// 状态判断逻辑（同前）
-			sub.exitStatus = ExitFailure
 			if exiterr, ok := err.(*exec.ExitError); ok {
 				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 					sub.exitStatus = ExitInterrupted
+				} else {
+					sub.exitStatus = ExitFailure
 				}
+			} else {
+				sub.exitStatus = ExitFailure
 			}
 		} else {
 			sub.exitStatus = ExitSuccess
 		}
 		sub.finished = true
-		sub.mu.Unlock()
 		close(sub.done)
-
-		// 将完成的子进程发送到 finishCh
 		ps.finishCh <- sub
 	}()
 
-	// 关键：判断进程是否已经快速结束
-	// 使用非阻塞 select 检测 done 通道
+	// 关键：检测进程是否已经快速结束（模拟 C++ 的 child_ 判断）
 	select {
 	case <-sub.done:
-		// 进程已结束，直接加入 finishedQ，不加入 running_
+		// 进程已结束，直接放入 finishedQ
 		ps.mu.Lock()
 		ps.finishedQ = append(ps.finishedQ, sub)
 		ps.mu.Unlock()
 	default:
-		// 进程仍在运行，加入 running_
+		// 进程还在运行，加入 running
 		ps.mu.Lock()
 		ps.running = append(ps.running, sub)
 		ps.mu.Unlock()
 	}
-
 	return sub, nil
 }
 
-// Done 返回子进程是否已经结束（非阻塞）
+// Done 返回子进程是否已完成
 func (s *Subprocess) Done() bool {
 	select {
 	case <-s.done:
@@ -161,7 +158,7 @@ func (s *Subprocess) Done() bool {
 	}
 }
 
-// Finish 等待子进程结束并返回 ExitStatus
+// Finish 等待子进程结束并返回状态
 func (s *Subprocess) Finish() ExitStatus {
 	<-s.done
 	s.mu.Lock()
@@ -169,19 +166,24 @@ func (s *Subprocess) Finish() ExitStatus {
 	return s.exitStatus
 }
 
-// GetOutput 返回子进程的标准输出和标准错误合并后的内容（仅在非控制台模式下有效）
+// GetOutput 返回捕获的输出（仅非控制台模式有效）
 func (s *Subprocess) GetOutput() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.buf.String()
 }
 
-// DoWork 等待任意子进程状态变化或中断发生。
-// 返回值：如果正常有进程结束返回 true；如果被中断或 context 取消返回 false。
+// DoWork 等待任意子进程状态变化，或检测中断。
+// 返回值：true 表示有进程结束或中断尚未发生（调用者应继续循环），
+//
+//	false 表示出发了中断（调用者应退出）。
 func (ps *SubprocessSet) DoWork() bool {
-	// 先检查是否有已经完成但尚未被 NextFinished 取走的进程
-	// 这部分进程可能已经通过 finishCh 到达，但用户还没调用 NextFinished。
-	// 我们优先处理已经排队的。
+	// 如果全局中断标志已设置，则不再等待，直接返回 false 指示退出
+	if IsInterrupted() {
+		return false
+	}
+
+	// 检查 finishedQ 是否已有进程（避免在无运行时阻塞）
 	ps.mu.Lock()
 	if len(ps.finishedQ) > 0 {
 		ps.mu.Unlock()
@@ -189,32 +191,30 @@ func (ps *SubprocessSet) DoWork() bool {
 	}
 	ps.mu.Unlock()
 
-	// 如果已经中断，直接返回 false（模拟 C++ 的 interrupted）
-	if IsInterrupted() {
-		return false
-	}
-
-	// 等待 10ms 后再次检查中断，避免永久阻塞
+	// 等待子进程结束，或定期醒来检查中断
 	select {
 	case p := <-ps.finishCh:
+		// 收到完成的子进程，将其从 running 移到 finishedQ
 		ps.mu.Lock()
-		ps.finishedQ = append(ps.finishedQ, p)
+		// 从 running 中移除
 		for i, rp := range ps.running {
 			if rp == p {
 				ps.running = append(ps.running[:i], ps.running[i+1:]...)
 				break
 			}
 		}
+		ps.finishedQ = append(ps.finishedQ, p)
 		ps.mu.Unlock()
 		return true
+
 	case <-time.After(10 * time.Millisecond):
-		// 超时后返回 true，表示没有中断也没有新进程结束，
-		// 但调用者会重新循环，从而能及时响应中断。
+		// 定期醒来，让调用者有机会再次检查中断标志
+		// 若在此期间中断标志被设置，下次 DoWork 会返回 false
 		return true
 	}
 }
 
-// NextFinished 返回下一个已经完成的子进程，如果没有则返回 nil
+// NextFinished 返回下一个已完成的子进程，若无则返回 nil
 func (ps *SubprocessSet) NextFinished() *Subprocess {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -226,10 +226,9 @@ func (ps *SubprocessSet) NextFinished() *Subprocess {
 	return p
 }
 
-// Clear 终止所有尚未结束的子进程，并等待它们退出。
-// 模拟 C++ 析构行为，释放所有资源。
+// Clear 终止所有未完成的子进程并清理资源
 func (ps *SubprocessSet) Clear() {
-	// 终止所有还在运行的子进程
+	// 先复制 running 列表，避免锁内长时间操作
 	ps.mu.Lock()
 	runningCopy := make([]*Subprocess, len(ps.running))
 	copy(runningCopy, ps.running)
@@ -237,10 +236,11 @@ func (ps *SubprocessSet) Clear() {
 
 	for _, p := range runningCopy {
 		if !p.Done() && p.cmd != nil && p.cmd.Process != nil {
-			// Windows 直接 Kill；Unix 先 SIGTERM 再 Kill
 			if runtime.GOOS == "windows" {
+				// Windows 直接 Kill
 				p.cmd.Process.Kill()
 			} else {
+				// Unix 先尝试 SIGTERM，再 SIGKILL
 				p.cmd.Process.Signal(syscall.SIGTERM)
 				select {
 				case <-p.done:
@@ -250,19 +250,14 @@ func (ps *SubprocessSet) Clear() {
 			}
 		}
 	}
+	// 等待所有 goroutine 退出
 	ps.wg.Wait()
 
+	// 清空内部状态
 	ps.mu.Lock()
 	ps.running = nil
 	ps.finishedQ = nil
 	ps.mu.Unlock()
-}
-
-// CheckConsoleProcessTerminated 在 C++ 版本中用于轮询控制台子进程。
-// 在 Go 版本中，由于我们统一使用 goroutine + Wait，不再需要单独轮询。
-// 保留此方法仅为满足接口兼容，可直接返回。
-func (ps *SubprocessSet) CheckConsoleProcessTerminated() {
-	// no-op in Go implementation
 }
 
 // RealCommandRunner 真实命令执行器
@@ -329,8 +324,8 @@ func (r *RealCommandRunner) WaitForCommand(result *CommandResult) bool {
 		if subproc != nil {
 			break
 		}
-		interrupted := r.subprocs.DoWork()
-		if interrupted {
+		ninterrupted := r.subprocs.DoWork()
+		if !ninterrupted {
 			result.Status = ExitInterrupted
 			return false
 		}

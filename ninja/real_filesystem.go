@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"golang.org/x/sys/windows"
 	"ninja-go/ninja/util"
 	"os"
@@ -91,8 +92,15 @@ func (r *RealFileSystem) Stat(path string, err *string) int64 {
 }
 
 func (fs *RealFileSystem) MakeDir(path string) bool {
-	//TODO implement me
-	panic("implement me")
+	err := os.Mkdir(path, 0755)
+	if err != nil {
+		if os.IsExist(err) {
+			return true
+		}
+		Error(fmt.Sprintf("mkdir(%s): %v", path, err))
+		return false
+	}
+	return true
 }
 
 func (fs *RealFileSystem) WriteFile(path string, contents string, crlf_on_windows bool) bool {
@@ -140,9 +148,29 @@ func (fs *RealFileSystem) RemoveFile(path string) int {
 	return 0
 }
 
-func (fs *RealFileSystem) MakeDirs(path string) bool {
-	err := os.MkdirAll(path, os.ModePerm)
-	if err != nil {
+func (d *RealFileSystem) MakeDirs(path string) bool {
+	dir := DirName(path)
+	if dir == "" || dir == "." || dir == "/" {
+		// 到达根目录或当前目录，假定已存在
+		return true
+	}
+	var err string
+	mtime := d.Stat(dir, &err)
+	if mtime < 0 {
+		Error("%s", err)
+		return false
+	}
+	if mtime > 0 {
+		// 目录已存在
+		return true
+	}
+
+	// 父目录不存在，先递归创建父目录，再创建当前目录
+	if !d.MakeDirs(dir) {
+		return false
+	}
+	if !d.MakeDir(dir) {
+		Error(fmt.Sprintf("failed to create directory %s: %v", dir, err))
 		return false
 	}
 	return true

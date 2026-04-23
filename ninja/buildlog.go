@@ -199,7 +199,7 @@ func (bl *BuildLog) Load(path string, err *string) LoadStatus {
 
 		if logVersion == 0 {
 			// First line: version signature
-			if n, _ := fmt.Sscanf(string(line), kFileSignature, &logVersion); n != 1 {
+			if n, _ := fmt.Sscanf(string(line), kBuildLogFileSignature, &logVersion); n != 1 {
 				// Not a valid version line? Treat as old version?
 				// Original code uses sscanf which may fail; we'll handle similarly.
 				// For simplicity, assume the line matches the signature.
@@ -209,7 +209,7 @@ func (bl *BuildLog) Load(path string, err *string) LoadStatus {
 				file.Close()
 				os.Remove(path) // platformAwareUnlink
 				return LOAD_NOT_FOUND
-			} else if logVersion > kCurrentVersion {
+			} else if logVersion > kBuildLogCurrentVersion {
 				*err = "build log version is too new; starting over"
 				file.Close()
 				os.Remove(path)
