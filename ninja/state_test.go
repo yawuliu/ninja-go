@@ -365,11 +365,11 @@ func TestNode_IsExists(t *testing.T) {
 	assert.False(t, node.IsExists())
 
 	// 标记为不存在
-	node.exists_ = ExistenceMissing
+	node.exists_ = ExistenceStatusMissing
 	assert.False(t, node.IsExists())
 
 	// 标记为存在
-	node.exists_ = ExistenceExists
+	node.exists_ = ExistenceStatusExists
 	assert.True(t, node.IsExists())
 }
 

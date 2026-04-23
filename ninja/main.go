@@ -1349,8 +1349,13 @@ func (n *NinjaMain) RunBuild(args []string, status Status) ExitStatus {
 	// 添加目标到构建计划
 	for _, target := range targets {
 		if !ibuilder.AddTarget(target, &err) {
-			status.Error("%v", err)
-			return ExitFailure
+			if err != "" {
+				status.Error("%s", err)
+				return ExitFailure
+			} else {
+				// Added a target that is already up-to-date; not really
+				// an error.
+			}
 		}
 	}
 

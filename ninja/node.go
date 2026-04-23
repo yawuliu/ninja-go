@@ -4,11 +4,37 @@ import (
 	"ninja-go/ninja/util"
 )
 
+// ExistenceStatus 表示文件存在性状态
+type ExistenceStatus int8
+
+const (
+	// ExistenceStatusUnknown 文件尚未被检查
+	ExistenceStatusUnknown ExistenceStatus = iota
+	// ExistenceStatusMissing 文件不存在，mtime_ 将是最新依赖的 mtime
+	ExistenceStatusMissing
+	// ExistenceStatusExists 路径是一个实际存在的文件，mtime_ 将是文件的 mtime
+	ExistenceStatusExists
+)
+
+// String 实现 fmt.Stringer 接口
+func (s ExistenceStatus) String() string {
+	switch s {
+	case ExistenceStatusUnknown:
+		return "Unknown"
+	case ExistenceStatusMissing:
+		return "Missing"
+	case ExistenceStatusExists:
+		return "Exists"
+	default:
+		return "Invalid"
+	}
+}
+
 type Node struct {
 	Path                 string
 	SlashBits            uint64
 	Mtime                int64
-	exists_              int8 // -1 unknown, 0 missing, 1 exists
+	exists_              ExistenceStatus // -1 unknown, 0 missing, 1 exists
 	dirty_               bool
 	DyndepPending        bool
 	GeneratedByDepLoader bool
@@ -18,18 +44,12 @@ type Node struct {
 	ValidationOutEdges   []*Edge
 }
 
-const (
-	ExistenceUnknown = -1
-	ExistenceMissing = 0
-	ExistenceExists  = 1
-)
-
 func NewNode(path string, slashBits uint64) *Node {
 	return &Node{
 		Path:                 path,
 		SlashBits:            slashBits,
 		Mtime:                -1,
-		exists_:              ExistenceUnknown,
+		exists_:              ExistenceStatusUnknown,
 		GeneratedByDepLoader: true,
 		id_:                  -1,
 	}
@@ -43,18 +63,18 @@ func (n *Node) Stat(diskInterface util.FileSystem, err *string) bool {
 		return false
 	}
 	if n.Mtime != 0 {
-		n.exists_ = ExistenceExists
+		n.exists_ = ExistenceStatusExists
 	} else {
-		n.exists_ = ExistenceMissing
+		n.exists_ = ExistenceStatusMissing
 	}
 	return true
 }
 func (n *Node) Exists() bool {
-	return n.exists_ == ExistenceExists
+	return n.exists_ == ExistenceStatusExists
 }
 
 func (n *Node) StatusKnown() bool {
-	return n.exists_ != ExistenceUnknown
+	return n.exists_ != ExistenceStatusUnknown
 }
 func (n *Node) StatIfNecessary(fs util.FileSystem, err *string) bool {
 	if n.StatusKnown() {
@@ -65,7 +85,7 @@ func (n *Node) StatIfNecessary(fs util.FileSystem, err *string) bool {
 
 func (n *Node) ResetState() {
 	n.Mtime = -1
-	n.exists_ = ExistenceUnknown
+	n.exists_ = ExistenceStatusUnknown
 	n.dirty_ = false
 }
 
@@ -73,7 +93,7 @@ func (n *Node) MarkMissing() {
 	if n.Mtime == -1 {
 		n.Mtime = 0
 	}
-	n.exists_ = ExistenceMissing
+	n.exists_ = ExistenceStatusMissing
 }
 
 func (n *Node) AddOutEdge(edge *Edge) {
@@ -87,7 +107,7 @@ func (n *Node) AddOutEdge(edge *Edge) {
 }
 
 func (n *Node) IsExists() bool {
-	return n.exists_ == ExistenceExists
+	return n.exists_ == ExistenceStatusExists
 }
 
 func (n *Node) AddValidationOutEdge(e *Edge) {

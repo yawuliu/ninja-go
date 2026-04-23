@@ -137,7 +137,7 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool 
 
 // writeEntry 将单条记录写入文件
 func (bl *BuildLog) writeEntry(f *os.File, entry *LogEntry) bool {
-	_, err := fmt.Fprintf(f, "%d\t%d\t%d\t%s\t%s\n",
+	_, err := fmt.Fprintf(f, "%d\t%d\t%d\t%s\t%d\n",
 		entry.StartTime, entry.EndTime, entry.Mtime,
 		entry.Output, entry.CommandHash)
 	if err != nil {
@@ -227,7 +227,7 @@ func (bl *BuildLog) Load(path string, err *string) LoadStatus {
 		endTime, _ := strconv.Atoi(string(parts[1]))
 		mtime, _ := strconv.ParseInt(string(parts[2]), 10, 64)
 		output := string(parts[3])
-		commandHash, _ := strconv.ParseUint(string(parts[4]), 16, 64)
+		commandHash, _ := strconv.ParseUint(string(parts[4]), 10, 64)
 
 		entry, ok := bl.entries[output]
 		if !ok {
