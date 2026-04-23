@@ -21,11 +21,6 @@ type State struct {
 	nodesByID []*Node
 }
 
-var (
-	DefaultPool = NewPool("", 0)
-	ConsolePool = NewPool("console_", 1)
-)
-
 func NewState() *State {
 	s := &State{
 		Paths:     make(map[string]*Node),
@@ -37,8 +32,8 @@ func NewState() *State {
 		nodesByID: []*Node{},
 	}
 	s.Bindings.AddRule(PhonyRule())
-	s.AddPool(DefaultPool)
-	s.AddPool(ConsolePool)
+	s.AddPool(kDefaultPool)
+	s.AddPool(kConsolePool)
 	return s
 }
 
@@ -59,7 +54,7 @@ func (s *State) AddEdge(rule *Rule) *Edge {
 	defer s.mu.Unlock()
 	edge := &Edge{
 		Rule: rule,
-		Pool: DefaultPool,
+		Pool: kDefaultPool,
 		env_: s.Bindings,
 		id_:  uint64(len(s.Edges)),
 	}

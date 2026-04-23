@@ -1,9 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"golang.org/x/sys/windows"
+	"io"
 	"ninja-go/ninja/util"
+	"os"
+	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -11,193 +16,114 @@ import (
 
 // Subprocess 表示一个正在运行的子进程。
 type Subprocess struct {
-	pipe          windows.Handle
-	child         windows.Handle
+	pipe          io.ReadCloser
+	child         *exec.Cmd
 	overlapped    windows.Overlapped
 	isReading     bool
 	useConsole    bool
-	buf           []byte // accumulated output
 	overlappedBuf [4096]byte
 	mu            sync.Mutex
 }
 
 func NewSubprocess(useConsole bool) *Subprocess {
 	return &Subprocess{
-		pipe:       windows.InvalidHandle,
-		child:      windows.InvalidHandle,
+		pipe:       nil,
+		child:      nil,
 		isReading:  false,
 		useConsole: useConsole,
 	}
 }
 
-func (s *Subprocess) setupPipe(ioport windows.Handle) (windows.Handle, error) {
-	pipeName := fmt.Sprintf(`\\.\pipe\ninja_pid%d_sp%p`, windows.GetCurrentProcessId(), s)
-
-	var err error
-	s.pipe, err = windows.CreateNamedPipe(
-		syscall.StringToUTF16Ptr(pipeName),
-		windows.PIPE_ACCESS_INBOUND|windows.FILE_FLAG_OVERLAPPED,
-		windows.PIPE_TYPE_BYTE,
-		windows.PIPE_UNLIMITED_INSTANCES,
-		0, 0, 0, nil,
-	)
-	if s.pipe == windows.InvalidHandle {
-		return windows.InvalidHandle, fmt.Errorf("CreateNamedPipe: %w", err)
-	}
-
-	// Associate with IOCP
-	if _, err = windows.CreateIoCompletionPort(s.pipe, ioport, uintptr(unsafe.Pointer(s)), 0); err != nil {
-		return windows.InvalidHandle, fmt.Errorf("CreateIoCompletionPort: %w", err)
-	}
-
-	s.overlapped = windows.Overlapped{}
-	if err = windows.ConnectNamedPipe(s.pipe, &s.overlapped); err != nil && err != windows.ERROR_IO_PENDING {
-		return windows.InvalidHandle, fmt.Errorf("ConnectNamedPipe: %w", err)
-	}
-
-	// Open write end of the pipe
-	writeHandle, err := windows.CreateFile(
-		syscall.StringToUTF16Ptr(pipeName),
-		windows.GENERIC_WRITE, 0, nil,
-		windows.OPEN_EXISTING, 0, 0,
-	)
-	if err != nil {
-		return windows.InvalidHandle, fmt.Errorf("CreateFile for pipe write: %w", err)
-	}
-	defer windows.CloseHandle(writeHandle)
-
-	// Duplicate to make inheritable
-	var childWriteHandle windows.Handle
-	err = windows.DuplicateHandle(
-		windows.CurrentProcess(), writeHandle,
-		windows.CurrentProcess(), &childWriteHandle,
-		0, true, windows.DUPLICATE_SAME_ACCESS,
-	)
-	if err != nil {
-		return windows.InvalidHandle, fmt.Errorf("DuplicateHandle: %w", err)
-	}
-	return childWriteHandle, nil
-}
-
-func (s *Subprocess) Start(set *SubprocessSet, command string) error {
-	childPipe, err := s.setupPipe(set.ioport)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if childPipe != windows.InvalidHandle {
-			windows.CloseHandle(childPipe)
+func (sp *Subprocess) Start(set *SubprocessSet, command string) error {
+	// 1. 打开空设备用于子进程的 stdin（仅在非控制台模式或需要重定向时）
+	var nullFile *os.File
+	if !sp.useConsole {
+		var err error
+		nullFile, err = os.Open(os.DevNull)
+		if err != nil {
+			return fmt.Errorf("open null device: %w", err)
 		}
-	}()
-
-	// Open NUL handle for stdin
-	securityAttributes := &windows.SecurityAttributes{
-		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		InheritHandle: 1,
-	}
-	nul, err := windows.CreateFile(
-		syscall.StringToUTF16Ptr("NUL"),
-		windows.GENERIC_READ,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-		securityAttributes,
-		windows.OPEN_EXISTING, 0, 0,
-	)
-	if err != nil {
-		return fmt.Errorf("open NUL: %w", err)
-	}
-	defer windows.CloseHandle(nul)
-
-	startupInfo := &windows.StartupInfo{
-		Cb: uint32(unsafe.Sizeof(windows.StartupInfo{})),
-	}
-	if !s.useConsole {
-		startupInfo.Flags = windows.STARTF_USESTDHANDLES
-		startupInfo.StdInput = nul
-		startupInfo.StdOutput = childPipe
-		startupInfo.StdErr = childPipe
-	}
-	var processInfo windows.ProcessInformation
-	processFlags := uint32(0)
-	if !s.useConsole {
-		processFlags = windows.CREATE_NEW_PROCESS_GROUP
+		defer nullFile.Close() // 子进程启动后父进程可安全关闭
 	}
 
-	// Convert command to UTF-16, create mutable buffer (CreateProcess requires writable)
-	commandUTF16, err := windows.UTF16PtrFromString(command)
-	if err != nil {
-		return err
+	// 2. 构建命令（跨平台通过 shell 执行，以处理复杂命令行）
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// Windows 使用 cmd /c，注意长命令行限制与原 CreateProcess 略有差异
+		cmd = exec.Command("cmd", "/c", command)
+	} else {
+		// Unix-like 使用 sh -c
+		cmd = exec.Command("sh", "-c", command)
 	}
-	// CreateProcess may modify the command line, so we need to make a copy.
-	// We'll just pass the pointer; the API expects a non-const pointer.
-	err = windows.CreateProcess(
-		nil, commandUTF16,
-		nil, nil,
-		true, processFlags,
-		nil, nil,
-		startupInfo, &processInfo,
-	)
-	if err != nil {
-		if err == windows.ERROR_FILE_NOT_FOUND {
-			s.buf = []byte("CreateProcess failed: The system cannot find the file specified.\n")
-			return nil // not a fatal error, treat as command failure
+
+	// 3. 设置标准输入（非控制台模式重定向到空设备，控制台模式继承父进程）
+	if !sp.useConsole {
+		cmd.Stdin = nullFile
+	} // else: cmd.Stdin 保持 nil，继承父进程的 stdin
+
+	// 4. 设置标准输出和错误
+	if !sp.useConsole {
+		// 创建管道，将子进程的 stdout/stderr 合并写入写端
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("CreateProcess: %w", err)
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		sp.pipe = pr // 父进程从此读端读取输出
+		// 父进程的写端在子进程启动后立即关闭，子进程会持有其副本
+		defer pw.Close()
+	} else {
+		// 控制台模式：输出直接显示在终端，不捕获
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 	}
-	defer windows.CloseHandle(processInfo.Thread)
 
-	s.child = processInfo.Process
+	// 5. 设置进程组标志（模拟 CREATE_NEW_PROCESS_GROUP）
+	if !sp.useConsole {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		if runtime.GOOS == "windows" {
+			// Windows 需要 syscall/windows 包中的常量
+			cmd.SysProcAttr.CreationFlags = 0x00000200 // CREATE_NEW_PROCESS_GROUP
+		} else {
+			// Unix 设置新进程组，使子进程独立于父进程的终端信号
+			// cmd.SysProcAttr.Setpgid = true
+		}
+	}
+
+	// 6. 启动进程
+	err := cmd.Start()
+	if err != nil {
+		// 处理“文件未找到”错误，与原始逻辑一致：视为构建失败而非致命错误
+		if errors.Is(err, exec.ErrNotFound) {
+			// sp.buf = []byte("CreateProcess failed: The system cannot find the file specified.\n")
+			// 清理可能已创建的管道（仅非控制台模式）
+			if sp.pipe != nil {
+				sp.pipe.Close()
+				sp.pipe = nil
+			}
+			return nil // 返回 nil 表示“启动过程已完成”（实际命令未找到）
+		}
+		// 其他错误作为致命错误返回
+		return fmt.Errorf("start command: %w", err)
+	}
+
+	// 7. 保存命令对象，供后续 Wait、Kill 等操作使用
+	sp.child = cmd
 	return nil
 }
 
-func (s *Subprocess) OnPipeReady() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var bytes uint32
-	err := windows.GetOverlappedResult(s.pipe, &s.overlapped, &bytes, true)
-	if err != nil {
-		if err == windows.ERROR_BROKEN_PIPE {
-			windows.CloseHandle(s.pipe)
-			s.pipe = windows.InvalidHandle
-			return
-		}
-		panic(fmt.Errorf("GetOverlappedResult: %w", err))
-	}
-
-	if s.isReading && bytes > 0 {
-		s.buf = append(s.buf, s.overlappedBuf[:bytes]...)
-	}
-
-	s.overlapped = windows.Overlapped{}
-	s.isReading = true
-	err = windows.ReadFile(s.pipe, s.overlappedBuf[:], &bytes, &s.overlapped)
-	if err != nil {
-		if err == windows.ERROR_BROKEN_PIPE {
-			windows.CloseHandle(s.pipe)
-			s.pipe = windows.InvalidHandle
-			return
-		}
-		if err != windows.ERROR_IO_PENDING {
-			panic(fmt.Errorf("ReadFile: %w", err))
-		}
-	}
-}
-
 func (s *Subprocess) Finish() ExitStatus {
-	if s.child == windows.InvalidHandle {
+	if s.child.ProcessState.ExitCode() != 0 {
 		return ExitFailure
 	}
 	// Wait for process
-	_, err := windows.WaitForSingleObject(s.child, windows.INFINITE)
+	err := s.child.Wait()
 	if err != nil {
-		panic(fmt.Errorf("WaitForSingleObject: %w", err))
+		panic(fmt.Errorf("Wait: %w", err))
 	}
-	var exitCode uint32
-	if err := windows.GetExitCodeProcess(s.child, &exitCode); err != nil {
-		panic(fmt.Errorf("GetExitCodeProcess: %w", err))
-	}
-	windows.CloseHandle(s.child)
-	s.child = windows.InvalidHandle
+	var exitCode int = s.child.ProcessState.ExitCode()
+	s.child = nil
 	if exitCode == CONTROL_C_EXIT {
 		return ExitInterrupted
 	}
@@ -207,13 +133,13 @@ func (s *Subprocess) Finish() ExitStatus {
 func (s *Subprocess) Done() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.pipe == windows.InvalidHandle
+	return s.pipe == nil
 }
 
 func (s *Subprocess) GetOutput() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return string(s.buf)
+
 }
 
 // SubprocessSet 管理一组子进程。
@@ -332,7 +258,7 @@ func (s *SubprocessSet) Add(command string, useConsole bool) *Subprocess {
 		return nil
 	}
 	s.mu.Lock()
-	if subproc.child != windows.InvalidHandle {
+	if subproc.child != nil {
 		s.running = append(s.running, subproc)
 	} else {
 		// process already finished (e.g. file not found)
@@ -400,13 +326,11 @@ func (s *SubprocessSet) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, sub := range s.running {
-		if sub.child != windows.InvalidHandle && !sub.useConsole {
-			pid, err := windows.GetProcessId(sub.child)
+		if sub.child != nil && !sub.useConsole {
+			// pid := sub.child.Process.Pid
+			err := sub.child.Process.Signal(os.Interrupt)
 			if err != nil {
-				panic(fmt.Errorf("GetProcessId: %w", err))
-			}
-			if err := windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, pid); err != nil {
-				// ignore error
+				fmt.Printf("Signal Error: %v\n", err)
 			}
 		}
 	}
