@@ -1,7 +1,6 @@
 package main
 
 import (
-	"ninja-go/ninja/util"
 	"os"
 	"testing"
 	"time"
@@ -62,11 +61,11 @@ func (m *mockFSIntegration) Stat(path string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFSIntegration) Open(name string) (util.File, error) {
+func (m *mockFSIntegration) Open(name string) (File, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFSIntegration) Create(name string) (util.File, error) {
+func (m *mockFSIntegration) Create(name string) (File, error) {
 	return nil, nil
 }
 

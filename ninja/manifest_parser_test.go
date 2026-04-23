@@ -1,7 +1,6 @@
 package main
 
 import (
-	"ninja-go/ninja/util"
 	"os"
 	"testing"
 
@@ -20,11 +19,11 @@ func newMockFileSystemForParser() *mockFileSystemForParser {
 	}
 }
 
-func (m *mockFileSystemForParser) Open(name string) (util.File, error) {
+func (m *mockFileSystemForParser) Open(name string) (File, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFileSystemForParser) Create(name string) (util.File, error) {
+func (m *mockFileSystemForParser) Create(name string) (File, error) {
 	return nil, nil
 }
 

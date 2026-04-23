@@ -1,4 +1,4 @@
-package util
+package main
 
 import (
 	"fmt"
@@ -18,14 +18,6 @@ func CommandForShell(cmdLine string) *exec.Cmd {
 	}
 
 	return exec.Command("sh", "-c", cmdLine)
-}
-
-// NormalizePath 将路径中的反斜杠转换为正斜杠（Ninja 内部标准）
-func NormalizePath(path string) string {
-	if runtime.GOOS == "windows" {
-		return strings.ReplaceAll(path, "\\", "/")
-	}
-	return path
 }
 
 // ToNativePath 将内部正斜杠路径转换为操作系统原生路径

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 )
 
@@ -14,12 +13,12 @@ type Cleaner struct {
 	removed           map[string]bool
 	cleaned           map[*Node]bool
 	cleanedFilesCount int
-	disk              util.FileSystem
+	disk              FileSystem
 	status            int
 }
 
 // NewCleaner 创建 Cleaner 实例。
-func NewCleaner(state *State, config *BuildConfig, disk util.FileSystem) *Cleaner {
+func NewCleaner(state *State, config *BuildConfig, disk FileSystem) *Cleaner {
 	return &Cleaner{
 		state:        state,
 		config:       config,
@@ -195,7 +194,7 @@ func (c *Cleaner) CleanTargets(targetNames []string) int {
 	c.LoadDyndeps()
 	for _, target_name := range targetNames {
 		var slash_bits uint64
-		util.CanonicalizePathString(&target_name, &slash_bits)
+		CanonicalizePathString(&target_name, &slash_bits)
 		target := c.state.LookupNode(target_name)
 		if target == nil {
 			fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", target_name)

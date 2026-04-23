@@ -1,7 +1,6 @@
 package main
 
 import (
-	"ninja-go/ninja/util"
 	"path"
 )
 
@@ -12,7 +11,7 @@ type Builder struct {
 	buildLog       *BuildLog
 	depsLog        *DepsLog
 	running_edges_ map[*Edge]int
-	disk           util.FileSystem
+	disk           FileSystem
 	plan           *Plan
 	status         Status
 	exitCode       ExitStatus
@@ -27,7 +26,7 @@ type Builder struct {
 
 func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 	depsLog *DepsLog, start_time_millis int64,
-	disk_interface util.FileSystem, status Status) *Builder {
+	disk_interface FileSystem, status Status) *Builder {
 	b := &Builder{
 		state:              state,
 		config:             config,
@@ -377,9 +376,9 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 		// Read depfile content. Treat a missing depfile as empty.
 		var content string
 		status := b.disk.ReadFile(depfile, &content, err)
-		if status == util.StatusNotFound {
+		if status == StatusNotFound {
 			*err = "" // clear error
-		} else if status == util.StatusOtherError {
+		} else if status == StatusOtherError {
 			return false
 		}
 		if content == "" {
@@ -397,7 +396,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			// Convert StringPiece to mutable string for canonicalization
 			pathStr := input
 			slashBits := uint64(0)
-			util.CanonicalizePathString(&pathStr, &slashBits) // assume helper exists
+			CanonicalizePathString(&pathStr, &slashBits) // assume helper exists
 			*depsNodes = append(*depsNodes, b.state.GetNode(pathStr, slashBits))
 		}
 

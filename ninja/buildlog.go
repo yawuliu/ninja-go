@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"ninja-go/ninja/util"
 	"os"
 	"strconv"
 	"sync"
@@ -291,11 +290,11 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 		}
 	}
 
-	return util.ReplaceContent(path, temp_path, err)
+	return ReplaceContent(path, temp_path, err)
 }
 
 // Restat 更新日志中某些输出的 mtime（用于 restat 规则）
-func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string, err *string) bool {
+func (bl *BuildLog) Restat(path string, disk FileSystem, outputs []string, err *string) bool {
 	bl.Close()
 	tempPath := path + ".restat"
 	f, create_err := os.Create(tempPath)
@@ -333,7 +332,7 @@ func (bl *BuildLog) Restat(path string, disk util.FileSystem, outputs []string, 
 		}
 	}
 
-	return util.ReplaceContent(tempPath, path, err)
+	return ReplaceContent(tempPath, path, err)
 }
 
 func (bl *BuildLog) Entries() map[string]*LogEntry { return bl.entries }

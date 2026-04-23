@@ -1,7 +1,6 @@
 package main
 
 import (
-	"ninja-go/ninja/util"
 	"strings"
 )
 
@@ -77,7 +76,7 @@ func (p *CLParser) Parse(output, depsPrefix string, filtered_output, err *string
 			// 规范化路径
 			normalized := include
 			var slash_bits uint64
-			util.CanonicalizePathString(&normalized, &slash_bits)
+			CanonicalizePathString(&normalized, &slash_bits)
 			if !IsSystemInclude(normalized) {
 				p.includes[normalized] = true
 			}

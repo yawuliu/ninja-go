@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"golang.org/x/sys/windows"
-	"ninja-go/ninja/util"
 	"os"
 	"runtime"
 	"strings"
@@ -176,7 +175,7 @@ func (d *RealFileSystem) MakeDirs(path string) bool {
 	return true
 }
 
-var _ util.FileSystem = (*RealFileSystem)(nil)
+var _ FileSystem = (*RealFileSystem)(nil)
 
 func (fs *RealFileSystem) AllowStatCache(allow bool) bool {
 	return false
@@ -186,28 +185,28 @@ func NewRealFileSystem() *RealFileSystem {
 	return &RealFileSystem{}
 }
 
-func (fs *RealFileSystem) Open(path string) (util.File, error) {
+func (fs *RealFileSystem) Open(path string) (File, error) {
 	return os.Open(path)
 }
-func (fs *RealFileSystem) Create(path string) (util.File, error) {
+func (fs *RealFileSystem) Create(path string) (File, error) {
 	return os.Create(path)
 }
 func (fs *RealFileSystem) Truncate(name string, size int64) error {
 	return os.Truncate(name, size)
 }
 
-func (fs *RealFileSystem) ReadFile(path string, contents *string, err *string) util.FileReaderStatus {
+func (fs *RealFileSystem) ReadFile(path string, contents *string, err *string) FileReaderStatus {
 	_, stat_err := os.Stat(path)
 	if stat_err != nil && os.IsNotExist(stat_err) {
-		return util.StatusNotFound
+		return StatusNotFound
 	}
 	data, read_err := os.ReadFile(path)
 	if read_err != nil {
-		return util.StatusOtherError
+		return StatusOtherError
 	}
 	data = append(data, 0)
 	*contents = string(data)
-	return util.StatusOkay
+	return StatusOkay
 }
 
 func (fs *RealFileSystem) Remove(path string) error {
@@ -272,25 +271,6 @@ func (fs *RealFileSystem) StatSingleFile(path string, err *string) int64 {
 	return TimeStampFromFileTime(attrs.LastWriteTime)
 }
 
-func DirName(path string) string {
-	var sepSet string
-	if runtime.GOOS == "windows" {
-		sepSet = "\\/"
-	} else {
-		sepSet = "/"
-	}
-
-	// Find last separator
-	i := strings.LastIndexAny(path, sepSet)
-	if i == -1 {
-		return ""
-	}
-	// Skip over any consecutive separators before i
-	for i > 0 && strings.ContainsAny(path[i-1:i], sepSet) {
-		i--
-	}
-	return path[:i]
-}
 func (fs *RealFileSystem) StatAllFilesInDir(dir string, stamps *DirCache, err *string) bool {
 	// Build search pattern: dir\*
 	pattern := dir + `\*`

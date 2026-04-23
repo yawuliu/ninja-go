@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 )
 
 // Parser 是所有解析器的接口
@@ -16,12 +15,12 @@ type Parser interface {
 // BaseParser 提供公共字段和方法
 type BaseParser struct {
 	State      interface{} // 实际类型为 *graph.State，但为避免循环依赖使用 interface{}
-	FileReader util.FileSystem
+	FileReader FileSystem
 	lexer      *Lexer
 }
 
 // NewBaseParser 创建基础解析器
-func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
+func NewBaseParser(state interface{}, fileReader FileSystem) *BaseParser {
 	return &BaseParser{
 		State:      state,
 		FileReader: fileReader,
@@ -33,7 +32,7 @@ func NewBaseParser(state interface{}, fileReader util.FileSystem) *BaseParser {
 func (b *BaseParser) Load(filename string, err *string, parent *Lexer) bool {
 	var content string
 	status := b.FileReader.ReadFile(filename, &content, err)
-	if status != util.StatusOkay {
+	if status != StatusOkay {
 		*err = fmt.Sprintf("loading '%s': %s", filename, *err)
 		if parent != nil {
 			parent.Error(*err, err)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -289,7 +288,7 @@ func (r *RealCommandRunner) CanRunMore() int {
 		capacity = int(^uint(0) >> 1) // 相当于 INT_MAX
 	}
 	if r.config.max_load_average > 0 {
-		load := util.GetLoadAverage()
+		load := GetLoadAverage()
 		loadCapacity := int(r.config.max_load_average - load)
 		if loadCapacity < capacity {
 			capacity = loadCapacity

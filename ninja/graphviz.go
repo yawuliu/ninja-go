@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 	"strings"
 )
@@ -15,7 +14,7 @@ type GraphViz struct {
 }
 
 // NewGraphViz 创建 GraphViz 实例。
-func NewGraphViz(state *State, diskInterface util.FileSystem) *GraphViz {
+func NewGraphViz(state *State, diskInterface FileSystem) *GraphViz {
 	return &GraphViz{
 		dyndepLoader: NewDyndepLoader(state, diskInterface),
 		visitedNodes: make(map[*Node]bool),

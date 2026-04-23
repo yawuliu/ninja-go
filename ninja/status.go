@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 	"runtime"
 	"strings"
@@ -236,7 +235,7 @@ func (sp *StatusPrinter) BuildEdgeFinished(edge *Edge, startTimeMillis int64, en
 		if sp.printer_.supports_color() || !strings.Contains(output, "\x1b") {
 			sp.printer_.PrintOnNewLine(output)
 		} else {
-			finalOutput := util.StripAnsiEscapeCodes(output)
+			finalOutput := StripAnsiEscapeCodes(output)
 			sp.printer_.PrintOnNewLine(finalOutput)
 		}
 
@@ -274,18 +273,6 @@ func (s *StatusPrinter) Error(msg string, args ...interface{}) {
 func (s *StatusPrinter) Info(msg string, args ...interface{}) {
 	formatted := fmt.Sprintf(msg, args...)
 	Info(formatted) // 假设全局函数 Info(string) 存在
-}
-
-func Warning(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "ninja: warning: "+msg+"\n", args...)
-}
-
-func Error(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "ninja: error: "+msg+"\n", args...)
-}
-
-func Info(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stdout, "ninja: "+msg+"\n", args...)
 }
 
 // 辅助变量，用于测试时可重定向

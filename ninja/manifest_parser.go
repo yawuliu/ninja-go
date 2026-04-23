@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 	"strconv"
 	"strings"
@@ -22,7 +21,7 @@ type ManifestParserOptions struct {
 
 type ManifestParser struct {
 	state       *State
-	fileReader  util.FileSystem
+	fileReader  FileSystem
 	options     ManifestParserOptions
 	quiet       bool
 	env         *BindingEnv
@@ -36,7 +35,7 @@ type ManifestParser struct {
 // Verify that *UserCacher implements Cacher
 var _ Parser = (*ManifestParser)(nil)
 
-func NewManifestParser(state *State, file_reader util.FileSystem, options ManifestParserOptions) *ManifestParser {
+func NewManifestParser(state *State, file_reader FileSystem, options ManifestParserOptions) *ManifestParser {
 	m := &ManifestParser{}
 	m.state = state
 	m.fileReader = file_reader
@@ -51,7 +50,7 @@ func (p *ManifestParser) Load(filename string, err *string, parent *Lexer) bool 
 	// 读取文件内容
 	var content string
 	status := p.fileReader.ReadFile(filename, &content, err)
-	if status != util.StatusOkay {
+	if status != StatusOkay {
 		*err = "loading '" + filename + "': " + *err
 		if parent != nil {
 			parent.Error(*err, err)
@@ -98,7 +97,7 @@ func (p *ManifestParser) Parse(filename, input string, err *string) bool {
 			value := val.Evaluate(p.env)
 			if key == "ninja_required_version" {
 				// 解析版本号，设置到 lexer 中
-				major, minor := util.ParseVersion(value)
+				major, minor := ParseVersion(value)
 				p.lexer.manifestVersionMajor = major
 				p.lexer.manifestVersionMinor = minor
 			}
@@ -384,7 +383,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		var slashBits uint64
-		util.CanonicalizePathString(&path, &slashBits)
+		CanonicalizePathString(&path, &slashBits)
 		if !p.state.AddOut(edge, path, slashBits, err) {
 			return p.lexer.Error(*err, err)
 		}
@@ -405,7 +404,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		var slashBits uint64
-		util.CanonicalizePathString(&path, &slashBits)
+		CanonicalizePathString(&path, &slashBits)
 		p.state.AddIn(edge, path, slashBits)
 	}
 	edge.implicit_deps_ = implicit
@@ -418,7 +417,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		var slashBits uint64
-		util.CanonicalizePathString(&path, &slashBits)
+		CanonicalizePathString(&path, &slashBits)
 		p.state.AddValidation(edge, path, slashBits)
 	}
 
@@ -444,7 +443,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 	dyndep := edge.GetUnescapedDyndep()
 	if dyndep != "" {
 		var slashBits uint64
-		util.CanonicalizePathString(&dyndep, &slashBits)
+		CanonicalizePathString(&dyndep, &slashBits)
 		dyndepNode := p.state.GetNode(dyndep, slashBits)
 		edge.dyndep_ = dyndepNode
 		dyndepNode.DyndepPending = true
@@ -486,7 +485,7 @@ func (p *ManifestParser) ParseDefault(err *string) bool {
 		}
 		// 规范化路径（slash_bits 在默认目标中不使用，因为只做查找）
 		var slashBits uint64
-		util.CanonicalizePathString(&path, &slashBits)
+		CanonicalizePathString(&path, &slashBits)
 		var default_err string
 		if !p.state.AddDefault(path, &default_err) {
 			return p.lexer.Error(default_err, err)

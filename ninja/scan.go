@@ -1,21 +1,17 @@
 package main
 
-import (
-	"ninja-go/ninja/util"
-)
-
 type DependencyScan struct {
 	state           *State
 	buildLog        *BuildLog
 	depsLog         *DepsLog
-	disk_interface_ util.FileSystem
+	disk_interface_ FileSystem
 	depLoader       *ImplicitDepLoader
 	dyndepLoader    *DyndepLoader
 	explanations_   *Explanations
 }
 
 func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
-	disk_interface util.FileSystem,
+	disk_interface FileSystem,
 	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *DependencyScan {
 	return &DependencyScan{
 		state:           state,
@@ -204,12 +200,12 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 type ImplicitDepLoader struct {
 	state                *State
 	depsLog              *DepsLog
-	diskInterface        util.FileSystem
+	diskInterface        FileSystem
 	depfileParserOptions *DepfileParserOptions // 可忽略
 	explanations         *Explanations
 }
 
-func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface util.FileSystem,
+func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface FileSystem,
 	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
 		state:                state,
@@ -279,9 +275,9 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	// Read depfile content. Treat a missing depfile as empty.
 	var content string
 	status := l.diskInterface.ReadFile(path, &content, err)
-	if status == util.StatusNotFound {
+	if status == StatusNotFound {
 		*err = "" // clear error
-	} else if status == util.StatusOtherError {
+	} else if status == StatusOtherError {
 		*err = "loading '" + path + "': " + *err
 		return false
 	}
@@ -309,7 +305,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	primaryOutLen := len(primaryOut)
 	var canonicalized []byte
 	var unused uint64
-	util.CanonicalizePathBytes(canonicalized, &primaryOutLen, &unused)
+	CanonicalizePathBytes(canonicalized, &primaryOutLen, &unused)
 	// Update the string slice (depfileParser.outs is a slice of strings, we need to replace)
 	depfileParser.Outs[0] = string(canonicalized)
 
@@ -352,7 +348,7 @@ func (l *ImplicitDepLoader) ProcessDepfileDeps(edge *Edge, depfileIns []string, 
 		var slash_bits uint64
 		pathBytes := []byte(path)
 		pathBytesLen := len(pathBytes)
-		util.CanonicalizePathBytes(pathBytes, &pathBytesLen, &slash_bits)
+		CanonicalizePathBytes(pathBytes, &pathBytesLen, &slash_bits)
 		node := l.state.GetNode(string(pathBytes), slash_bits)
 		// Store the node in the preallocated position.
 		edge.inputs_[startIdx+i] = node

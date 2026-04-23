@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 )
 
 // DyndepInfo 对应 C++ 的 Dyndeps
@@ -16,11 +15,11 @@ type DyndepInfo struct {
 // DyndepLoader 对应 C++ 的 DyndepLoader
 type DyndepLoader struct {
 	state         *State
-	diskInterface util.FileSystem // 文件读取接口
+	diskInterface FileSystem // 文件读取接口
 	explanations  *Explanations
 }
 
-func NewDyndepLoader(state *State, diskInterface util.FileSystem) *DyndepLoader {
+func NewDyndepLoader(state *State, diskInterface FileSystem) *DyndepLoader {
 	return &DyndepLoader{
 		state:         state,
 		diskInterface: diskInterface,

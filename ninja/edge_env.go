@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"strings"
 )
 
@@ -63,10 +62,10 @@ func (e *EdgeEnv) makePathList(nodes []*Node, sep byte) string {
 		path := n.Path // 实际应使用 PathDecanonicalized
 		if e.escapeInOut {
 			// 需要 shell 转义，这里调用 util.EscapeShell
-			if util.IsWindows() {
-				parts = append(parts, util.GetWin32EscapedString(path))
+			if IsWindows() {
+				parts = append(parts, GetWin32EscapedString(path))
 			} else {
-				parts = append(parts, util.GetShellEscapedString(path))
+				parts = append(parts, GetShellEscapedString(path))
 			}
 		} else {
 			parts = append(parts, path)

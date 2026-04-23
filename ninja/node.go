@@ -1,9 +1,5 @@
 package main
 
-import (
-	"ninja-go/ninja/util"
-)
-
 // ExistenceStatus 表示文件存在性状态
 type ExistenceStatus int8
 
@@ -57,7 +53,7 @@ func NewNode(path string, slashBits uint64) *Node {
 func (n *Node) id() int       { return n.id_ }
 func (n *Node) set_id(id int) { n.id_ = id }
 
-func (n *Node) Stat(diskInterface util.FileSystem, err *string) bool {
+func (n *Node) Stat(diskInterface FileSystem, err *string) bool {
 	n.Mtime = diskInterface.Stat(n.Path, err)
 	if n.Mtime == -1 {
 		return false
@@ -76,7 +72,7 @@ func (n *Node) Exists() bool {
 func (n *Node) StatusKnown() bool {
 	return n.exists_ != ExistenceStatusUnknown
 }
-func (n *Node) StatIfNecessary(fs util.FileSystem, err *string) bool {
+func (n *Node) StatIfNecessary(fs FileSystem, err *string) bool {
 	if n.StatusKnown() {
 		return true
 	}

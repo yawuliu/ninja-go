@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"ninja-go/ninja/util"
 	"os"
 	"sync"
 	"syscall"
@@ -394,7 +393,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 		*err = errMsg
 
 		// Truncate log_file_ to last known good offset
-		if !util.Truncate(path, offset, err) {
+		if !Truncate(path, offset, err) {
 			return LOAD_ERROR
 		}
 		*err += "; recovering"
@@ -465,7 +464,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 	dl.deps = newLog.deps
 	dl.nodes = newLog.nodes
 
-	return util.ReplaceContent(path, temp_path, err)
+	return ReplaceContent(path, temp_path, err)
 }
 
 // isDepsEntryLive 判断节点的依赖记录是否存活

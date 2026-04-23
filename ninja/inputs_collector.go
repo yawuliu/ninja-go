@@ -1,9 +1,5 @@
 package main
 
-import (
-	"ninja-go/ninja/util"
-)
-
 // InputsCollector 收集从起始节点可达的所有输入节点。
 type InputsCollector struct {
 	inputs       []*Node
@@ -49,7 +45,7 @@ func (c *InputsCollector) GetInputsAsStrings(shellEscape bool) []string {
 	result := make([]string, len(c.inputs))
 	for i, n := range c.inputs {
 		if shellEscape {
-			result[i] = util.GetShellEscapedString(n.Path)
+			result[i] = GetShellEscapedString(n.Path)
 		} else {
 			result[i] = n.Path
 		}

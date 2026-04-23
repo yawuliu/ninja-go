@@ -3,12 +3,11 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 )
 
 // DyndepParser 解析 .dd 文件
 type DyndepParser struct {
-	fileReader util.FileSystem
+	fileReader FileSystem
 	lexer      *Lexer
 	state      *State
 	dyndepFile *DyndepFile // 对应 C++ 的 DyndepFile
@@ -20,7 +19,7 @@ func (b *DyndepParser) Load(filename string, err *string, parent *Lexer) bool {
 	// 读取文件内容
 	var content string
 	status := b.fileReader.ReadFile(filename, &content, err)
-	if status != util.StatusOkay {
+	if status != StatusOkay {
 		*err = fmt.Sprintf("loading '%s': %s", filename, err)
 		if parent != nil {
 			parent.Error(*err, err)
@@ -34,7 +33,7 @@ func (b *DyndepParser) Load(filename string, err *string, parent *Lexer) bool {
 var _ Parser = (*DyndepParser)(nil)
 
 // NewDyndepParser 创建解析器
-func NewDyndepParser(state *State, file_reader util.FileSystem, dyndepFile *DyndepFile) *DyndepParser {
+func NewDyndepParser(state *State, file_reader FileSystem, dyndepFile *DyndepFile) *DyndepParser {
 	return &DyndepParser{
 		state:      state,
 		fileReader: file_reader,
@@ -96,7 +95,7 @@ func (p *DyndepParser) parseDyndepVersion(err *string) bool {
 	}
 
 	version := let_value.Evaluate(p.env)
-	major, minor := util.ParseVersion(version)
+	major, minor := ParseVersion(version)
 	if major != 1 || minor != 0 {
 		return p.lexer.Error(fmt.Sprintf("unsupported 'ninja_dyndep_version = %s'", version), err)
 	}
@@ -133,7 +132,7 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 		return p.lexer.Error("empty path", err)
 	}
 	var slash_bits uint64
-	util.CanonicalizePathString(&path, &slash_bits)
+	CanonicalizePathString(&path, &slash_bits)
 	node := p.state.LookupNode(path)
 	if node == nil || node.InEdge == nil {
 		return p.lexer.Error("no build statement exists for '"+path+"'", err)
@@ -236,7 +235,7 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		var slash_bits uint64
-		util.CanonicalizePathString(&path, &slash_bits)
+		CanonicalizePathString(&path, &slash_bits)
 		node := p.state.GetNode(path, slash_bits)
 		info.ImplicitInputs = append(info.ImplicitInputs, node)
 	}
@@ -248,7 +247,7 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 			return p.lexer.Error("empty path", err)
 		}
 		var slash_bits uint64
-		util.CanonicalizePathString(&path, &slash_bits)
+		CanonicalizePathString(&path, &slash_bits)
 		node := p.state.GetNode(path, slash_bits)
 		info.ImplicitOutputs = append(info.ImplicitOutputs, node)
 	}

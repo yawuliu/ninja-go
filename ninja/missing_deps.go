@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"strings"
 )
 
@@ -27,7 +26,7 @@ type Scanner struct {
 	delegate            Delegate
 	depsLog             *DepsLog
 	state               *State
-	disk                util.FileSystem
+	disk                FileSystem
 	seen                map[*Node]bool
 	nodesMissingDeps    map[*Node]bool
 	generatedNodes      map[*Node]bool
@@ -37,7 +36,7 @@ type Scanner struct {
 }
 
 // NewScanner 创建 Scanner 实例。
-func NewScanner(delegate Delegate, depsLog *DepsLog, state *State, disk util.FileSystem) *Scanner {
+func NewScanner(delegate Delegate, depsLog *DepsLog, state *State, disk FileSystem) *Scanner {
 	return &Scanner{
 		delegate:         delegate,
 		depsLog:          depsLog,
@@ -97,7 +96,7 @@ func (s *Scanner) loadDepfileDeps(edge *Edge) []*Node {
 	var content string
 	var err string
 	status := s.disk.ReadFile(depfile, &content, &err)
-	if status != util.StatusOkay {
+	if status != StatusOkay {
 		return nil
 	}
 	parser := NewDepfileParser(&DepfileParserOptions{})
@@ -107,7 +106,7 @@ func (s *Scanner) loadDepfileDeps(edge *Edge) []*Node {
 	var nodes []*Node
 	for _, in := range parser.Ins {
 		var slashBits uint64
-		util.CanonicalizePathString(&in, &slashBits)
+		CanonicalizePathString(&in, &slashBits)
 		node := s.state.GetNode(in, 0)
 		nodes = append(nodes, node)
 	}

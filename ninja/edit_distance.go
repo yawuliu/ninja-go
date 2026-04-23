@@ -1,4 +1,4 @@
-package util
+package main
 
 // EditDistance computes the Levenshtein distance between two strings.
 // If allowReplacements is false, substitutions are not allowed (i.e., only insertions/deletions).
@@ -48,11 +48,4 @@ func EditDistance(s1, s2 string, allowReplacements bool, maxEditDistance int) in
 	}
 
 	return row[n]
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

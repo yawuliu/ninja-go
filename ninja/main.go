@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"os"
 	"runtime"
 	"sort"
@@ -34,7 +33,7 @@ type NinjaMain struct {
 	state_ *State
 
 	/// Functions for accessing the disk.
-	disk_interface_ util.FileSystem
+	disk_interface_ FileSystem
 
 	/// The build directory, used for storing the build log etc.
 	build_dir_ string
@@ -53,7 +52,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, err *string, status Status
 		return false
 	}
 	var slash_bits uint64
-	util.CanonicalizePathString(&path, &slash_bits)
+	CanonicalizePathString(&path, &slash_bits)
 	node := n.state_.LookupNode(path)
 	if node == nil {
 		return false
@@ -104,7 +103,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 		return nil
 	}
 	var slashBits uint64
-	util.CanonicalizePathString(&path, &slashBits)
+	CanonicalizePathString(&path, &slashBits)
 
 	// 特殊语法：以 '^' 结尾表示取该节点的第一个输出
 	firstDependent := false
@@ -138,7 +137,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 	}
 
 	// 节点不存在，构建错误信息
-	decanon := util.PathDecanonicalized(path, slashBits)
+	decanon := PathDecanonicalized(path, slashBits)
 	*err = fmt.Sprintf("unknown target '%s'", decanon)
 	if path == "clean" {
 		*err += ", did you mean 'ninja -t clean'?"
@@ -419,7 +418,7 @@ func (n *NinjaMain) ToolTargets(options *Options, args []string) int {
 			ToolTargetsListAll(n.state_)
 			return 0
 		default:
-			suggestion := util.SpellcheckString(mode, []string{"rule", "depth", "all"})
+			suggestion := SpellcheckString(mode, []string{"rule", "depth", "all"})
 			if suggestion != "" {
 				fmt.Fprintf(os.Stderr, "ninja: unknown target tool mode '%s', did you mean '%s'?\n", mode, suggestion)
 			} else {
@@ -778,13 +777,13 @@ func PrintCompdbObjectsForEdge(directory string, edge *Edge, evalMode EvaluateCo
 			fmt.Print(",")
 		}
 		fmt.Printf("\n  {\n    \"directory\": \"")
-		util.PrintJSONString(directory)
+		PrintJSONString(directory)
 		fmt.Printf("\",\n    \"command\": \"")
-		util.PrintJSONString(command)
+		PrintJSONString(command)
 		fmt.Printf("\",\n    \"file\": \"")
-		util.PrintJSONString(input.Path)
+		PrintJSONString(input.Path)
 		fmt.Printf("\",\n    \"output\": \"")
-		util.PrintJSONString(edge.outputs_[0].Path)
+		PrintJSONString(edge.outputs_[0].Path)
 		fmt.Printf("\"\n  }")
 		first = false
 	}
@@ -1125,7 +1124,7 @@ multiple modes can be enabled via -d FOO -d BAR`)
 		g_experimental_statcache = false
 		return true
 	default:
-		suggestion := util.SpellcheckString(name, []string{"stats", "explain", "keepdepfile", "keeprsp", "nostatcache"})
+		suggestion := SpellcheckString(name, []string{"stats", "explain", "keepdepfile", "keeprsp", "nostatcache"})
 		if suggestion != "" {
 			fmt.Fprintf(os.Stderr, "ninja: unknown debug setting '%s', did you mean '%s'?\n", name, suggestion)
 		} else {
@@ -1170,7 +1169,7 @@ func warningEnable(name string, options *Options) bool {
 		fmt.Fprintf(os.Stderr, "ninja: warning: deprecated warning 'depfilemulti'\n")
 		return true
 	default:
-		suggestion := util.SpellcheckString(name, []string{"phonycycle=err", "phonycycle=warn"})
+		suggestion := SpellcheckString(name, []string{"phonycycle=err", "phonycycle=warn"})
 		if suggestion != "" {
 			fmt.Fprintf(os.Stderr, "ninja: unknown warning flag '%s', did you mean '%s'?\n", name, suggestion)
 		} else {

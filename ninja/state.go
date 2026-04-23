@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"ninja-go/ninja/util"
 	"sync"
 )
 
@@ -87,7 +86,7 @@ func (s *State) GetNodeByID(id int) *Node {
 func (s *State) GetNode(path string, slashBits uint64) *Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	norm := util.NormalizePath(path)
+	norm := NormalizePath(path)
 	if n, ok := s.Paths[norm]; ok {
 		return n
 	}
@@ -106,7 +105,7 @@ func (s *State) GetNode(path string, slashBits uint64) *Node {
 func (s *State) LookupNode(path string) *Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	norm := util.NormalizePath(path)
+	norm := NormalizePath(path)
 	return s.Paths[norm]
 }
 
@@ -121,7 +120,7 @@ func (s *State) SpellcheckNode(path string) *Node {
 		if node == nil {
 			continue
 		}
-		distance := util.EditDistance(p, path, allowReplacements, maxValidEditDistance)
+		distance := EditDistance(p, path, allowReplacements, maxValidEditDistance)
 		if distance < minDistance {
 			minDistance = distance
 			result = node
