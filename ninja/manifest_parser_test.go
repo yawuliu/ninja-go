@@ -1,76 +1,15 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockFileSystemForParser 用于解析器测试的 mock 文件系统
-type mockFileSystemForParser struct {
-	files map[string][]byte
-}
-
-func newMockFileSystemForParser() *mockFileSystemForParser {
-	return &mockFileSystemForParser{
-		files: make(map[string][]byte),
-	}
-}
-
-func (m *mockFileSystemForParser) Open(name string) (File, error) {
-	return nil, os.ErrNotExist
-}
-
-func (m *mockFileSystemForParser) Create(name string) (File, error) {
-	return nil, nil
-}
-
-func (m *mockFileSystemForParser) Truncate(name string, size int64) error {
-	return nil
-}
-
-func (m *mockFileSystemForParser) Stat(path string) (os.FileInfo, error) {
-	return nil, os.ErrNotExist
-}
-
-func (m *mockFileSystemForParser) ReadFile(path string) ([]byte, error) {
-	if data, ok := m.files[path]; ok {
-		return data, nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (m *mockFileSystemForParser) WriteFile(path string, data []byte, perm os.FileMode) error {
-	m.files[path] = data
-	return nil
-}
-
-func (m *mockFileSystemForParser) Remove(path string) error {
-	delete(m.files, path)
-	return nil
-}
-
-func (m *mockFileSystemForParser) MkdirAll(path string, perm os.FileMode) error {
-	return nil
-}
-
-func (m *mockFileSystemForParser) MakeDirs(path string) error {
-	return nil
-}
-
-func (m *mockFileSystemForParser) AllowStatCache(allow bool) bool {
-	return false
-}
-
-func (m *mockFileSystemForParser) AddFile(path string, content string) {
-	m.files[path] = []byte(content)
-}
-
 func TestManifestParser_ParseEmpty(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 	var err string
 	parser.ParseTest("", &err)
@@ -79,7 +18,7 @@ func TestManifestParser_ParseEmpty(t *testing.T) {
 
 func TestManifestParser_ParseRule(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -97,7 +36,7 @@ func TestManifestParser_ParseRule(t *testing.T) {
 
 func TestManifestParser_ParseRuleWithMultipleBindings(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -120,7 +59,7 @@ func TestManifestParser_ParseRuleWithMultipleBindings(t *testing.T) {
 
 func TestManifestParser_ParseRule_Duplicate(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -137,7 +76,7 @@ rule cc
 
 func TestManifestParser_ParseRule_MissingCommand(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -151,7 +90,7 @@ func TestManifestParser_ParseRule_MissingCommand(t *testing.T) {
 
 func TestManifestParser_ParseRule_RspfileMismatch(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -166,7 +105,7 @@ func TestManifestParser_ParseRule_RspfileMismatch(t *testing.T) {
 
 func TestManifestParser_ParseBuild(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -190,7 +129,7 @@ build foo.o: cc foo.c
 
 func TestManifestParser_ParseBuild_MultipleInputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule link
@@ -211,7 +150,7 @@ build prog: link foo.o bar.o baz.o
 
 func TestManifestParser_ParseBuild_MultipleOutputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule gen
@@ -232,7 +171,7 @@ build out1 out2 out3: gen input.txt
 
 func TestManifestParser_ParseBuild_ImplicitInputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -254,7 +193,7 @@ build foo.o: cc foo.c | header.h config.h
 
 func TestManifestParser_ParseBuild_OrderOnlyInputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -275,7 +214,7 @@ build foo.o: cc foo.c || stamp
 
 func TestManifestParser_ParseBuild_ImplicitOutputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule gen
@@ -296,7 +235,7 @@ build foo.o | foo.h: gen foo.c
 
 func TestManifestParser_ParseBuild_Validations(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -315,7 +254,7 @@ build foo.o: cc foo.c |@ validate.py
 
 func TestManifestParser_ParseBuild_EdgeVariables(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -335,7 +274,7 @@ build foo.o: cc foo.c
 
 func TestManifestParser_ParseBuild_UnknownRule(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `build foo.o: unknown foo.c
@@ -348,7 +287,7 @@ func TestManifestParser_ParseBuild_UnknownRule(t *testing.T) {
 
 func TestManifestParser_ParseBuild_MissingOutputs(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -364,7 +303,7 @@ build : cc foo.c
 
 func TestManifestParser_ParseDefault(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -385,7 +324,7 @@ default foo.o
 
 func TestManifestParser_ParseDefault_Multiple(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
@@ -407,7 +346,7 @@ default foo.o bar.o
 
 func TestManifestParser_ParseDefault_UnknownTarget(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `default nonexistent
@@ -420,7 +359,7 @@ func TestManifestParser_ParseDefault_UnknownTarget(t *testing.T) {
 
 func TestManifestParser_ParsePool(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `pool link_pool
@@ -439,7 +378,7 @@ func TestManifestParser_ParsePool(t *testing.T) {
 
 func TestManifestParser_ParsePool_Duplicate(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `pool mypool
@@ -456,7 +395,7 @@ pool mypool
 
 func TestManifestParser_ParsePool_MissingDepth(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `pool mypool
@@ -470,7 +409,7 @@ func TestManifestParser_ParsePool_MissingDepth(t *testing.T) {
 
 func TestManifestParser_ParsePool_InvalidDepth(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `pool mypool
@@ -484,7 +423,7 @@ func TestManifestParser_ParsePool_InvalidDepth(t *testing.T) {
 
 func TestManifestParser_ParseVariable(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `cc = gcc
@@ -501,7 +440,7 @@ flags = -O2
 
 func TestManifestParser_ParseVariable_Reference(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `cc = gcc
@@ -519,7 +458,7 @@ command = $cc $ccflags
 
 func TestManifestParser_ParseVersion(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `ninja_required_version = 1.14
@@ -535,8 +474,8 @@ func TestManifestParser_ParseVersion(t *testing.T) {
 
 func TestManifestParser_ParseInclude(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
-	fs.AddFile("included.ninja", "cc = gcc\n")
+	fs := newMockFSIntegration()
+	fs.CreateFile("included.ninja", "cc = gcc\n")
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `include included.ninja
@@ -551,8 +490,8 @@ func TestManifestParser_ParseInclude(t *testing.T) {
 
 func TestManifestParser_ParseSubninja(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
-	fs.AddFile("sub.ninja", "local = value\n")
+	fs := newMockFSIntegration()
+	fs.CreateFile("sub.ninja", "local = value\n")
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `global = before
@@ -570,7 +509,7 @@ global = after
 
 func TestManifestParser_ParseComments(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `# This is a comment
@@ -590,7 +529,7 @@ rule cc
 
 func TestManifestParser_ParseBuild_WithPool(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `pool link_pool
@@ -613,7 +552,7 @@ build prog: link foo.o bar.o
 
 func TestManifestParser_ParseBuild_UnknownPool(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule link
@@ -630,7 +569,7 @@ build prog: link foo.o
 
 func TestManifestParser_ParseBuild_Phony(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `build all: phony foo.o bar.o
@@ -645,7 +584,7 @@ func TestManifestParser_ParseBuild_Phony(t *testing.T) {
 
 func TestManifestParser_ParseBuild_PhonyCycleWarn(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{PhonyCycleAction: PhonyCycleActionWarn})
 
 	input := `build all: phony all
@@ -661,7 +600,7 @@ func TestManifestParser_ParseBuild_PhonyCycleWarn(t *testing.T) {
 
 func TestManifestParser_ParseComplex(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `cc = gcc
@@ -697,7 +636,7 @@ default prog
 
 func TestManifestParser_ParseError_SyntaxError(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `build foo.o cc foo.c
@@ -709,7 +648,7 @@ func TestManifestParser_ParseError_SyntaxError(t *testing.T) {
 
 func TestManifestParser_ParseError_EmptyPath(t *testing.T) {
 	state := NewState()
-	fs := newMockFileSystemForParser()
+	fs := newMockFSIntegration()
 	parser := NewManifestParser(state, fs, ManifestParserOptions{})
 
 	input := `rule cc
