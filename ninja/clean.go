@@ -128,7 +128,7 @@ func (c *Cleaner) CleanAll(generator bool) int {
 			continue
 		}
 		for _, out := range edge.outputs_ {
-			c.Remove(out.Path)
+			c.Remove(out.path_)
 		}
 		c.RemoveEdgeFiles(edge)
 	}
@@ -143,7 +143,7 @@ func (c *Cleaner) CleanDead(entries map[string]*LogEntry) int {
 	c.LoadDyndeps()
 	for output := range entries {
 		node := c.state.LookupNode(output)
-		if node == nil || (node.InEdge == nil && len(node.OutEdges) == 0) {
+		if node == nil || (node.in_edge() == nil && len(node.out_edges_) == 0) {
 			c.Remove(output)
 		}
 	}
@@ -153,9 +153,9 @@ func (c *Cleaner) CleanDead(entries map[string]*LogEntry) int {
 
 // DoCleanTarget 递归清理目标及其依赖。
 func (c *Cleaner) DoCleanTarget(target *Node) {
-	if edge := target.InEdge; edge != nil {
+	if edge := target.in_edge(); edge != nil {
 		if !edge.IsPhony() {
-			c.Remove(target.Path)
+			c.Remove(target.path_)
 			c.RemoveEdgeFiles(edge)
 		}
 		for _, in := range edge.inputs_ {
@@ -215,7 +215,7 @@ func (c *Cleaner) DoCleanRule(rule *Rule) {
 	for _, edge := range c.state.Edges {
 		if edge.Rule.Name == rule.Name {
 			for _, out := range edge.outputs_ {
-				c.Remove(out.Path)
+				c.Remove(out.path_)
 				c.RemoveEdgeFiles(edge)
 			}
 		}
@@ -274,7 +274,7 @@ func (c *Cleaner) Reset() {
 // LoadDyndeps 加载所有挂起的 dyndep 文件（忽略错误）。
 func (c *Cleaner) LoadDyndeps() {
 	for _, edge := range c.state.Edges {
-		if dyndepNode := edge.dyndep_; dyndepNode != nil && dyndepNode.DyndepPending {
+		if dyndepNode := edge.dyndep_; dyndepNode != nil && dyndepNode.dyndep_pending_ {
 			// 忽略错误，尽可能清理
 			var err string
 			_ = c.dyndepLoader.LoadDyndeps(dyndepNode, &err)

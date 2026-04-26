@@ -434,7 +434,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if len(newInputs) != len(edge.inputs_) {
 			edge.inputs_ = newInputs
 			if !p.quiet {
-				fmt.Fprintf(os.Stderr, "ninja: warning: phony target '%s' names itself as an input; ignoring [-w phonycycle=warn]\n", outNode.Path)
+				fmt.Fprintf(os.Stderr, "ninja: warning: phony target '%s' names itself as an input; ignoring [-w phonycycle=warn]\n", outNode.path_)
 			}
 		}
 	}
@@ -446,7 +446,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		CanonicalizePathString(&dyndep, &slashBits)
 		dyndepNode := p.state.GetNode(dyndep, slashBits)
 		edge.dyndep_ = dyndepNode
-		dyndepNode.DyndepPending = true
+		dyndepNode.dyndep_pending_ = true
 		// 验证 dyndep 节点必须是边的输入之一
 		found := false
 		for _, in := range edge.inputs_ {
@@ -458,7 +458,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if !found {
 			return p.lexer.Error("dyndep '"+dyndep+"' is not an input", err)
 		}
-		if edge.dyndep_.GeneratedByDepLoader == false {
+		if edge.dyndep_.generated_by_dep_loader_ == false {
 			panic(errors.New("dyndep '" + dyndep + "' is not a dependency"))
 		}
 	}

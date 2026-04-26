@@ -91,10 +91,10 @@ func (s *State) GetNode(path string, slashBits uint64) *Node {
 		return n
 	}
 	n := &Node{
-		Path:                 norm,
-		SlashBits:            slashBits,
-		id_:                  s.nextID,
-		GeneratedByDepLoader: true,
+		path_:                    norm,
+		slash_bits_:              slashBits,
+		id_:                      s.nextID,
+		generated_by_dep_loader_: true,
 	}
 	s.nextID++
 	s.Paths[norm] = n
@@ -131,14 +131,14 @@ func (s *State) SpellcheckNode(path string) *Node {
 
 func (s *State) AddIn(edge *Edge, path string, slashBits uint64) {
 	node := s.GetNode(path, slashBits)
-	node.GeneratedByDepLoader = false
+	node.generated_by_dep_loader_ = false
 	edge.inputs_ = append(edge.inputs_, node)
 	node.AddOutEdge(edge)
 }
 
 func (s *State) AddOut(edge *Edge, path string, slashBits uint64, err *string) bool {
 	node := s.GetNode(path, slashBits)
-	if other := node.InEdge; other != nil {
+	if other := node.in_edge(); other != nil {
 		if other == edge {
 			*err = fmt.Sprintf("%s is defined as an output multiple times", path)
 		} else {
@@ -147,8 +147,8 @@ func (s *State) AddOut(edge *Edge, path string, slashBits uint64, err *string) b
 		return false
 	}
 	edge.outputs_ = append(edge.outputs_, node)
-	node.InEdge = edge
-	node.GeneratedByDepLoader = false
+	node.set_in_edge(edge)
+	node.generated_by_dep_loader_ = false
 	return true
 }
 
@@ -156,7 +156,7 @@ func (s *State) AddValidation(edge *Edge, path string, slashBits uint64) {
 	node := s.GetNode(path, slashBits)
 	edge.validations_ = append(edge.validations_, node)
 	node.AddValidationOutEdge(edge)
-	node.GeneratedByDepLoader = false
+	node.generated_by_dep_loader_ = false
 }
 
 func (s *State) AddDefault(path string, err *string) bool {
@@ -188,7 +188,7 @@ func (s *State) RootNodes(err *string) []*Node {
 	var root_nodes []*Node
 	for _, e := range s.Edges {
 		for _, out := range e.outputs_ {
-			if len(out.OutEdges) == 0 {
+			if len(out.out_edges_) == 0 {
 				root_nodes = append(root_nodes, out)
 			}
 		}

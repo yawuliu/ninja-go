@@ -37,11 +37,11 @@ func (g *GraphViz) AddTarget(node *Node) {
 	}
 
 	// 转义路径中的反斜杠为斜杠（用于显示）
-	pathStr := strings.ReplaceAll(node.Path, "\\", "/")
+	pathStr := strings.ReplaceAll(node.path_, "\\", "/")
 	fmt.Printf("\"%p\" [label=\"%s\"]\n", node, pathStr)
 	g.visitedNodes[node] = true
 
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		// 叶子节点（源文件），无需绘制边
 		return
@@ -53,7 +53,7 @@ func (g *GraphViz) AddTarget(node *Node) {
 	g.visitedEdges[edge] = true
 
 	// 如果边有挂起的 dyndep 文件，尝试加载
-	if edge.dyndep_ != nil && edge.dyndep_.DyndepPending {
+	if edge.dyndep_ != nil && edge.dyndep_.dyndep_pending_ {
 		var err string
 		if !g.dyndepLoader.LoadDyndeps(edge.dyndep_, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)

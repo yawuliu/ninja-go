@@ -128,9 +128,9 @@ build foo.o: cc foo.c
 	edge := state.Edges[0]
 	assert.Equal(t, "cc", edge.Rule.Name)
 	assert.Len(t, edge.inputs_, 1)
-	assert.Equal(t, "foo.c", edge.inputs_[0].Path)
+	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	assert.Len(t, edge.outputs_, 1)
-	assert.Equal(t, "foo.o", edge.outputs_[0].Path)
+	assert.Equal(t, "foo.o", edge.outputs_[0].path_)
 }
 
 // TestIntegration_MultiStepBuild 测试多步构建
@@ -197,7 +197,7 @@ build foo.o: cc foo.c | foo.h
 	edge := state.Edges[0]
 	assert.Len(t, edge.inputs_, 2)
 	assert.Equal(t, 1, edge.implicit_deps_)
-	assert.Equal(t, "foo.h", edge.inputs_[1].Path)
+	assert.Equal(t, "foo.h", edge.inputs_[1].path_)
 }
 
 // TestIntegration_OrderOnlyDeps 测试 order-only 依赖
@@ -279,7 +279,7 @@ default all
 
 	// 验证默认目标
 	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "all", state.Defaults[0].Path)
+	assert.Equal(t, "all", state.Defaults[0].path_)
 }
 
 // TestIntegration_PoolUsage 测试池使用
@@ -361,7 +361,7 @@ build foo.o: cc foo.c foo.o.dd
 
 	// dyndep 文件节点应该被标记
 	require.NotNil(t, edge.dyndep_)
-	assert.True(t, edge.dyndep_.DyndepPending)
+	assert.True(t, edge.dyndep_.dyndep_pending_)
 }
 
 // TestIntegration_Phony 测试 phony 规则
@@ -435,7 +435,7 @@ default myapp
 
 	// 验证默认目标
 	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "myapp", state.Defaults[0].Path)
+	assert.Equal(t, "myapp", state.Defaults[0].path_)
 }
 
 // TestIntegration_PathCanonicalization 测试路径规范化
@@ -481,7 +481,7 @@ build foo.o: cc foo.c |@ check.py
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.validations_, 1)
-	assert.Equal(t, "check.py", edge.validations_[0].Path)
+	assert.Equal(t, "check.py", edge.validations_[0].path_)
 }
 
 // TestIntegration_RuleWithDescription 测试带描述的规则
@@ -567,8 +567,8 @@ build parser.cc parser.h: bison parser.yy
 
 	edge := state.Edges[0]
 	assert.Len(t, edge.outputs_, 2)
-	assert.Equal(t, "parser.cc", edge.outputs_[0].Path)
-	assert.Equal(t, "parser.h", edge.outputs_[1].Path)
+	assert.Equal(t, "parser.cc", edge.outputs_[0].path_)
+	assert.Equal(t, "parser.h", edge.outputs_[1].path_)
 }
 
 // TestIntegration_EscapedVariables 测试转义变量
@@ -791,14 +791,14 @@ build final.out: finalize step2.out
 	// step2 依赖于 step1
 	step2 := state.LookupNode("step2.out")
 	require.NotNil(t, step2)
-	require.NotNil(t, step2.InEdge)
-	assert.Equal(t, "process", step2.InEdge.Rule.Name)
+	require.NotNil(t, step2.in_edge())
+	assert.Equal(t, "process", step2.in_edge().Rule.Name)
 
 	// final 依赖于 step2
 	final := state.LookupNode("final.out")
 	require.NotNil(t, final)
-	require.NotNil(t, final.InEdge)
-	assert.Equal(t, "finalize", final.InEdge.Rule.Name)
+	require.NotNil(t, final.in_edge())
+	assert.Equal(t, "finalize", final.in_edge().Rule.Name)
 }
 
 // TestIntegration_CircularDependency 测试循环依赖检测

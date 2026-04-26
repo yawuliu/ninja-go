@@ -51,15 +51,15 @@ func (p *Plan) AddTarget(target *Node, err *string) bool {
 }
 
 func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk map[*Edge]bool) bool {
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
-		if node.dirty_ && !node.GeneratedByDepLoader {
+		if node.dirty_ && !node.generated_by_dep_loader_ {
 			var ref string
 			if dependent != nil {
-				ref = ", needed by '" + dependent.Path + "',"
+				ref = ", needed by '" + dependent.path_ + "',"
 			}
-			*err = fmt.Sprintf("'%s'%s missing and no known rule to make it", node.Path, ref)
+			*err = fmt.Sprintf("'%s'%s missing and no known rule to make it", node.path_, ref)
 		}
 		return false
 	}
@@ -151,14 +151,14 @@ func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
 
 func (p *Plan) nodeFinished(node *Node, err *string) bool {
 	// 若此节点提供 dyndep 信息，则加载
-	if node.DyndepPending {
+	if node.dyndep_pending_ {
 		if p.builder == nil {
 			panic(fmt.Errorf("dyndep requires Plan to have a Builder"))
 		}
 		return p.builder.LoadDyndeps(node, err)
 	}
 
-	for _, outEdge := range node.OutEdges {
+	for _, outEdge := range node.out_edges_ {
 		want, exists := p.want[outEdge]
 		if !exists {
 			continue
@@ -215,14 +215,14 @@ func (p *Plan) computeCriticalPath() {
 		}
 		visited[edge] = true
 		for _, in := range edge.inputs_ {
-			if prod := in.InEdge; prod != nil {
+			if prod := in.in_edge(); prod != nil {
 				dfs(prod)
 			}
 		}
 		sorted = append(sorted, edge)
 	}
 	for _, target := range p.targets {
-		if edge := target.InEdge; edge != nil {
+		if edge := target.in_edge(); edge != nil {
 			dfs(edge)
 		}
 	}
@@ -238,7 +238,7 @@ func (p *Plan) computeCriticalPath() {
 	for i := len(sorted) - 1; i >= 0; i-- {
 		e := sorted[i]
 		for _, in := range e.inputs_ {
-			if prod := in.InEdge; prod != nil {
+			if prod := in.in_edge(); prod != nil {
 				cand := e.critical_path_weight_ + 1
 				if prod.IsPhony() {
 					cand = e.critical_path_weight_
@@ -282,7 +282,7 @@ func (p *Plan) CommandEdgeCount() int {
 func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 	node.dirty_ = false
 
-	for _, outEdge := range node.OutEdges {
+	for _, outEdge := range node.out_edges_ {
 		// 忽略不在计划中的边，或者已经被标记为不想要的边
 		want, exists := p.want[outEdge]
 		if !exists || want == WantNothing {
@@ -309,7 +309,7 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 			// 重新计算最新的输入 mtime
 			var mostRecentInput *Node
 			for i := begin; i < end; i++ {
-				if mostRecentInput == nil || outEdge.inputs_[i].Mtime > mostRecentInput.Mtime {
+				if mostRecentInput == nil || outEdge.inputs_[i].mtime_ > mostRecentInput.mtime_ {
 					mostRecentInput = outEdge.inputs_[i]
 				}
 			}
@@ -379,7 +379,7 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile, e
 	}
 
 	// 添加该节点的出边（原本应在 NodeFinished 中处理）
-	for _, outEdge := range node.OutEdges {
+	for _, outEdge := range node.out_edges_ {
 		if _, ok := p.want[outEdge]; ok {
 			dyndepWalk[outEdge] = true
 		}
@@ -415,7 +415,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 
 		// 将新发现的验证节点添加为顶层目标
 		for _, vn := range validationNodes {
-			if inEdge := vn.InEdge; inEdge != nil {
+			if inEdge := vn.in_edge(); inEdge != nil {
 				if !inEdge.outputs_ready_ && !p.AddTarget(vn, err) {
 					return false
 				}
@@ -427,7 +427,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 		}
 
 		// 该边之前遇到过，但可能由于输出不脏而不想构建。现在有了 dyndep 信息，输出变脏，需要构建。
-		edge := n.InEdge
+		edge := n.in_edge()
 		if edge == nil || edge.outputs_ready_ {
 			continue
 		}
@@ -445,7 +445,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 
 // unmarkDependents 递归地清除节点依赖边的访问标记，并将所有依赖节点添加到 dependents 集合中。
 func (p *Plan) unmarkDependents(node *Node, dependents map[*Node]bool) {
-	for _, outEdge := range node.OutEdges {
+	for _, outEdge := range node.out_edges_ {
 		// 如果该边不在计划中，跳过
 		if _, ok := p.want[outEdge]; !ok {
 			continue

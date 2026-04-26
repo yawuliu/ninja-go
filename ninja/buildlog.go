@@ -108,7 +108,7 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool 
 	commandHash := HashCommand(command) // 使用 SHA256 或 rapidhash
 
 	for _, out := range edge.outputs_ {
-		path := out.Path
+		path := out.path_
 		entry, ok := bl.entries[path]
 		if !ok {
 			entry = &LogEntry{Output: path}

@@ -202,7 +202,7 @@ func (sp *StatusPrinter) BuildEdgeFinished(edge *Edge, startTimeMillis int64, en
 	if exitCode != ExitSuccess {
 		var outputs string
 		for _, o := range edge.outputs_ {
-			outputs += o.Path + " "
+			outputs += o.path_ + " "
 		}
 
 		failed := "FAILED: [code=" + fmt.Sprint(exitCode) + "] "

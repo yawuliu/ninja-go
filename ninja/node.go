@@ -27,38 +27,38 @@ func (s ExistenceStatus) String() string {
 }
 
 type Node struct {
-	Path                 string
-	SlashBits            uint64
-	Mtime                int64
-	exists_              ExistenceStatus // -1 unknown, 0 missing, 1 exists
-	dirty_               bool
-	DyndepPending        bool
-	GeneratedByDepLoader bool
-	id_                  int
-	InEdge               *Edge
-	OutEdges             []*Edge
-	ValidationOutEdges   []*Edge
+	path_                    string
+	slash_bits_              uint64
+	mtime_                   int64
+	exists_                  ExistenceStatus // -1 unknown, 0 missing, 1 exists
+	dirty_                   bool
+	dyndep_pending_          bool
+	generated_by_dep_loader_ bool
+	id_                      int
+	in_edge_                 *Edge
+	out_edges_               []*Edge
+	validation_out_edges_    []*Edge
 }
 
 func NewNode(path string, slashBits uint64) *Node {
 	return &Node{
-		Path:                 path,
-		SlashBits:            slashBits,
-		Mtime:                -1,
-		exists_:              ExistenceStatusUnknown,
-		GeneratedByDepLoader: true,
-		id_:                  -1,
+		path_:                    path,
+		slash_bits_:              slashBits,
+		mtime_:                   -1,
+		exists_:                  ExistenceStatusUnknown,
+		generated_by_dep_loader_: true,
+		id_:                      -1,
 	}
 }
 func (n *Node) id() int       { return n.id_ }
 func (n *Node) set_id(id int) { n.id_ = id }
 
 func (n *Node) Stat(diskInterface FileSystem, err *string) bool {
-	n.Mtime = diskInterface.Stat(n.Path, err)
-	if n.Mtime == -1 {
+	n.mtime_ = diskInterface.Stat(n.path_, err)
+	if n.mtime_ == -1 {
 		return false
 	}
-	if n.Mtime != 0 {
+	if n.mtime_ != 0 {
 		n.exists_ = ExistenceStatusExists
 	} else {
 		n.exists_ = ExistenceStatusMissing
@@ -80,26 +80,26 @@ func (n *Node) StatIfNecessary(fs FileSystem, err *string) bool {
 }
 
 func (n *Node) ResetState() {
-	n.Mtime = -1
+	n.mtime_ = -1
 	n.exists_ = ExistenceStatusUnknown
 	n.dirty_ = false
 }
 
 func (n *Node) MarkMissing() {
-	if n.Mtime == -1 {
-		n.Mtime = 0
+	if n.mtime_ == -1 {
+		n.mtime_ = 0
 	}
 	n.exists_ = ExistenceStatusMissing
 }
 
 func (n *Node) AddOutEdge(edge *Edge) {
 	// 避免重复添加
-	for _, e := range n.OutEdges {
+	for _, e := range n.out_edges_ {
 		if e == edge {
 			return
 		}
 	}
-	n.OutEdges = append(n.OutEdges, edge)
+	n.out_edges_ = append(n.out_edges_, edge)
 }
 
 func (n *Node) IsExists() bool {
@@ -107,7 +107,7 @@ func (n *Node) IsExists() bool {
 }
 
 func (n *Node) AddValidationOutEdge(e *Edge) {
-	n.ValidationOutEdges = append(n.ValidationOutEdges, e)
+	n.validation_out_edges_ = append(n.validation_out_edges_, e)
 }
 
 func (n *Node) Dirty() bool {
@@ -118,14 +118,14 @@ func (n *Node) Dirty() bool {
 // 如果节点不存在（即磁盘上没有该文件），则将其 mtime 设置为当前 mtime 和已有 mtime 中的较大值。
 func (n *Node) UpdatePhonyMtime(mtime int64) {
 	if !n.IsExists() {
-		if mtime > n.Mtime {
-			n.Mtime = mtime
+		if mtime > n.mtime_ {
+			n.mtime_ = mtime
 		}
 	}
 }
 
-func (n *Node) in_edge() *Edge         { return n.InEdge }
-func (n *Node) set_in_edge(edge *Edge) { n.InEdge = edge }
+func (n *Node) in_edge() *Edge         { return n.in_edge_ }
+func (n *Node) set_in_edge(edge *Edge) { n.in_edge_ = edge }
 
 func (n *Node) SetDirty(dirty bool) { n.dirty_ = dirty }
 func (n *Node) MarkDirty()          { n.dirty_ = true }

@@ -1,0 +1,3 @@
+[submodule "testdata/cmake-examples"]
+	path = testdata/cmake-examples
+	url = https://github.com/ttroy50/cmake-examples.git

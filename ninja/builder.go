@@ -72,13 +72,13 @@ func (b *Builder) AddTarget(target *Node, err *string) bool {
 	if !b.scan.RecomputeDirty(target, &validationNodes, err) {
 		return false
 	}
-	if edge := target.InEdge; edge == nil || !edge.outputs_ready_ {
+	if edge := target.in_edge(); edge == nil || !edge.outputs_ready_ {
 		if !b.plan.AddTarget(target, err) {
 			return false
 		}
 	}
 	for _, vn := range validationNodes {
-		if e := vn.InEdge; e != nil && !e.outputs_ready_ {
+		if e := vn.in_edge(); e != nil && !e.outputs_ready_ {
 			if !b.plan.AddTarget(vn, err) {
 				return false
 			}
@@ -201,7 +201,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	// filesystem mtime to record later
 	// XXX: this will block; do we care?
 	for _, o := range edge.outputs_ {
-		if !b.disk.MakeDirs(o.Path) {
+		if !b.disk.MakeDirs(o.path_) {
 			return false
 		}
 		if buildStart == -1 {
@@ -293,14 +293,14 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		// log.
 		if recordMtime == 0 || restat || generator {
 			for _, o := range edge.outputs_ {
-				newMtime := b.disk.Stat(o.Path, err)
+				newMtime := b.disk.Stat(o.path_, err)
 				if newMtime == -1 {
 					return false
 				}
 				if newMtime > recordMtime {
 					recordMtime = newMtime
 				}
-				if o.Mtime == newMtime && restat {
+				if o.mtime_ == newMtime && restat {
 					// The rule command did not change the output. Propagate the clean
 					// state through the build graph.
 					// Note that this also applies to nonexistent outputs (mtime == 0).
@@ -338,7 +338,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 			panic("should have been rejected by parser")
 		}
 		for _, o := range edge.outputs_ {
-			depsMtime := b.disk.Stat(o.Path, err)
+			depsMtime := b.disk.Stat(o.path_, err)
 			if depsMtime == -1 {
 				return false
 			}
@@ -440,12 +440,12 @@ func (b *Builder) Cleanup() {
 				// 但如果规则使用了 depfile，则始终删除（考虑这种情况：由于 depfile 中提到的头文件修改导致需要重建输出，
 				// 但命令在触及输出文件之前被中断）。
 				var err string
-				newMtime := b.disk.Stat(out.Path, &err)
+				newMtime := b.disk.Stat(out.path_, &err)
 				if newMtime == -1 {
 					b.status.Error("%v", err)
 				}
-				if depfile != "" || out.Mtime != newMtime {
-					b.disk.RemoveFile(out.Path)
+				if depfile != "" || out.mtime_ != newMtime {
+					b.disk.RemoveFile(out.path_)
 				}
 			}
 			if depfile != "" {

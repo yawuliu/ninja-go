@@ -54,7 +54,7 @@ func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*N
 }
 
 func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node, err *string) bool {
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		// If we already visited this leaf node then we are done.
 		if node.StatusKnown() {
@@ -65,7 +65,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			return false
 		}
 		if !node.Exists() {
-			ds.explanations_.Record(node, "%s has no in-edge and is missing", node.Path)
+			ds.explanations_.Record(node, "%s has no in-edge and is missing", node.path_)
 		}
 		node.SetDirty(!node.Exists())
 		return true
@@ -100,11 +100,11 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 		edge.deps_loaded_ = true
 
 		// If there is a pending dyndep log_file_, visit it now.
-		if edge.dyndep_ != nil && edge.dyndep_.DyndepPending {
+		if edge.dyndep_ != nil && edge.dyndep_.dyndep_pending_ {
 			if !ds.recomputeNodeDirty(edge.dyndep_, stack, validationNodes, err) {
 				return false
 			}
-			if edge.dyndep_.InEdge == nil || edge.dyndep_.InEdge.outputs_ready_ {
+			if edge.dyndep_.in_edge() == nil || edge.dyndep_.in_edge().outputs_ready_ {
 				// The dyndep log_file_ is ready, so load it now.
 				if !ds.LoadDyndeps(edge.dyndep_, err) {
 					return false
@@ -146,7 +146,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 	var mostRecentInput *Node
 	for idx, i := range edge.inputs_ {
 		// If an input is not ready, neither are our outputs.
-		if inEdge := i.InEdge; inEdge != nil {
+		if inEdge := i.in_edge(); inEdge != nil {
 			if !inEdge.outputs_ready_ {
 				edge.outputs_ready_ = false
 			}
@@ -156,10 +156,10 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			// If a regular input is dirty (or missing), we're dirty.
 			// Otherwise consider mtime.
 			if i.Dirty() {
-				ds.explanations_.Record(node, "%s is dirty", i.Path)
+				ds.explanations_.Record(node, "%s is dirty", i.path_)
 				dirty = true
 			} else {
-				if mostRecentInput == nil || i.Mtime > mostRecentInput.Mtime {
+				if mostRecentInput == nil || i.mtime_ > mostRecentInput.mtime_ {
 					mostRecentInput = i
 				}
 			}
@@ -240,7 +240,7 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 	}
 	if deps == nil {
 		l.explanations.Record(output, "deps for '%s' are missing",
-			output.Path)
+			output.path_)
 		return false
 	}
 
@@ -250,10 +250,10 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 	}
 
 	// Deps are invalid if the output is newer than the deps.
-	if output.Mtime > deps.mtime {
+	if output.mtime_ > deps.mtime {
 		l.explanations.Record(output,
 			"stored deps info out of date for '%s' (%d vs %d)",
-			output.Path, deps.mtime, output.Mtime)
+			output.path_, deps.mtime, output.mtime_)
 		return false
 	}
 
@@ -310,10 +310,10 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	depfileParser.Outs[0] = string(canonicalized)
 
 	// Check that this depfile matches the edge's output.
-	if firstOutput.Path != string(canonicalized) {
+	if firstOutput.path_ != string(canonicalized) {
 		l.explanations.Record(firstOutput,
 			"expected depfile '%s' to mention '%s', got '%s'",
-			path, firstOutput.Path, string(canonicalized))
+			path, firstOutput.path_, string(canonicalized))
 		return false
 	}
 
@@ -321,7 +321,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	for _, o := range depfileParser.Outs {
 		found := false
 		for _, edgeOut := range edge.outputs_ {
-			if edgeOut.Path == o {
+			if edgeOut.path_ == o {
 				found = true
 				break
 			}
@@ -368,7 +368,7 @@ func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile, err *string) 
 }
 
 func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool {
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		panic("assertion failed: edge != nil")
 	}
@@ -381,7 +381,7 @@ func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool
 	// We have this edge earlier in the call stack. Find it.
 	startIdx := -1
 	for i, n := range *stack {
-		if n.InEdge == edge {
+		if n.in_edge() == edge {
 			startIdx = i
 			break
 		}
@@ -397,10 +397,10 @@ func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool
 	// Construct the error message rejecting the cycle.
 	*err = "dependency cycle: "
 	for i := startIdx; i < len(*stack); i++ {
-		*err += (*stack)[i].Path
+		*err += (*stack)[i].path_
 		*err += " -> "
 	}
-	*err += (*stack)[startIdx].Path
+	*err += (*stack)[startIdx].path_
 
 	if startIdx+1 == len(*stack) && edge.MaybePhonyCycleDiagnostic() {
 		// The manifest parser would have filtered out the self-referencing
@@ -435,14 +435,14 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 		if len(edge.inputs_) == 0 && len(edge.validations_) == 0 && !output.Exists() {
 			ds.explanations_.Record(
 				output, "output %s of phony edge with no inputs doesn't exist",
-				output.Path)
+				output.path_)
 			return true
 		}
 
 		// Update the mtime with the newest input. Dependents can thus call mtime()
 		// on the fake node and get the latest mtime of the dependencies
 		if mostRecentInput != nil {
-			output.UpdatePhonyMtime(mostRecentInput.Mtime)
+			output.UpdatePhonyMtime(mostRecentInput.mtime_)
 		}
 
 		// Phony edges are clean, nothing to do
@@ -452,7 +452,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 	// Dirty if we're missing the output.
 	if !output.Exists() {
 		ds.explanations_.Record(output, "output %s doesn't exist",
-			output.Path)
+			output.path_)
 		return true
 	}
 
@@ -466,36 +466,36 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 	// the log against the most recent input's mtime (see below)
 	usedRestat := false
 	if edge.GetBindingBool("restat") && ds.buildLog != nil {
-		entry = ds.buildLog.LookupByOutput(output.Path)
+		entry = ds.buildLog.LookupByOutput(output.path_)
 		if entry != nil {
 			usedRestat = true
 		}
 	}
 
 	// Dirty if the output is older than the input.
-	if !usedRestat && mostRecentInput != nil && output.Mtime < mostRecentInput.Mtime {
+	if !usedRestat && mostRecentInput != nil && output.mtime_ < mostRecentInput.mtime_ {
 		ds.explanations_.Record(output,
 			"output %s older than most recent input %s (%d vs %d)",
-			output.Path,
-			mostRecentInput.Path, output.Mtime,
-			mostRecentInput.Mtime)
+			output.path_,
+			mostRecentInput.path_, output.mtime_,
+			mostRecentInput.mtime_)
 		return true
 	}
 
 	if ds.buildLog != nil {
 		generator := edge.GetBindingBool("generator")
 		if entry == nil {
-			entry = ds.buildLog.LookupByOutput(output.Path)
+			entry = ds.buildLog.LookupByOutput(output.path_)
 		}
 		if entry != nil {
 			if !generator && HashCommand(command) != entry.CommandHash {
 				// May also be dirty due to the command changing since the last build.
 				// But if this is a generator rule, the command changing does not make us dirty.
 				ds.explanations_.Record(output, "command line changed for %s",
-					output.Path)
+					output.path_)
 				return true
 			}
-			if mostRecentInput != nil && entry.Mtime < mostRecentInput.Mtime {
+			if mostRecentInput != nil && entry.Mtime < mostRecentInput.mtime_ {
 				// May also be dirty due to the mtime in the log being older than the
 				// mtime of the most recent input. This can occur even when the mtime
 				// on disk is newer if a previous run wrote to the output log_file_ but
@@ -504,14 +504,14 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 				// mtime and ignore the actual output's mtime above.
 				ds.explanations_.Record(output,
 					"recorded mtime of %s older than most recent input %s (%d vs %d)",
-					output.Path, mostRecentInput.Path,
-					entry.Mtime, mostRecentInput.Mtime)
+					output.path_, mostRecentInput.path_,
+					entry.Mtime, mostRecentInput.mtime_)
 				return true
 			}
 		}
 		if entry == nil && !generator {
 			ds.explanations_.Record(output, "command line not found in log for %s",
-				output.Path)
+				output.path_)
 			return true
 		}
 	}

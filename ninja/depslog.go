@@ -206,7 +206,7 @@ func (d *DepsLog) RecordDeps(node *Node, mtime int64, nodeCount int, nodes []*No
 }
 
 func (dl *DepsLog) RecordId(node *Node) bool {
-	path := node.Path
+	path := node.path_
 	pathSize := len(path)
 	padding := (4 - (pathSize+1)%4) % 4
 	size := 4 + pathSize + 1 + padding // 4字节校验和 + 路径 + null + 填充
@@ -469,11 +469,11 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 
 // isDepsEntryLive 判断节点的依赖记录是否存活
 func (dl *DepsLog) isDepsEntryLive(node *Node) bool {
-	if node.InEdge == nil {
+	if node.in_edge() == nil {
 		return false
 	}
 	// 检查边的规则是否有 "deps" 属性
-	return node.InEdge.GetBinding("deps") != ""
+	return node.in_edge().GetBinding("deps") != ""
 }
 
 func (dl *DepsLog) UpdateDeps(outID int, deps *Deps) bool {
@@ -498,10 +498,10 @@ func (dl *DepsLog) Deps() []*Deps { return dl.deps }
 // IsDepsEntryLiveFor 判断节点的依赖记录是否应该保留。
 // 节点必须有入边，且该边的 "deps" 绑定非空。
 func IsDepsEntryLiveFor(node *Node) bool {
-	if node.InEdge == nil {
+	if node.in_edge() == nil {
 		return false
 	}
-	return node.InEdge.GetBinding("deps") != ""
+	return node.in_edge().GetBinding("deps") != ""
 }
 func (d *DepsLog) OpenForWriteIfNeeded() bool {
 	if d.filePath == "" {

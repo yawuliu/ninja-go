@@ -36,7 +36,7 @@ type Edge struct {
 
 func (e *Edge) AllInputsReady() bool {
 	for _, in := range e.inputs_ {
-		if in.InEdge != nil && !in.InEdge.outputs_ready_ {
+		if in.in_edge() != nil && !in.in_edge().outputs_ready_ {
 			return false
 		}
 	}

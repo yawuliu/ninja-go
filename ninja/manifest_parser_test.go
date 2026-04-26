@@ -183,9 +183,9 @@ build foo.o: cc foo.c
 	edge := state.Edges[0]
 	assert.Equal(t, "cc", edge.Rule.Name)
 	require.Len(t, edge.inputs_, 1)
-	assert.Equal(t, "foo.c", edge.inputs_[0].Path)
+	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	require.Len(t, edge.outputs_, 1)
-	assert.Equal(t, "foo.o", edge.outputs_[0].Path)
+	assert.Equal(t, "foo.o", edge.outputs_[0].path_)
 }
 
 func TestManifestParser_ParseBuild_MultipleInputs(t *testing.T) {
@@ -204,9 +204,9 @@ build prog: link foo.o bar.o baz.o
 
 	edge := state.Edges[0]
 	require.Len(t, edge.inputs_, 3)
-	assert.Equal(t, "foo.o", edge.inputs_[0].Path)
-	assert.Equal(t, "bar.o", edge.inputs_[1].Path)
-	assert.Equal(t, "baz.o", edge.inputs_[2].Path)
+	assert.Equal(t, "foo.o", edge.inputs_[0].path_)
+	assert.Equal(t, "bar.o", edge.inputs_[1].path_)
+	assert.Equal(t, "baz.o", edge.inputs_[2].path_)
 }
 
 func TestManifestParser_ParseBuild_MultipleOutputs(t *testing.T) {
@@ -225,9 +225,9 @@ build out1 out2 out3: gen input.txt
 
 	edge := state.Edges[0]
 	require.Len(t, edge.outputs_, 3)
-	assert.Equal(t, "out1", edge.outputs_[0].Path)
-	assert.Equal(t, "out2", edge.outputs_[1].Path)
-	assert.Equal(t, "out3", edge.outputs_[2].Path)
+	assert.Equal(t, "out1", edge.outputs_[0].path_)
+	assert.Equal(t, "out2", edge.outputs_[1].path_)
+	assert.Equal(t, "out3", edge.outputs_[2].path_)
 }
 
 func TestManifestParser_ParseBuild_ImplicitInputs(t *testing.T) {
@@ -246,9 +246,9 @@ build foo.o: cc foo.c | header.h config.h
 
 	edge := state.Edges[0]
 	require.Len(t, edge.inputs_, 3)
-	assert.Equal(t, "foo.c", edge.inputs_[0].Path)
-	assert.Equal(t, "header.h", edge.inputs_[1].Path)
-	assert.Equal(t, "config.h", edge.inputs_[2].Path)
+	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
+	assert.Equal(t, "header.h", edge.inputs_[1].path_)
+	assert.Equal(t, "config.h", edge.inputs_[2].path_)
 	assert.Equal(t, 2, edge.implicit_deps_)
 }
 
@@ -268,8 +268,8 @@ build foo.o: cc foo.c || stamp
 
 	edge := state.Edges[0]
 	require.Len(t, edge.inputs_, 2)
-	assert.Equal(t, "foo.c", edge.inputs_[0].Path)
-	assert.Equal(t, "stamp", edge.inputs_[1].Path)
+	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
+	assert.Equal(t, "stamp", edge.inputs_[1].path_)
 	assert.Equal(t, 1, edge.order_only_deps_)
 }
 
@@ -289,8 +289,8 @@ build foo.o | foo.h: gen foo.c
 
 	edge := state.Edges[0]
 	require.Len(t, edge.outputs_, 2)
-	assert.Equal(t, "foo.o", edge.outputs_[0].Path)
-	assert.Equal(t, "foo.h", edge.outputs_[1].Path)
+	assert.Equal(t, "foo.o", edge.outputs_[0].path_)
+	assert.Equal(t, "foo.h", edge.outputs_[1].path_)
 	assert.Equal(t, 1, edge.implicit_outs_)
 }
 
@@ -310,7 +310,7 @@ build foo.o: cc foo.c |@ validate.py
 
 	edge := state.Edges[0]
 	require.Len(t, edge.validations_, 1)
-	assert.Equal(t, "validate.py", edge.validations_[0].Path)
+	assert.Equal(t, "validate.py", edge.validations_[0].path_)
 }
 
 func TestManifestParser_ParseBuild_EdgeVariables(t *testing.T) {
@@ -380,7 +380,7 @@ default foo.o
 
 	// 验证默认目标
 	require.Len(t, state.Defaults, 1)
-	assert.Equal(t, "foo.o", state.Defaults[0].Path)
+	assert.Equal(t, "foo.o", state.Defaults[0].path_)
 }
 
 func TestManifestParser_ParseDefault_Multiple(t *testing.T) {
@@ -401,8 +401,8 @@ default foo.o bar.o
 	require.Equal(t, err, "")
 
 	require.Len(t, state.Defaults, 2)
-	assert.Equal(t, "foo.o", state.Defaults[0].Path)
-	assert.Equal(t, "bar.o", state.Defaults[1].Path)
+	assert.Equal(t, "foo.o", state.Defaults[0].path_)
+	assert.Equal(t, "bar.o", state.Defaults[1].path_)
 }
 
 func TestManifestParser_ParseDefault_UnknownTarget(t *testing.T) {
@@ -692,7 +692,7 @@ default prog
 
 	// 验证默认目标
 	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "prog", state.Defaults[0].Path)
+	assert.Equal(t, "prog", state.Defaults[0].path_)
 }
 
 func TestManifestParser_ParseError_SyntaxError(t *testing.T) {

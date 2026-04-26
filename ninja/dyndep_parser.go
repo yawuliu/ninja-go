@@ -134,10 +134,10 @@ func (p *DyndepParser) parseEdge(err *string) bool {
 	var slash_bits uint64
 	CanonicalizePathString(&path, &slash_bits)
 	node := p.state.LookupNode(path)
-	if node == nil || node.InEdge == nil {
+	if node == nil || node.in_edge() == nil {
 		return p.lexer.Error("no build statement exists for '"+path+"'", err)
 	}
-	edge := node.InEdge
+	edge := node.in_edge()
 
 	// 检查重复
 	if _, ok := (*p.dyndepFile)[edge]; ok {

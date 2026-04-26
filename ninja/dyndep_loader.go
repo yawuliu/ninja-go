@@ -35,11 +35,11 @@ func (l *DyndepLoader) LoadDyndeps(node *Node, err *string) bool {
 // loadDyndeps 内部实现，可传入已有的 DyndepFile 映射
 func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) bool {
 	// 标记不再等待 dyndep
-	node.DyndepPending = false
+	node.dyndep_pending_ = false
 
 	// 记录解释（可选）
 	if l.explanations != nil {
-		l.explanations.Record(node, "loading dyndep log_file_ '%s'", node.Path)
+		l.explanations.Record(node, "loading dyndep log_file_ '%s'", node.path_)
 	}
 
 	// 加载 dyndep 文件
@@ -48,14 +48,14 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 	}
 
 	// 更新所有以该节点作为 dyndep 绑定的边
-	for _, edge := range node.OutEdges {
+	for _, edge := range node.out_edges_ {
 		if edge.dyndep_ != node {
 			continue
 		}
 		dyndeps, ok := (*ddf)[edge]
 		if !ok {
 			*err = fmt.Sprintf("'%s' not mentioned in its dyndep log_file_ '%s'",
-				edge.outputs_[0].Path, node.Path)
+				edge.outputs_[0].path_, node.path_)
 			return false
 		}
 		dyndeps.Used = true
@@ -68,7 +68,7 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 	for edge, dyndeps := range *ddf {
 		if !dyndeps.Used {
 			*err = fmt.Sprintf("dyndep log_file_ '%s' mentions output '%s' whose build statement does not have a dyndep binding for the log_file_",
-				node.Path, edge.outputs_[0].Path)
+				node.path_, edge.outputs_[0].path_)
 			return false
 		}
 	}
@@ -92,8 +92,8 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps, err *string) boo
 
 	// 为每个隐式输出设置产生它的边（如果已经被其他边产生，则报错）
 	for _, out := range dyndeps.ImplicitOutputs {
-		if out.InEdge != nil {
-			*err = fmt.Sprintf("multiple rules generate %s", out.Path)
+		if out.in_edge() != nil {
+			*err = fmt.Sprintf("multiple rules generate %s", out.path_)
 			return false
 		}
 		out.set_in_edge(edge)
@@ -123,5 +123,5 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps, err *string) boo
 // loadDyndepFile 读取文件内容并调用解析器。
 func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile, err *string) bool {
 	parser := NewDyndepParser(l.state, l.diskInterface, ddf)
-	return parser.Load(node.Path, err, nil)
+	return parser.Load(node.path_, err, nil)
 }

@@ -15,7 +15,7 @@ func NewInputsCollector() *InputsCollector {
 
 // 因此，Go 实现应为：
 func (c *InputsCollector) VisitNode(node *Node) {
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		// 源文件，不添加
 		return
@@ -28,7 +28,7 @@ func (c *InputsCollector) VisitNode(node *Node) {
 		c.visitedNodes[input] = true
 		c.VisitNode(input)
 
-		inputEdge := input.InEdge
+		inputEdge := input.in_edge()
 		if !(inputEdge != nil && inputEdge.IsPhony()) {
 			c.inputs = append(c.inputs, input)
 		}
@@ -45,9 +45,9 @@ func (c *InputsCollector) GetInputsAsStrings(shellEscape bool) []string {
 	result := make([]string, len(c.inputs))
 	for i, n := range c.inputs {
 		if shellEscape {
-			result[i] = GetShellEscapedString(n.Path)
+			result[i] = GetShellEscapedString(n.path_)
 		} else {
-			result[i] = n.Path
+			result[i] = n.path_
 		}
 	}
 	return result

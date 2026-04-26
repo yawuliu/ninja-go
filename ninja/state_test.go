@@ -37,13 +37,13 @@ func TestState_AddNode(t *testing.T) {
 	// 添加新节点
 	node1 := state.AddNode("foo.txt", 0)
 	require.NotNil(t, node1)
-	assert.Equal(t, "foo.txt", node1.Path)
+	assert.Equal(t, "foo.txt", node1.path_)
 	assert.Equal(t, 0, node1.id_)
 
 	// 添加另一个节点
 	node2 := state.AddNode("bar.txt", 0)
 	require.NotNil(t, node2)
-	assert.Equal(t, "bar.txt", node2.Path)
+	assert.Equal(t, "bar.txt", node2.path_)
 	assert.Equal(t, 1, node2.id_)
 
 	// 重复添加应该返回已有节点
@@ -63,7 +63,7 @@ func TestState_LookupNode(t *testing.T) {
 	state.AddNode("exists.txt", 0)
 	node = state.LookupNode("exists.txt")
 	assert.NotNil(t, node)
-	assert.Equal(t, "exists.txt", node.Path)
+	assert.Equal(t, "exists.txt", node.path_)
 }
 
 // TestState_GetNodeByID 测试通过 id_ 获取节点
@@ -114,12 +114,12 @@ func TestState_AddIn(t *testing.T) {
 	state.AddIn(edge, "input.c", 0)
 
 	require.Len(t, edge.inputs_, 1)
-	assert.Equal(t, "input.c", edge.inputs_[0].Path)
+	assert.Equal(t, "input.c", edge.inputs_[0].path_)
 
 	// 检查节点的出边
 	node := state.LookupNode("input.c")
 	require.NotNil(t, node)
-	assert.Contains(t, node.OutEdges, edge)
+	assert.Contains(t, node.out_edges_, edge)
 }
 
 // TestState_AddOut 测试添加输出
@@ -132,12 +132,12 @@ func TestState_AddOut(t *testing.T) {
 	require.Equal(t, err, "")
 
 	require.Len(t, edge.outputs_, 1)
-	assert.Equal(t, "output.o", edge.outputs_[0].Path)
+	assert.Equal(t, "output.o", edge.outputs_[0].path_)
 
 	// 检查节点的入边
 	node := state.LookupNode("output.o")
 	require.NotNil(t, node)
-	assert.Equal(t, edge, node.InEdge)
+	assert.Equal(t, edge, node.in_edge())
 }
 
 // TestState_AddOut_Duplicate 测试重复输出
@@ -191,7 +191,7 @@ func TestState_Reset(t *testing.T) {
 	// 创建一些节点和边
 	node := state.AddNode("foo.txt", 0)
 	node.dirty_ = true
-	node.Mtime = 12345
+	node.mtime_ = 12345
 	node.exists_ = 1
 
 	rule := &Rule{Name: "cc"}
@@ -205,7 +205,7 @@ func TestState_Reset(t *testing.T) {
 
 	// 验证状态被重置
 	assert.False(t, node.dirty_)
-	assert.Equal(t, int64(-1), node.Mtime)
+	assert.Equal(t, int64(-1), node.mtime_)
 	assert.Equal(t, int8(-1), node.Exists)
 
 	assert.False(t, edge.outputs_ready_)
@@ -238,7 +238,7 @@ func TestState_RootNodes(t *testing.T) {
 	roots = state.RootNodes(&err)
 	require.Equal(t, err, "")
 	require.Len(t, roots, 1)
-	assert.Equal(t, "c", roots[0].Path)
+	assert.Equal(t, "c", roots[0].path_)
 }
 
 // TestState_RootNodes_Cycle 测试循环依赖的根节点
@@ -276,7 +276,7 @@ func TestState_DefaultNodes(t *testing.T) {
 
 	defaults := state.DefaultNodes(&err)
 	require.Len(t, defaults, 1)
-	assert.Equal(t, "output", defaults[0].Path)
+	assert.Equal(t, "output", defaults[0].path_)
 
 	// 设置默认目标后应该返回默认目标
 	state.AddNode("default_target", 0)
@@ -287,7 +287,7 @@ func TestState_DefaultNodes(t *testing.T) {
 
 	defaults = state.DefaultNodes(&err)
 	require.Len(t, defaults, 1)
-	assert.Equal(t, "default_target", defaults[0].Path)
+	assert.Equal(t, "default_target", defaults[0].path_)
 }
 
 // TestNode_NewNode 测试节点创建
@@ -295,24 +295,24 @@ func TestNode_NewNode(t *testing.T) {
 	node := NewNode("test.txt", 0x1234)
 	require.NotNil(t, node)
 
-	assert.Equal(t, "test.txt", node.Path)
-	assert.Equal(t, uint64(0x1234), node.SlashBits)
-	assert.Equal(t, int64(-1), node.Mtime)
+	assert.Equal(t, "test.txt", node.path_)
+	assert.Equal(t, uint64(0x1234), node.slash_bits_)
+	assert.Equal(t, int64(-1), node.mtime_)
 	assert.Equal(t, int8(-1), node.Exists)
-	assert.True(t, node.GeneratedByDepLoader)
+	assert.True(t, node.generated_by_dep_loader_)
 	assert.Equal(t, -1, node.id_)
 }
 
 // TestNode_ResetState 测试节点状态重置
 func TestNode_ResetState(t *testing.T) {
 	node := NewNode("test.txt", 0)
-	node.Mtime = 12345
+	node.mtime_ = 12345
 	node.exists_ = 1
 	node.dirty_ = true
 
 	node.ResetState()
 
-	assert.Equal(t, int64(-1), node.Mtime)
+	assert.Equal(t, int64(-1), node.mtime_)
 	assert.Equal(t, int8(-1), node.Exists)
 	assert.False(t, node.dirty_)
 }
@@ -323,7 +323,7 @@ func TestNode_MarkMissing(t *testing.T) {
 
 	node.MarkMissing()
 
-	assert.Equal(t, int64(0), node.Mtime)
+	assert.Equal(t, int64(0), node.mtime_)
 	assert.Equal(t, int8(0), node.Exists)
 }
 
@@ -336,15 +336,15 @@ func TestNode_AddOutEdge(t *testing.T) {
 
 	// 添加第一条边
 	node.AddOutEdge(edge1)
-	assert.Len(t, node.OutEdges, 1)
+	assert.Len(t, node.out_edges_, 1)
 
 	// 添加第二条边
 	node.AddOutEdge(edge2)
-	assert.Len(t, node.OutEdges, 2)
+	assert.Len(t, node.out_edges_, 2)
 
 	// 重复添加应该被忽略
 	node.AddOutEdge(edge1)
-	assert.Len(t, node.OutEdges, 2)
+	assert.Len(t, node.out_edges_, 2)
 }
 
 // TestNode_AddValidationOutEdge 测试添加验证出边
@@ -354,7 +354,7 @@ func TestNode_AddValidationOutEdge(t *testing.T) {
 	edge := &Edge{Rule: rule}
 
 	node.AddValidationOutEdge(edge)
-	assert.Len(t, node.ValidationOutEdges, 1)
+	assert.Len(t, node.validation_out_edges_, 1)
 }
 
 // TestNode_IsExists 测试存在性检查
@@ -379,13 +379,13 @@ func TestNode_UpdatePhonyMtime(t *testing.T) {
 
 	// 不存在的节点应该更新时间
 	node.UpdatePhonyMtime(1000)
-	assert.Equal(t, int64(1000), node.Mtime)
+	assert.Equal(t, int64(1000), node.mtime_)
 
 	node.UpdatePhonyMtime(500)
-	assert.Equal(t, int64(1000), node.Mtime) // 应该保持较大值
+	assert.Equal(t, int64(1000), node.mtime_) // 应该保持较大值
 
 	node.UpdatePhonyMtime(2000)
-	assert.Equal(t, int64(2000), node.Mtime)
+	assert.Equal(t, int64(2000), node.mtime_)
 }
 
 // TestEdge_EvaluateCommand 测试命令求值
@@ -396,10 +396,10 @@ func TestEdge_EvaluateCommand(t *testing.T) {
 	edge := &Edge{
 		Rule: rule,
 		inputs_: []*Node{
-			{Path: "foo.c"},
+			{path_: "foo.c"},
 		},
 		outputs_: []*Node{
-			{Path: "foo.o"},
+			{path_: "foo.o"},
 		},
 	}
 
@@ -513,11 +513,11 @@ func TestEdge_AllInputsReady(t *testing.T) {
 	rule := &Rule{Name: "cc"}
 
 	// 创建输入节点和边
-	in1 := &Node{Path: "in1"}
+	in1 := &Node{path_: "in1"}
 	in1Edge := &Edge{Rule: rule, outputs_ready_: true}
-	in1.InEdge = in1Edge
+	in1.in_edge_ = in1Edge
 
-	in2 := &Node{Path: "in2"}
+	in2 := &Node{path_: "in2"}
 	// in2 没有入边（源文件）
 
 	edge := &Edge{
@@ -537,7 +537,7 @@ func TestEdge_AllInputsReady(t *testing.T) {
 func TestEdge_MaybePhonyCycleDiagnostic(t *testing.T) {
 	// 符合诊断条件的边
 	phonyRule := &Rule{Name: "phony"}
-	out := &Node{Path: "out"}
+	out := &Node{path_: "out"}
 	edge := &Edge{
 		Rule:           phonyRule,
 		outputs_:       []*Node{out},
@@ -554,7 +554,7 @@ func TestEdge_MaybePhonyCycleDiagnostic(t *testing.T) {
 	// 多个输出
 	edge3 := &Edge{
 		Rule:     phonyRule,
-		outputs_: []*Node{{Path: "out1"}, {Path: "out2"}},
+		outputs_: []*Node{{path_: "out1"}, {path_: "out2"}},
 	}
 	assert.False(t, edge3.MaybePhonyCycleDiagnostic())
 }

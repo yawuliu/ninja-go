@@ -30,7 +30,7 @@ func (c *CommandCollector) CollectFrom(node *Node) {
 	}
 	c.visitedNodes[node] = true
 
-	edge := node.InEdge
+	edge := node.in_edge()
 	if edge == nil {
 		return
 	}

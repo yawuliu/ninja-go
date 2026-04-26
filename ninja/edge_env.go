@@ -59,7 +59,7 @@ func (e *EdgeEnv) LookupVariable(varName string) string {
 func (e *EdgeEnv) makePathList(nodes []*Node, sep byte) string {
 	var parts []string
 	for _, n := range nodes {
-		path := n.Path // 实际应使用 PathDecanonicalized
+		path := n.path_ // 实际应使用 PathDecanonicalized
 		if e.escapeInOut {
 			// 需要 shell 转义，这里调用 util.EscapeShell
 			if IsWindows() {

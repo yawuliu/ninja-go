@@ -85,7 +85,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, err *string, status Status
 func (n *NinjaMain) ParsePreviousElapsedTimes() {
 	for _, edge := range n.state_.Edges {
 		for _, out := range edge.outputs_ {
-			logEntry := n.build_log_.LookupByOutput(out.Path)
+			logEntry := n.build_log_.LookupByOutput(out.path_)
 			if logEntry == nil {
 				continue // 可能该边的其他输出有记录，继续检查下一个输出
 			}
@@ -115,7 +115,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 	node := n.state_.LookupNode(path)
 	if node != nil {
 		if firstDependent {
-			if len(node.OutEdges) == 0 {
+			if len(node.out_edges_) == 0 {
 				// 没有出边，尝试从 deps log 中查找反向依赖
 				revNode := n.deps_log_.GetFirstReverseDepsNode(node)
 				if revNode == nil {
@@ -124,7 +124,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 				}
 				node = revNode
 			} else {
-				edge := node.OutEdges[0]
+				edge := node.out_edges_[0]
 				if len(edge.outputs_) == 0 {
 					// 不应发生，防御性代码
 					panic("edge has no outputs")
@@ -146,7 +146,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 	} else {
 		suggestion := n.state_.SpellcheckNode(path)
 		if suggestion != nil {
-			*err += fmt.Sprintf(", did you mean '%s'?", suggestion.Path)
+			*err += fmt.Sprintf(", did you mean '%s'?", suggestion.path_)
 		}
 	}
 	return nil
@@ -204,10 +204,10 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 			return 1
 		}
 
-		fmt.Printf("%s:\n", node.Path)
-		if edge := node.InEdge; edge != nil {
+		fmt.Printf("%s:\n", node.path_)
+		if edge := node.in_edge(); edge != nil {
 			// 如果边有挂起的 dyndep 文件，尝试加载
-			if edge.dyndep_ != nil && edge.dyndep_.DyndepPending {
+			if edge.dyndep_ != nil && edge.dyndep_.dyndep_pending_ {
 				if !dyndepLoader.LoadDyndeps(edge.dyndep_, &err) {
 					fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)
 				}
@@ -220,26 +220,26 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 				} else if edge.IsOrderOnly(idx) {
 					label = "|| "
 				}
-				fmt.Printf("    %s%s\n", label, in.Path)
+				fmt.Printf("    %s%s\n", label, in.path_)
 			}
 			if len(edge.validations_) > 0 {
 				fmt.Printf("  validations:\n")
 				for _, v := range edge.validations_ {
-					fmt.Printf("    %s\n", v.Path)
+					fmt.Printf("    %s\n", v.path_)
 				}
 			}
 		}
 		fmt.Printf("  outputs:\n")
-		for _, outEdge := range node.OutEdges {
+		for _, outEdge := range node.out_edges_ {
 			for _, out := range outEdge.outputs_ {
-				fmt.Printf("    %s\n", out.Path)
+				fmt.Printf("    %s\n", out.path_)
 			}
 		}
-		if validationEdges := node.ValidationOutEdges; len(validationEdges) > 0 {
+		if validationEdges := node.validation_out_edges_; len(validationEdges) > 0 {
 			fmt.Printf("  validation for:\n")
 			for _, outEdge := range validationEdges {
 				for _, out := range outEdge.outputs_ {
-					fmt.Printf("    %s\n", out.Path)
+					fmt.Printf("    %s\n", out.path_)
 				}
 			}
 		}
@@ -253,13 +253,13 @@ func ToolTargetsList(nodes []*Node, depth, indent int) {
 		for i := 0; i < indent; i++ {
 			fmt.Print("  ")
 		}
-		if edge := n.InEdge; edge != nil {
-			fmt.Printf("%s: %s\n", n.Path, edge.Rule.Name)
+		if edge := n.in_edge(); edge != nil {
+			fmt.Printf("%s: %s\n", n.path_, edge.Rule.Name)
 			if depth > 1 || depth <= 0 {
 				ToolTargetsList(edge.inputs_, depth-1, indent+1)
 			}
 		} else {
-			fmt.Printf("%s\n", n.Path)
+			fmt.Printf("%s\n", n.path_)
 		}
 	}
 }
@@ -268,8 +268,8 @@ func ToolTargetsList(nodes []*Node, depth, indent int) {
 func ToolTargetsSourceList(state *State) {
 	for _, edge := range state.Edges {
 		for _, in := range edge.inputs_ {
-			if in.InEdge == nil {
-				fmt.Println(in.Path)
+			if in.in_edge() == nil {
+				fmt.Println(in.path_)
 			}
 		}
 	}
@@ -281,7 +281,7 @@ func ToolTargetsListByRule(state *State, ruleName string) {
 	for _, edge := range state.Edges {
 		if edge.Rule.Name == ruleName {
 			for _, out := range edge.outputs_ {
-				outputs[out.Path] = true
+				outputs[out.path_] = true
 			}
 		}
 	}
@@ -294,7 +294,7 @@ func ToolTargetsListByRule(state *State, ruleName string) {
 func ToolTargetsListAll(state *State) {
 	for _, edge := range state.Edges {
 		for _, out := range edge.outputs_ {
-			fmt.Printf("%s: %s\n", out.Path, edge.Rule.Name)
+			fmt.Printf("%s: %s\n", out.path_, edge.Rule.Name)
 		}
 	}
 }
@@ -344,23 +344,23 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 	for _, node := range nodes {
 		deps := n.deps_log_.GetDeps(node)
 		if deps == nil {
-			fmt.Printf("%s: deps not found\n", node.Path)
+			fmt.Printf("%s: deps not found\n", node.path_)
 			continue
 		}
 		var err string
-		mtime := disk.Stat(node.Path, &err)
+		mtime := disk.Stat(node.path_, &err)
 		if err != "" {
 			// 记录错误但继续（与 C++ 中忽略 Stat 错误一致）
-			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.Path, err)
+			fmt.Fprintf(os.Stderr, "ninja: warning: stat %s: %v\n", node.path_, err)
 		}
 		status := "VALID"
 		if mtime == 0 || mtime > deps.GetMtime() {
 			status = "STALE"
 		}
 		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
-			node.Path, deps.GetNodeCount(), deps.GetMtime(), status)
+			node.path_, deps.GetNodeCount(), deps.GetMtime(), status)
 		for _, dep := range deps.GetNodes() {
-			fmt.Printf("    %s\n", dep.Path)
+			fmt.Printf("    %s\n", dep.path_)
 		}
 		fmt.Println()
 	}
@@ -505,7 +505,7 @@ func PrintCommands(edge *Edge, seen map[*Edge]bool, mode PrintCommandMode) {
 
 	if mode == PCM_All {
 		for _, in := range edge.inputs_ {
-			PrintCommands(in.InEdge, seen, mode)
+			PrintCommands(in.in_edge(), seen, mode)
 		}
 	}
 
@@ -541,7 +541,7 @@ options:
 
 	seen := make(map[*Edge]bool)
 	for _, node := range nodes {
-		PrintCommands(node.InEdge, seen, mode)
+		PrintCommands(node.in_edge(), seen, mode)
 	}
 	return 0
 }
@@ -661,7 +661,7 @@ Options:
 		collector.VisitNode(node)
 		inputs := collector.GetInputsAsStrings(false) // 不转义，保持原始路径
 		for _, input := range inputs {
-			fmt.Printf("%s%s%s", node.Path, delimiter, input)
+			fmt.Printf("%s%s%s", node.path_, delimiter, input)
 			if terminator == 0 {
 				fmt.Printf("%c", terminator)
 			} else {
@@ -781,9 +781,9 @@ func PrintCompdbObjectsForEdge(directory string, edge *Edge, evalMode EvaluateCo
 		fmt.Printf("\",\n    \"command\": \"")
 		PrintJSONString(command)
 		fmt.Printf("\",\n    \"file\": \"")
-		PrintJSONString(input.Path)
+		PrintJSONString(input.path_)
 		fmt.Printf("\",\n    \"output\": \"")
-		PrintJSONString(edge.outputs_[0].Path)
+		PrintJSONString(edge.outputs_[0].path_)
 		fmt.Printf("\"\n  }")
 		first = false
 	}
@@ -937,8 +937,8 @@ options:
 				fmt.Fprintf(os.Stderr, "ninja: %v\n", err)
 				return 1
 			}
-			if node.InEdge == nil {
-				fmt.Fprintf(os.Stderr, "ninja: '%s' is not a target (i.e. it is not an output of any `build` statement)\n", node.Path)
+			if node.in_edge() == nil {
+				fmt.Fprintf(os.Stderr, "ninja: '%s' is not a target (i.e. it is not an output of any `build` statement)\n", node.path_)
 				return 1
 			}
 			collector.CollectFrom(node)

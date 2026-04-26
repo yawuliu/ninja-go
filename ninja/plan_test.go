@@ -26,7 +26,7 @@ func TestPlan_Reset(t *testing.T) {
 	// 添加一些状态
 	edge := &Edge{Rule: &Rule{Name: "cc"}}
 	plan.want[edge] = WantToStart
-	plan.targets = append(plan.targets, &Node{Path: "target"})
+	plan.targets = append(plan.targets, &Node{path_: "target"})
 	plan.commandEdges = 5
 	plan.wantedEdges = 10
 
@@ -92,7 +92,7 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 
 	// 标记输入为 dirty 且没有生成边（源文件）
 	inNode.dirty_ = true
-	inNode.GeneratedByDepLoader = false
+	inNode.generated_by_dep_loader_ = false
 	// 标记输出为 dirty 以触发构建检查
 	outNode.dirty_ = true
 
@@ -507,7 +507,7 @@ func TestPlan_AddTarget_DyndepPending(t *testing.T) {
 	edge.outputs_ = []*Node{outNode}
 
 	// 设置 dyndep 待处理（不影响基本测试）
-	outNode.DyndepPending = true
+	outNode.dyndep_pending_ = true
 	outNode.dirty_ = true
 
 	// 添加目标
