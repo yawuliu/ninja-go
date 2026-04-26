@@ -662,8 +662,8 @@ rule cc
 	require.Equal(t, err, "")
 
 	// 版本应该被设置
-	assert.Equal(t, 1, parser.lexer.manifestVersionMajor)
-	assert.Equal(t, 14, parser.lexer.manifestVersionMinor)
+	assert.Equal(t, 1, parser.lexer.manifest_version_major)
+	assert.Equal(t, 14, parser.lexer.manifest_version_minor)
 }
 
 // TestIntegration_BuildDir 测试构建目录

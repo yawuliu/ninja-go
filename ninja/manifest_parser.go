@@ -98,8 +98,8 @@ func (p *ManifestParser) Parse(filename, input string, err *string) bool {
 			if key == "ninja_required_version" {
 				// 解析版本号，设置到 lexer_ 中
 				major, minor := ParseVersion(value)
-				p.lexer.manifestVersionMajor = major
-				p.lexer.manifestVersionMinor = minor
+				p.lexer.manifest_version_major = major
+				p.lexer.manifest_version_minor = minor
 			}
 			p.env.AddBinding(key, value)
 		case INCLUDE, SUBNINJA:

@@ -468,8 +468,8 @@ func TestManifestParser_ParseVersion(t *testing.T) {
 	require.Equal(t, err, "")
 
 	// 验证版本被设置到 lexer_
-	assert.Equal(t, 1, parser.lexer.manifestVersionMajor)
-	assert.Equal(t, 14, parser.lexer.manifestVersionMinor)
+	assert.Equal(t, 1, parser.lexer.manifest_version_major)
+	assert.Equal(t, 14, parser.lexer.manifest_version_minor)
 }
 
 func TestManifestParser_ParseInclude(t *testing.T) {

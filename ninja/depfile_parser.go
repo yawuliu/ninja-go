@@ -35,7 +35,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 		haveNewline := false
 		// out: current output point (typically same as in, but can fall behind as we de-escape backslashes).
 		out := in
-		// filename: start of the current parsed filename.
+		// filename_: start of the current parsed filename_.
 		filename := out
 
 		// Re2c generated scanner (translated to Go using goto)
@@ -335,7 +335,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 
 	yy19:
 		in++
-		// 2N backslashes plus space -> 2N backslashes, end of filename.
+		// 2N backslashes plus space -> 2N backslashes, end of filename_.
 		length = in - start
 		if out < start {
 			for i := 0; i < length-1; i++ {
@@ -430,7 +430,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 		}
 
 		if haveNewline {
-			// A newline ends a rule so the next filename will be a new target.
+			// A newline ends a rule so the next filename_ will be a new target.
 			parsingTargets = true
 			poisonedInput = false
 		}

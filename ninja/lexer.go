@@ -17,8 +17,8 @@ const (
 	INCLUDE
 	INDENT
 	NEWLINE
-	PIPE2
 	PIPE
+	PIPE2
 	PIPEAT
 	POOL
 	RULE
@@ -73,13 +73,13 @@ func TokenErrorHint(expected Token) string {
 }
 
 type Lexer struct {
-	filename              string
-	yyinput               string
-	ofs_                  int
-	lastPos               int
-	manifestVersionMajor  int
-	manifestVersionMinor  int
-	newlineVersionChecked bool
+	filename_                string
+	input_                   string
+	ofs_                     int
+	last_token_              int
+	manifest_version_major   int
+	manifest_version_minor   int
+	newline_version_checked_ bool
 }
 
 func NewLexer(filename, input string) *Lexer {
@@ -89,25 +89,25 @@ func NewLexer(filename, input string) *Lexer {
 }
 
 func (l *Lexer) Start(filename, input string) {
-	l.filename = filename
+	l.filename_ = filename
 	// 添加 null 字节作为终止符，模拟 C 字符串行为
-	l.yyinput = input + "\x00"
+	l.input_ = input + "\x00"
 	l.ofs_ = 0
-	l.lastPos = 0
-	l.manifestVersionMajor = 1
-	l.manifestVersionMinor = 14
-	l.newlineVersionChecked = false
+	l.last_token_ = 0
+	l.manifest_version_major = 1
+	l.manifest_version_minor = 14
+	l.newline_version_checked_ = false
 }
 
 func (l *Lexer) SetManifestVersion(major, minor int) {
-	l.manifestVersionMajor = major
-	l.manifestVersionMinor = minor
+	l.manifest_version_major = major
+	l.manifest_version_minor = minor
 }
 
 func (l *Lexer) Error(message string, err *string) bool {
 	// Compute line and column.
-	input := l.yyinput
-	lastPos := l.lastPos // byte index, -1 if no token yet
+	input := l.input_
+	lastPos := l.last_token_ // byte index, -1 if no token yet
 
 	line := 1
 	lineStart := 0
@@ -123,8 +123,8 @@ func (l *Lexer) Error(message string, err *string) bool {
 		col = lastPos - lineStart
 	}
 
-	// Build error header: "filename:line: message\n"
-	*err = fmt.Sprintf("%s:%d: %s\n", l.filename, line, message)
+	// Build error header: "filename_:line: message\n"
+	*err = fmt.Sprintf("%s:%d: %s\n", l.filename_, line, message)
 
 	// Add context line.
 	const truncateCol = 72
@@ -154,7 +154,7 @@ func (l *Lexer) Error(message string, err *string) bool {
 
 func (l *Lexer) lineColumnOf(offset int) (int, int) {
 	line, col := 1, 1
-	for _, ch := range l.yyinput[:offset] {
+	for _, ch := range l.input_[:offset] {
 		if ch == '\n' {
 			line++
 			col = 1
@@ -166,14 +166,14 @@ func (l *Lexer) lineColumnOf(offset int) (int, int) {
 }
 
 func (l *Lexer) DescribeLastError() string {
-	if l.lastPos < len(l.yyinput) && l.yyinput[l.lastPos] == '\t' {
+	if l.last_token_ < len(l.input_) && l.input_[l.last_token_] == '\t' {
 		return "tabs are not allowed, use spaces"
 	}
 	return "lexing error"
 }
 
 func (l *Lexer) UnreadToken() {
-	l.ofs_ = l.lastPos
+	l.ofs_ = l.last_token_
 }
 
 func (l *Lexer) PeekToken(t Token) bool {
@@ -225,13 +225,13 @@ func (l *Lexer) EatWhitespace() {
 	var marker int
 	for {
 		l.ofs_ = p
-		if p >= len(l.yyinput) {
+		if p >= len(l.input_) {
 			return
 		}
 
 		{
 			var yych byte
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if eyybm[0+yych]&128 != 0 {
 				goto yy59
 			}
@@ -255,7 +255,7 @@ func (l *Lexer) EatWhitespace() {
 			}
 		yy59:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if eyybm[0+yych]&128 != 0 {
 				goto yy59
 			}
@@ -264,7 +264,7 @@ func (l *Lexer) EatWhitespace() {
 			}
 		yy60:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			marker = p
 			if yych == '\n' {
 				goto yy61
@@ -280,7 +280,7 @@ func (l *Lexer) EatWhitespace() {
 			}
 		yy62:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '\n' {
 				goto yy63
 			}
@@ -341,10 +341,10 @@ func (l *Lexer) ReadToken() Token {
 		{
 			var yych byte
 			yyaccept := 0
-			if p >= len(l.yyinput) {
+			if p >= len(l.input_) {
 				goto yy1
 			}
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&32 != 0 {
 				goto yy6
 			}
@@ -457,7 +457,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy5:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '\n' {
 				goto yy20
 			}
@@ -465,7 +465,7 @@ func (l *Lexer) ReadToken() Token {
 		yy6:
 			yyaccept = 0
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			q = p
 			if yyybm[0+yych]&32 != 0 {
 				goto yy6
@@ -490,7 +490,7 @@ func (l *Lexer) ReadToken() Token {
 		yy8:
 			yyaccept = 1
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			q = p
 			if yych <= 0x00 {
 				goto yy3
@@ -498,7 +498,7 @@ func (l *Lexer) ReadToken() Token {
 			goto yy24
 		yy9:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 		yy10:
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
@@ -521,49 +521,49 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy13:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'u' {
 				goto yy25
 			}
 			goto yy10
 		yy14:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'e' {
 				goto yy26
 			}
 			goto yy10
 		yy15:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'n' {
 				goto yy27
 			}
 			goto yy10
 		yy16:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'o' {
 				goto yy28
 			}
 			goto yy10
 		yy17:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'u' {
 				goto yy29
 			}
 			goto yy10
 		yy18:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'u' {
 				goto yy30
 			}
 			goto yy10
 		yy19:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '@' {
 				goto yy31
 			}
@@ -582,7 +582,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy21:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '\n' {
 				goto yy20
 			}
@@ -595,7 +595,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy23:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 		yy24:
 			if yyybm[0+yych]&128 != 0 {
 				goto yy23
@@ -609,42 +609,42 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy25:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'i' {
 				goto yy33
 			}
 			goto yy10
 		yy26:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'f' {
 				goto yy34
 			}
 			goto yy10
 		yy27:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'c' {
 				goto yy35
 			}
 			goto yy10
 		yy28:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'o' {
 				goto yy36
 			}
 			goto yy10
 		yy29:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'l' {
 				goto yy37
 			}
 			goto yy10
 		yy30:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'b' {
 				goto yy38
 			}
@@ -663,70 +663,70 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy33:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'l' {
 				goto yy39
 			}
 			goto yy10
 		yy34:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'a' {
 				goto yy40
 			}
 			goto yy10
 		yy35:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'l' {
 				goto yy41
 			}
 			goto yy10
 		yy36:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'l' {
 				goto yy42
 			}
 			goto yy10
 		yy37:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'e' {
 				goto yy43
 			}
 			goto yy10
 		yy38:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'n' {
 				goto yy44
 			}
 			goto yy10
 		yy39:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'd' {
 				goto yy45
 			}
 			goto yy10
 		yy40:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'u' {
 				goto yy46
 			}
 			goto yy10
 		yy41:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'u' {
 				goto yy47
 			}
 			goto yy10
 		yy42:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -736,7 +736,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy43:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -746,14 +746,14 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy44:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'i' {
 				goto yy48
 			}
 			goto yy10
 		yy45:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -763,49 +763,49 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy46:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'l' {
 				goto yy49
 			}
 			goto yy10
 		yy47:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'd' {
 				goto yy50
 			}
 			goto yy10
 		yy48:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'n' {
 				goto yy51
 			}
 			goto yy10
 		yy49:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 't' {
 				goto yy52
 			}
 			goto yy10
 		yy50:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'e' {
 				goto yy53
 			}
 			goto yy10
 		yy51:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == 'j' {
 				goto yy54
 			}
 			goto yy10
 		yy52:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -815,7 +815,7 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy53:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -825,12 +825,12 @@ func (l *Lexer) ReadToken() Token {
 			}
 		yy54:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych != 'a' {
 				goto yy10
 			}
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yyybm[0+yych]&64 != 0 {
 				goto yy9
 			}
@@ -841,7 +841,7 @@ func (l *Lexer) ReadToken() Token {
 		}
 	}
 
-	l.lastPos = start
+	l.last_token_ = start
 	l.ofs_ = p
 	if token != NEWLINE && token != TEOF {
 		l.EatWhitespace()
@@ -889,38 +889,38 @@ func (l *Lexer) ReadIdent(out *string) bool {
 	var start int
 	for {
 		start = p
-		if p >= len(l.yyinput) {
-			l.lastPos = start
+		if p >= len(l.input_) {
+			l.last_token_ = start
 			return false
 		}
 		{
 			var yych byte
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yybm[0+yych]&128 != 0 {
 				goto yy65
 			}
 			p++
 			{
-				l.lastPos = start
+				l.last_token_ = start
 				return false
 			}
 		yy65:
 			p++
-			if p >= len(l.yyinput) {
-				*out = l.yyinput[start:p]
+			if p >= len(l.input_) {
+				*out = l.input_[start:p]
 				break
 			}
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yybm[0+yych]&128 != 0 {
 				goto yy65
 			}
 			{
-				*out = l.yyinput[start:p]
+				*out = l.input_[start:p]
 				break
 			}
 		}
 	}
-	l.lastPos = start
+	l.last_token_ = start
 	l.ofs_ = p
 	l.EatWhitespace()
 	return true
@@ -971,20 +971,20 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 	var start int
 	for {
 		start = p
-		if p >= len(l.yyinput) {
-			l.lastPos = start
+		if p >= len(l.input_) {
+			l.last_token_ = start
 			return l.Error("unexpected EOF", err)
 		}
 
 		{
 			var yych byte
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&16 != 0 {
 				goto yy68
 			}
 			if yych <= '\r' {
 				if yych <= 0x00 {
-					l.lastPos = start
+					l.last_token_ = start
 					return l.Error("unexpected EOF", err)
 				}
 				if yych <= '\n' {
@@ -1002,12 +1002,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			}
 		yy68:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&16 != 0 {
 				goto yy68
 			}
 			{
-				eval.AddText(l.yyinput[start:p])
+				eval.AddText(l.input_[start:p])
 				continue
 			}
 		yy69:
@@ -1017,26 +1017,26 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 					p = start
 					break
 				} else {
-					if l.yyinput[start] == '\n' {
+					if l.input_[start] == '\n' {
 						break
 					}
-					eval.AddText(l.yyinput[start : start+1])
+					eval.AddText(l.input_[start : start+1])
 					continue
 				}
 			}
 		yy70:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '\n' {
 				goto yy72
 			}
 			{
-				l.lastPos = start
+				l.last_token_ = start
 				return l.Error(l.DescribeLastError(), err)
 			}
 		yy71:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&64 != 0 {
 				goto yy79
 			}
@@ -1092,12 +1092,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			p++
 		yy74:
 			{
-				l.lastPos = start
+				l.last_token_ = start
 				return l.Error("bad $-escape (literal $ must be written as $$)", err)
 			}
 		yy75:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&32 != 0 {
 				goto yy75
 			}
@@ -1106,7 +1106,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			}
 		yy76:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == '\n' {
 				goto yy83
 			}
@@ -1125,12 +1125,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			}
 		yy79:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&64 != 0 {
 				goto yy79
 			}
 			{
-				eval.AddSpecial(l.yyinput[start+1 : p])
+				eval.AddSpecial(l.input_[start+1 : p])
 				continue
 			}
 		yy80:
@@ -1142,20 +1142,20 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 		yy81:
 			p++
 			{
-				if !l.newlineVersionChecked {
-					if (l.manifestVersionMajor < kMinNewlineEscapeVersionMajor) ||
-						(l.manifestVersionMajor == kMinNewlineEscapeVersionMajor &&
-							l.manifestVersionMinor < kMinNewlineEscapeVersionMinor) {
+				if !l.newline_version_checked_ {
+					if (l.manifest_version_major < kMinNewlineEscapeVersionMajor) ||
+						(l.manifest_version_major == kMinNewlineEscapeVersionMajor &&
+							l.manifest_version_minor < kMinNewlineEscapeVersionMinor) {
 						return l.Error("using $^ escape requires specifying 'ninja_required_version' with version greater or equal 1.14", err)
 					}
-					l.newlineVersionChecked = true
+					l.newline_version_checked_ = true
 				}
 				eval.AddText("\n")
 				continue
 			}
 		yy82:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			marker = p
 			if myybm[0+yych]&128 != 0 {
 				goto yy84
@@ -1163,7 +1163,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			goto yy74
 		yy83:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if yych == ' ' {
 				goto yy83
 			}
@@ -1172,7 +1172,7 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 			}
 		yy84:
 			p++
-			yych = l.yyinput[p]
+			yych = l.input_[p]
 			if myybm[0+yych]&128 != 0 {
 				goto yy84
 			}
@@ -1184,12 +1184,12 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 		yy85:
 			p++
 			{
-				eval.AddSpecial(l.yyinput[start+2 : p-1])
+				eval.AddSpecial(l.input_[start+2 : p-1])
 				continue
 			}
 		}
 	}
-	l.lastPos = start
+	l.last_token_ = start
 	l.ofs_ = p
 	if path {
 		l.EatWhitespace()
