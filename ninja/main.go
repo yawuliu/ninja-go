@@ -13,7 +13,7 @@ import (
 var (
 	// 全局调试标志
 	g_metrics                *Metrics
-	g_explaining             bool
+	g_explaining             bool = true
 	g_keep_depfile           bool = false
 	g_keep_rsp               bool = false
 	g_experimental_statcache      = true
@@ -29,10 +29,10 @@ type NinjaMain struct {
 	/// Build configuration set from flags (e.g. parallelism).
 	config_ *BuildConfig
 
-	/// Loaded state (rules, nodes).
+	/// Loaded state_ (rules, nodes).
 	state_ *State
 
-	/// Functions for accessing the disk.
+	/// Functions for accessing the disk_interface_.
 	disk_interface_ FileSystem
 
 	/// The build directory, used for storing the build log etc.
@@ -379,7 +379,7 @@ func (n *NinjaMain) ToolMissingDeps(options *Options, args []string) int {
 
 	disk := NewRealFileSystem()
 	printer := NewPrinter()
-	scanner := NewScanner(printer, n.deps_log_, n.state_, disk)
+	scanner := NewMissingDependencyScanner(printer, n.deps_log_, n.state_, disk)
 
 	for _, node := range nodes {
 		scanner.ProcessNode(node)
@@ -1589,7 +1589,7 @@ func realMain() int {
 			ninja := &NinjaMain{
 				ninja_command_: ninjaCommand,
 				config_:        &config,
-				// 其他字段稍后初始化，但此类工具通常不需要完整 state
+				// 其他字段稍后初始化，但此类工具通常不需要完整 state_
 			}
 			// 调用工具函数，传递剩余参数（工具本身不包含在 remainingArgs 中）
 			return options.tool.f(ninja, options, remainingArgs)
@@ -1691,7 +1691,7 @@ if targets are unspecified, builds the 'default' target (see manual).
 options:
   --version      print ninja version ("%s")
   -v, --verbose  show all command lines while building
-  --quiet        don't show progress status, just command output
+  --quiet        don't show progress status_, just command output
 
   -C DIR   change to DIR before doing anything else
   -f FILE  specify input build file [default=build.ninja]

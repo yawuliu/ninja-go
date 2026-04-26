@@ -103,8 +103,8 @@ func (p *Plan) edgeWanted(edge *Edge) {
 	p.wantedEdges++
 	if !edge.IsPhony() {
 		p.commandEdges++
-		if p.builder != nil && p.builder.status != nil {
-			p.builder.status.EdgeAddedToPlan(edge)
+		if p.builder != nil && p.builder.status_ != nil {
+			p.builder.status_.EdgeAddedToPlan(edge)
 		}
 	}
 }
@@ -333,8 +333,8 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 				p.wantedEdges--
 				if !outEdge.IsPhony() {
 					p.commandEdges--
-					if p.builder != nil && p.builder.status != nil {
-						p.builder.status.EdgeRemovedFromPlan(outEdge)
+					if p.builder != nil && p.builder.status_ != nil {
+						p.builder.status_.EdgeRemovedFromPlan(outEdge)
 					}
 				}
 			}

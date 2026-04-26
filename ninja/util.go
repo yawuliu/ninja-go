@@ -337,7 +337,7 @@ func CanonicalizePathBytes(path []byte, lenPtr *int, slashBits *uint64) {
 			}
 			nextSep = src + idx
 		} else {
-			// Windows: scan for '/' or '\\'
+			// Windows: scan_ for '/' or '\\'
 			nextSep = src
 			for nextSep < end && !isPathSeparator(path[nextSep]) {
 				nextSep++

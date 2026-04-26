@@ -391,7 +391,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 
 	// 如果所有输出都已由其他边生成，则丢弃此边（例如重复定义）
 	if len(edge.outputs_) == 0 {
-		// 从 state 中移除边（简单实现：从切片末尾删除）
+		// 从 state_ 中移除边（简单实现：从切片末尾删除）
 		p.state.Edges = p.state.Edges[:len(p.state.Edges)-1]
 		return true
 	}

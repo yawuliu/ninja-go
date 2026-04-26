@@ -35,7 +35,7 @@ func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*N
 		var stack []*Node
 		var newValidationNodes []*Node
 
-		if !s.recomputeNodeDirty(node, &stack, &newValidationNodes, err) {
+		if !s.RecomputeNodeDirty(node, &stack, &newValidationNodes, err) {
 			return false
 		}
 
@@ -53,7 +53,7 @@ func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*N
 	return true
 }
 
-func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node, err *string) bool {
+func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validationNodes *[]*Node, err *string) bool {
 	edge := node.in_edge()
 	if edge == nil {
 		// If we already visited this leaf node then we are done.
@@ -101,7 +101,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 
 		// If there is a pending dyndep log_file_, visit it now.
 		if edge.dyndep_ != nil && edge.dyndep_.dyndep_pending_ {
-			if !ds.recomputeNodeDirty(edge.dyndep_, stack, validationNodes, err) {
+			if !ds.RecomputeNodeDirty(edge.dyndep_, stack, validationNodes, err) {
 				return false
 			}
 			if edge.dyndep_.in_edge() == nil || edge.dyndep_.in_edge().outputs_ready_ {
@@ -118,7 +118,8 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 				return false
 			}
 			// Failed to load dependency info: rebuild to regenerate it.
-			// LoadDeps() did explanations.Record already, no need to do it here.
+			// LoadDeps() did explanations_.Record already, no need to do it here.
+			dirty = true
 			edge.deps_missing_ = true
 		}
 	}
@@ -126,7 +127,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 	// Visit all inputs before checking if any of them is ready.
 	// Newly encountered edges may load dyndep files and gain outputs that correspond to some of our inputs.
 	for _, i := range edge.inputs_ {
-		if !ds.recomputeNodeDirty(i, stack, validationNodes, err) {
+		if !ds.RecomputeNodeDirty(i, stack, validationNodes, err) {
 			return false
 		}
 	}
@@ -165,14 +166,14 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 		}
 	}
 
-	// We may also be dirty due to output state: missing outputs, out of date outputs, etc.
+	// We may also be dirty due to output state_: missing outputs, out of date outputs, etc.
 	if !dirty {
 		if !ds.RecomputeOutputsDirty(edge, mostRecentInput, &dirty, err) {
 			return false
 		}
 	}
 
-	// Finally, visit each output and update their dirty state if necessary.
+	// Finally, visit each output and update their dirty state_ if necessary.
 	for _, o := range edge.outputs_ {
 		if dirty {
 			o.MarkDirty()
@@ -197,21 +198,21 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 }
 
 type ImplicitDepLoader struct {
-	state                *State
-	depsLog              *DepsLog
-	diskInterface        FileSystem
-	depfileParserOptions *DepfileParserOptions // 可忽略
-	explanations         *Explanations
+	state_                  *State
+	deps_log_               *DepsLog
+	disk_interface_         FileSystem
+	depfile_parser_options_ *DepfileParserOptions // 可忽略
+	explanations_           *Explanations
 }
 
 func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface FileSystem,
 	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *ImplicitDepLoader {
 	return &ImplicitDepLoader{
-		state:                state,
-		depsLog:              depsLog,
-		diskInterface:        disk_interface,
-		depfileParserOptions: depfile_parser_options,
-		explanations:         explanations,
+		state_:                  state,
+		deps_log_:               depsLog,
+		disk_interface_:         disk_interface,
+		depfile_parser_options_: depfile_parser_options,
+		explanations_:           explanations,
 	}
 }
 
@@ -234,23 +235,23 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 	// NOTE: deps are only supported for single-target edges.
 	output := edge.outputs_[0]
 	var deps *Deps
-	if l.depsLog != nil {
-		deps = l.depsLog.GetDeps(output)
+	if l.deps_log_ != nil {
+		deps = l.deps_log_.GetDeps(output)
 	}
 	if deps == nil {
-		l.explanations.Record(output, "deps for '%s' are missing",
+		l.explanations_.Record(output, "deps for '%s' are missing",
 			output.path_)
 		return false
 	}
 
 	// Load the output's mtime if we haven't already.
-	if !output.StatIfNecessary(l.diskInterface, err) {
+	if !output.StatIfNecessary(l.disk_interface_, err) {
 		return false
 	}
 
 	// Deps are invalid if the output is newer than the deps.
 	if output.mtime_ > deps.mtime {
-		l.explanations.Record(output,
+		l.explanations_.Record(output,
 			"stored deps info out of date for '%s' (%d vs %d)",
 			output.path_, deps.mtime, output.mtime_)
 		return false
@@ -273,7 +274,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 
 	// Read depfile content. Treat a missing depfile as empty.
 	var content string
-	status := l.diskInterface.ReadFile(path, &content, err)
+	status := l.disk_interface_.ReadFile(path, &content, err)
 	if status == StatusNotFound {
 		*err = "" // clear error
 	} else if status == StatusOtherError {
@@ -283,11 +284,11 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 
 	firstOutput := edge.outputs_[0]
 	if content == "" {
-		l.explanations.Record(firstOutput, "depfile '%s' is missing", path)
+		l.explanations_.Record(firstOutput, "depfile '%s' is missing", path)
 		return false
 	}
 
-	depfileParser := NewDepfileParser(l.depfileParserOptions)
+	depfileParser := NewDepfileParser(l.depfile_parser_options_)
 	depfileErr := ""
 	if !depfileParser.Parse(content, &depfileErr) {
 		*err = path + ": " + depfileErr
@@ -310,7 +311,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 
 	// Check that this depfile matches the edge_'s output.
 	if firstOutput.path_ != string(canonicalized) {
-		l.explanations.Record(firstOutput,
+		l.explanations_.Record(firstOutput,
 			"expected depfile '%s' to mention '%s', got '%s'",
 			path, firstOutput.path_, string(canonicalized))
 		return false
@@ -348,7 +349,7 @@ func (l *ImplicitDepLoader) ProcessDepfileDeps(edge *Edge, depfileIns []string, 
 		pathBytes := []byte(path)
 		pathBytesLen := len(pathBytes)
 		CanonicalizePathBytes(pathBytes, &pathBytesLen, &slash_bits)
-		node := l.state.GetNode(string(pathBytes), slash_bits)
+		node := l.state_.GetNode(string(pathBytes), slash_bits)
 		// Store the node in the preallocated position.
 		edge.inputs_[startIdx+i] = node
 		node.AddOutEdge(edge)
@@ -497,7 +498,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 			if mostRecentInput != nil && entry.Mtime < mostRecentInput.mtime_ {
 				// May also be dirty due to the mtime in the log being older than the
 				// mtime of the most recent input. This can occur even when the mtime
-				// on disk is newer if a previous run wrote to the output log_file_ but
+				// on disk_interface_ is newer if a previous run wrote to the output log_file_ but
 				// exited with an error or was interrupted. If this was a restat rule,
 				// then we only check the recorded mtime against the most recent input
 				// mtime and ignore the actual output's mtime above.

@@ -55,7 +55,7 @@ type StatusPrinter struct {
 	/// For how many edges we don't know the previous run time?
 	eta_unpredictable_edges_remaining_ int
 
-	/// The custom progress status format to use.
+	/// The custom progress status_ format to use.
 	progress_status_format_ string
 
 	current_rate_ *SlidingRateInfo

@@ -23,6 +23,7 @@ func (e *Explanations) Record(item interface{}, format string, args ...interface
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
+	fmt.Println(msg)
 	e.records[item] = append(e.records[item], msg)
 }
 

@@ -152,7 +152,7 @@ func (d *DepsLog) RecordDeps(node *Node, mtime int64, nodeCount int, nodes []*No
 		return true
 	}
 
-	// Update on-disk representation.
+	// Update on-disk_interface_ representation.
 	size := 4 * (1 + 2 + nodeCount)
 	if size > kMaxRecordSize {
 		// errno = ERANGE (not directly translatable; return false)

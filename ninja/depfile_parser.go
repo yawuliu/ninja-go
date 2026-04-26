@@ -394,7 +394,7 @@ func (p *DepfileParser) Parse(content string, err *string) bool {
 		if len > 0 {
 			isEmpty = false
 			piece := string(b[filename : filename+len])
-			// If we've seen this as an input before, skip it.
+			// If we've seen_ this as an input before, skip it.
 			found := false
 			for _, in := range p.Ins {
 				if in == piece {

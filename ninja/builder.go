@@ -6,20 +6,20 @@ import (
 
 // Builder 主构建器
 type Builder struct {
-	state          *State
-	config         *BuildConfig
-	buildLog       *BuildLog
-	depsLog        *DepsLog
-	running_edges_ map[*Edge]int
-	disk           FileSystem
-	plan           *Plan
-	status         Status
-	exitCode       ExitStatus
-	explanations   *Explanations
-	scan           *DependencyScan
-	commandRunner  CommandRunner
-	lockFilePath   string
-	jobserver_     JobserverClient
+	state_          *State
+	config          *BuildConfig
+	buildLog        *BuildLog
+	depsLog         *DepsLog
+	running_edges_  map[*Edge]int
+	disk            FileSystem
+	plan            *Plan
+	status_         Status
+	exitCode        ExitStatus
+	explanations_   *Explanations
+	scan_           *DependencyScan
+	commandRunner   CommandRunner
+	lock_file_path_ string
+	jobserver_      JobserverClient
 	/// Time the build started.
 	start_time_millis_ int64
 }
@@ -28,34 +28,38 @@ func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 	depsLog *DepsLog, start_time_millis int64,
 	disk_interface FileSystem, status Status) *Builder {
 	b := &Builder{
-		state:              state,
+		state_:             state,
 		config:             config,
 		buildLog:           buildLog,
 		depsLog:            depsLog,
 		disk:               disk_interface,
-		status:             status,
+		status_:            status,
 		start_time_millis_: start_time_millis,
-		lockFilePath:       ".ninja_lock",
+		lock_file_path_:    ".ninja_lock",
 		running_edges_:     make(map[*Edge]int),
 	}
-	b.lockFilePath = ".ninja_lock"
-	build_dir := state.Bindings.LookupVariable("builddir")
-	if build_dir != "" {
-		b.lockFilePath = path.Join(build_dir, b.lockFilePath)
+	if g_explaining {
+		b.explanations_ = NewExplanations()
 	}
+	b.lock_file_path_ = ".ninja_lock"
+	build_dir := b.state_.Bindings.LookupVariable("builddir")
 	b.plan = NewPlan(b)
-	b.scan = NewDependencyScan(state, buildLog, depsLog, disk_interface,
-		config.depfile_parser_options, b.explanations)
+	b.scan_ = NewDependencyScan(state, buildLog, depsLog, disk_interface,
+		config.depfile_parser_options, b.explanations_)
+	if build_dir != "" {
+		b.lock_file_path_ = path.Join(build_dir, b.lock_file_path_)
+	}
+	b.status_.SetExplanations(b.explanations_)
 	return b
 }
 
 func (b *Builder) Destruct() {
 	b.Cleanup()
-	b.status.SetExplanations(nil)
+	b.status_.SetExplanations(nil)
 }
 
 func (b *Builder) AddTargetByName(name string, err *string) *Node {
-	node := b.state.LookupNode(name)
+	node := b.state_.LookupNode(name)
 	if node == nil {
 		*err = "unknown target: '" + name + "'"
 		return nil
@@ -69,7 +73,7 @@ func (b *Builder) AddTargetByName(name string, err *string) *Node {
 
 func (b *Builder) AddTarget(target *Node, err *string) bool {
 	var validationNodes []*Node
-	if !b.scan.RecomputeDirty(target, &validationNodes, err) {
+	if !b.scan_.RecomputeDirty(target, &validationNodes, err) {
 		return false
 	}
 	if edge := target.in_edge(); edge == nil || !edge.outputs_ready_ {
@@ -104,7 +108,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		}
 	}
 
-	b.status.BuildStarted()
+	b.status_.BuildStarted()
 	pendingCommands := 0
 	failuresAllowed := b.config.failures_allowed
 
@@ -121,13 +125,13 @@ func (b *Builder) Build(err *string) ExitStatus {
 				}
 				if !b.StartEdge(edge, err) {
 					b.Cleanup()
-					b.status.BuildFinished()
+					b.status_.BuildFinished()
 					return ExitFailure
 				}
 				if edge.IsPhony() {
 					if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
 						b.Cleanup()
-						b.status.BuildFinished()
+						b.status_.BuildFinished()
 						return ExitFailure
 					}
 				} else {
@@ -144,14 +148,14 @@ func (b *Builder) Build(err *string) ExitStatus {
 			var result CommandResult
 			if !b.commandRunner.WaitForCommand(&result) || result.Status == ExitInterrupted {
 				b.Cleanup()
-				b.status.BuildFinished()
+				b.status_.BuildFinished()
 				*err = "interrupted by user"
 				return result.Status
 			}
 			pendingCommands--
 			if !b.FinishCommand(&result, err) {
 				b.Cleanup()
-				b.status.BuildFinished()
+				b.status_.BuildFinished()
 				return result.Status
 			}
 			if !result.Success() {
@@ -161,7 +165,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		}
 
 		// 无法继续
-		b.status.BuildFinished()
+		b.status_.BuildFinished()
 		if failuresAllowed == 0 {
 			if b.config.failures_allowed > 1 {
 				*err = "subcommands failed"
@@ -174,7 +178,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		return b.exitCode
 	}
 
-	b.status.BuildFinished()
+	b.status_.BuildFinished()
 	return ExitSuccess
 }
 
@@ -188,7 +192,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	start_time_millis := GetTimeMillis() - b.start_time_millis_
 	b.running_edges_[edge] = int(start_time_millis)
 
-	b.status.BuildEdgeStarted(edge, start_time_millis)
+	b.status_.BuildEdgeStarted(edge, start_time_millis)
 
 	var buildStart int64
 	if b.config.dry_run {
@@ -205,8 +209,8 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 			return false
 		}
 		if buildStart == -1 {
-			b.disk.WriteFile(b.lockFilePath, "", false)
-			buildStart = b.disk.Stat(b.lockFilePath, err)
+			b.disk.WriteFile(b.lock_file_path_, "", false)
+			buildStart = b.disk.Stat(b.lock_file_path_, err)
 			if buildStart == -1 {
 				buildStart = 0
 			}
@@ -271,7 +275,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 	}
 	endTimeMillis = GetTimeMillis() - b.start_time_millis_
 
-	b.status.BuildEdgeFinished(edge, startTimeMillis, endTimeMillis, result.Status, result.Output)
+	b.status_.BuildEdgeFinished(edge, startTimeMillis, endTimeMillis, result.Status, result.Output)
 
 	// The rest of this function only applies to successful commands.
 	if !result.Success() {
@@ -302,9 +306,9 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 				}
 				if o.mtime_ == newMtime && restat {
 					// The rule command did not change the output. Propagate the clean
-					// state through the build graph.
+					// state_ through the build graph.
 					// Note that this also applies to nonexistent outputs (mtime == 0).
-					if !b.plan.CleanNode(b.scan, o, err) {
+					if !b.plan.CleanNode(b.scan_, o, err) {
 						return false
 					}
 					nodeCleaned = true
@@ -326,8 +330,8 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		b.disk.RemoveFile(rspfile)
 	}
 
-	if b.scan.buildLog != nil {
-		if !b.scan.buildLog.RecordCommand(edge, int(startTimeMillis), int(endTimeMillis), recordMtime) {
+	if b.scan_.buildLog != nil {
+		if !b.scan_.buildLog.RecordCommand(edge, int(startTimeMillis), int(endTimeMillis), recordMtime) {
 			*err = "Error writing to build log: " // Need to handle errno appropriately
 			return false
 		}
@@ -342,7 +346,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 			if depsMtime == -1 {
 				return false
 			}
-			if !b.scan.depsLog.RecordDeps1(o, depsMtime, depsNodes) {
+			if !b.scan_.depsLog.RecordDeps1(o, depsMtime, depsNodes) {
 				*err = "Error writing to deps log: "
 				return false
 			}
@@ -364,7 +368,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			// all backslashes (as some of the slashes will certainly be backslashes
 			// anyway). This could be fixed if necessary with some additional
 			// complexity in IncludesNormalize::Relativize.
-			*depsNodes = append(*depsNodes, b.state.GetNode(include, ^uint64(0)))
+			*depsNodes = append(*depsNodes, b.state_.GetNode(include, ^uint64(0)))
 		}
 	} else if depsType == "gcc" {
 		depfile := result.Edge.GetUnescapedDepfile()
@@ -397,7 +401,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			pathStr := input
 			slashBits := uint64(0)
 			CanonicalizePathString(&pathStr, &slashBits) // assume helper exists
-			*depsNodes = append(*depsNodes, b.state.GetNode(pathStr, slashBits))
+			*depsNodes = append(*depsNodes, b.state_.GetNode(pathStr, slashBits))
 		}
 
 		if !g_keep_depfile {
@@ -416,11 +420,11 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 func (b *Builder) LoadDyndeps(node *Node, err *string) bool {
 	// 加载 dyndep 信息
 	var ddf DyndepFile
-	if !b.scan.LoadDyndeps2(node, &ddf, err) {
+	if !b.scan_.LoadDyndeps2(node, &ddf, err) {
 		return false
 	}
 	// 更新构建计划
-	if !b.plan.DyndepsLoaded(b.scan, node, ddf, err) {
+	if !b.plan.DyndepsLoaded(b.scan_, node, ddf, err) {
 
 		return false
 	}
@@ -442,7 +446,7 @@ func (b *Builder) Cleanup() {
 				var err string
 				newMtime := b.disk.Stat(out.path_, &err)
 				if newMtime == -1 {
-					b.status.Error("%v", err)
+					b.status_.Error("%v", err)
 				}
 				if depfile != "" || out.mtime_ != newMtime {
 					b.disk.RemoveFile(out.path_)
@@ -456,8 +460,8 @@ func (b *Builder) Cleanup() {
 
 	// 删除锁文件
 	var err string
-	if b.disk.Stat(b.lockFilePath, &err) > 0 {
-		b.disk.RemoveFile(b.lockFilePath)
+	if b.disk.Stat(b.lock_file_path_, &err) > 0 {
+		b.disk.RemoveFile(b.lock_file_path_)
 	}
 }
 
