@@ -6,11 +6,6 @@ import (
 	"sync/atomic"
 )
 
-//// CommandRunner 定义命令执行接口
-//type CommandRunner interface {
-//	Run(edge_ *Edge, expandFunc func(*Edge) (string, error)) error
-//}
-
 // Executor 管理构建任务的并行执行和资源池
 type Executor struct {
 	parallel int

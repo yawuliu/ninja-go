@@ -23,11 +23,6 @@ func NewImplicitSlot() JobserverSlot {
 	return JobserverSlot{value: kImplicitValue}
 }
 
-// NewExplicitSlot 创建显式槽位（值 0-255）
-func NewExplicitSlot(value uint8) JobserverSlot {
-	return JobserverSlot{value: int16(value)}
-}
-
 func (s JobserverSlot) IsValid() bool {
 	return s.value >= 0
 }

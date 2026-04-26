@@ -31,11 +31,6 @@ func Info(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stdout, "ninja: "+msg+"\n", args...)
 }
 
-// IsPathSeparator 判断字符是否为路径分隔符。
-func IsPathSeparator(c byte) bool {
-	return c == '/' || (runtime.GOOS == "windows" && c == '\\')
-}
-
 // GetShellEscapedString 对字符串进行 POSIX shell 转义。
 func GetShellEscapedString(s string) string {
 	if !needsShellEscaping(s) {
@@ -147,18 +142,6 @@ func SpellcheckString(text string, candidates []string) string {
 	return best
 }
 
-// GetProcessorCount 返回逻辑 CPU 数量（考虑 cgroup 限制）。
-func GetProcessorCount() int {
-	if runtime.GOOS == "windows" {
-		// Windows: 使用环境变量或直接读取
-		return runtime.NumCPU()
-	}
-	// Linux/Unix: 尝试从 cgroup 读取限制，否则使用 runtime.NumCPU()
-	cpus := runtime.NumCPU()
-	// 简单实现，完整 cgroup 解析需更多代码，此处略
-	return cpus
-}
-
 // GetLoadAverage 返回系统负载平均值（仅 Unix，Windows 返回 -1）。
 func GetLoadAverage() float64 {
 	if runtime.GOOS == "windows" {
@@ -166,15 +149,6 @@ func GetLoadAverage() float64 {
 	}
 	// 使用 /proc/loadavg 或 getloadavg，这里简化
 	return -1.0
-}
-
-// GetWorkingDirectory 返回当前工作目录的绝对路径。
-func GetWorkingDirectory() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		Fatal("cannot determine working directory: %v", err)
-	}
-	return wd
 }
 
 // Truncate 将文件截断到指定大小。
@@ -194,16 +168,6 @@ func ReplaceContent(dst, src string, err *string) bool {
 	}
 	return true
 }
-
-//// EditDistance 计算两个字符串的编辑距离（Levenshtein）。
-//func EditDistance(a, b string, allowReplacements bool, maxDist int) int {
-//	// 简单实现，可参考标准库或自己实现
-//	// 为节省篇幅，这里返回 0 表示未实现，实际应实现算法
-//	// 建议使用 github.com/agext/levenshtein 或自己写
-//	_ = allowReplacements
-//	_ = maxDist
-//	return 0
-//}
 
 // DirName 返回路径的目录名，与 C++ 版本行为一致：
 // 找到最后一个路径分隔符，然后向前跳过连续的分隔符，返回之前的子串。
@@ -229,13 +193,6 @@ func DirName(path string) string {
 		lastSep--
 	}
 	return path[:lastSep]
-}
-
-// MakeDir 创建单级目录，权限为 0777（Unix）或默认（Windows）。
-// 注意：此函数不会递归创建父目录，需要调用者确保父目录存在。
-// 返回值与 C++ 的 mkdir/_mkdir 一致：成功返回 0，失败返回 -1（并设置 errno）。
-func MakeDir(path string) error {
-	return os.Mkdir(path, 0755)
 }
 
 // PathDecanonicalized 根据 slash_bits 位掩码将路径中的正斜杠恢复为反斜杠（仅 Windows）。
