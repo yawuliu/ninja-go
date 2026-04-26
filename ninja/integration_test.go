@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -35,30 +36,32 @@ func (m *mockFSIntegration) Touch(path string) {
 	m.nextMtime++
 }
 
-func (m *mockFSIntegration) ReadFile(path string) ([]byte, error) {
+func (m *mockFSIntegration) ReadFile(path string, contents *string, err *string) FileReaderStatus {
 	if content, ok := m.files[path]; ok {
-		return []byte(content), nil
+		*contents = content
+		return 0
 	}
-	return nil, os.ErrNotExist
+	*err = fmt.Sprintf("no such file or directory: %s", path)
+	return 1
 }
 
-func (m *mockFSIntegration) WriteFile(path string, data []byte, perm os.FileMode) error {
-	m.files[path] = string(data)
+func (m *mockFSIntegration) WriteFile(path string, contents string, crlf_on_windows bool) bool {
+	m.files[path] = contents
 	m.mtimes[path] = m.nextMtime
 	m.nextMtime++
-	return nil
+	return true
 }
 
 func (m *mockFSIntegration) Exists(path string) bool {
 	_, ok := m.files[path]
 	return ok
 }
-
-func (m *mockFSIntegration) Stat(path string) (os.FileInfo, error) {
+func (m *mockFSIntegration) Stat(path string, err *string) int64 {
 	if _, ok := m.files[path]; ok {
-		return &mockFileInfo{name: path, size: int64(len(m.files[path])), mtime: m.mtimes[path]}, nil
+		return m.mtimes[path] // &mockFileInfo{name: path, size: int64(len(m.files[path])), mtime: }, nil
 	}
-	return nil, os.ErrNotExist
+	*err = fmt.Sprintf("%s not found", path)
+	return -1
 }
 
 func (m *mockFSIntegration) Open(name string) (File, error) {
@@ -73,17 +76,17 @@ func (m *mockFSIntegration) Truncate(name string, size int64) error {
 	return nil
 }
 
-func (m *mockFSIntegration) Remove(path string) error {
+func (m *mockFSIntegration) MakeDir(path string) bool {
+	return true
+}
+
+func (m *mockFSIntegration) RemoveFile(path string) int {
 	delete(m.files, path)
-	return nil
+	return 0
 }
 
-func (m *mockFSIntegration) MkdirAll(path string, perm os.FileMode) error {
-	return nil
-}
-
-func (m *mockFSIntegration) MakeDirs(path string) error {
-	return nil
+func (m *mockFSIntegration) MakeDirs(path string) bool {
+	return true
 }
 
 func (m *mockFSIntegration) AllowStatCache(allow bool) bool {
