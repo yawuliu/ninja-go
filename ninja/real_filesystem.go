@@ -26,7 +26,7 @@ func (fs *RealFileSystem) areLongPathsEnabled() bool {
 
 func (r *RealFileSystem) Stat(path string, err *string) int64 {
 	if runtime.GOOS == "windows" {
-		// MSDN: "Naming Files, Paths, and Namespaces"
+		// MSDN: "Naming Files, paths_, and Namespaces"
 		const MAX_PATH = 260
 		if path != "" && !r.areLongPathsEnabled() && path[0] != '\\' && len(path) > MAX_PATH {
 			*err = "Stat(" + path + "): Filename longer than " + string(rune(MAX_PATH)) + " characters"

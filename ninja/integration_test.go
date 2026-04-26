@@ -124,9 +124,9 @@ build foo.o: cc foo.c
 	require.Equal(t, err, "")
 
 	// 验证图结构
-	require.Len(t, state.Edges, 1)
-	edge := state.Edges[0]
-	assert.Equal(t, "cc", edge.Rule.Name)
+	require.Len(t, state.edges_, 1)
+	edge := state.edges_[0]
+	assert.Equal(t, "cc", edge.rule_.Name)
 	assert.Len(t, edge.inputs_, 1)
 	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	assert.Len(t, edge.outputs_, 1)
@@ -158,12 +158,12 @@ build prog: link main.o util.o
 	require.Equal(t, err, "")
 
 	// 验证边数量
-	require.Len(t, state.Edges, 3)
+	require.Len(t, state.edges_, 3)
 
 	// 找到 link 边
 	var linkEdge *Edge
-	for _, e := range state.Edges {
-		if e.Rule.Name == "link" {
+	for _, e := range state.edges_ {
+		if e.rule_.Name == "link" {
 			linkEdge = e
 			break
 		}
@@ -194,7 +194,7 @@ build foo.o: cc foo.c | foo.h
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	assert.Len(t, edge.inputs_, 2)
 	assert.Equal(t, 1, edge.implicit_deps_)
 	assert.Equal(t, "foo.h", edge.inputs_[1].path_)
@@ -219,7 +219,7 @@ build foo.o: cc foo.c || stamp
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	assert.Len(t, edge.inputs_, 2)
 	assert.Equal(t, 1, edge.order_only_deps_)
 	assert.True(t, edge.is_order_only(1))
@@ -246,11 +246,11 @@ build foo.o: cc foo.c
 	require.Equal(t, err, "")
 
 	// 验证全局变量
-	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
-	assert.Equal(t, "-O2", state.Bindings.LookupVariable("cflags"))
+	assert.Equal(t, "gcc", state.bindings_.LookupVariable("cc"))
+	assert.Equal(t, "-O2", state.bindings_.LookupVariable("cflags"))
 
 	// 验证边特定变量
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	cmd := edge.EvaluateCommand(false)
 	// 边特定的 cflags=-O3 应该覆盖全局的 -O2
 	assert.Contains(t, cmd, "gcc")
@@ -278,8 +278,8 @@ default all
 	require.Equal(t, err, "")
 
 	// 验证默认目标
-	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "all", state.Defaults[0].path_)
+	assert.Len(t, state.defaults_, 1)
+	assert.Equal(t, "all", state.defaults_[0].path_)
 }
 
 // TestIntegration_PoolUsage 测试池使用
@@ -302,10 +302,10 @@ build prog: link foo.o
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
-	assert.NotNil(t, edge.Pool)
-	assert.Equal(t, "link_pool", edge.Pool.Name)
-	assert.Equal(t, 2, edge.Pool.Depth)
+	edge := state.edges_[0]
+	assert.NotNil(t, edge.pool_)
+	assert.Equal(t, "link_pool", edge.pool_.Name)
+	assert.Equal(t, 2, edge.pool_.Depth)
 }
 
 // TestIntegration_Rspfile 测试响应文件
@@ -326,7 +326,7 @@ build prog: link foo.o bar.o baz.o
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	rspfile := edge.GetUnescapedRspfile()
 	assert.Equal(t, "prog.rsp", rspfile)
 
@@ -355,7 +355,7 @@ build foo.o: cc foo.c foo.o.dd
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	dyndep := edge.GetUnescapedDyndep()
 	assert.Equal(t, "foo.o.dd", dyndep)
 
@@ -383,8 +383,8 @@ build all: phony foo.o
 
 	// 找到 phony 边
 	var phonyEdge *Edge
-	for _, e := range state.Edges {
-		if e.Rule.Name == "phony" {
+	for _, e := range state.edges_ {
+		if e.rule_.Name == "phony" {
 			phonyEdge = e
 			break
 		}
@@ -431,11 +431,11 @@ default myapp
 	require.Equal(t, err, "")
 
 	// 验证边数量
-	assert.GreaterOrEqual(t, len(state.Edges), 4)
+	assert.GreaterOrEqual(t, len(state.edges_), 4)
 
 	// 验证默认目标
-	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "myapp", state.Defaults[0].path_)
+	assert.Len(t, state.defaults_, 1)
+	assert.Equal(t, "myapp", state.defaults_[0].path_)
 }
 
 // TestIntegration_PathCanonicalization 测试路径规范化
@@ -479,7 +479,7 @@ build foo.o: cc foo.c |@ check.py
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	assert.Len(t, edge.validations_, 1)
 	assert.Equal(t, "check.py", edge.validations_[0].path_)
 }
@@ -499,7 +499,7 @@ rule cc
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	rule := state.Bindings.LookupRule("cc")
+	rule := state.bindings_.LookupRule("cc")
 	desc := rule.GetBinding("description")
 	require.NotNil(t, desc)
 	assert.Equal(t, "CC $out", desc.Unparse())
@@ -522,7 +522,7 @@ build config.h: gen config.in
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	rule := state.Bindings.LookupRule("gen")
+	rule := state.bindings_.LookupRule("gen")
 	generator := rule.GetBinding("generator")
 	require.NotNil(t, generator)
 }
@@ -544,7 +544,7 @@ build stamp.txt: stamp always
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	rule := state.Bindings.LookupRule("stamp")
+	rule := state.bindings_.LookupRule("stamp")
 	restat := rule.GetBinding("restat")
 	require.NotNil(t, restat)
 }
@@ -565,7 +565,7 @@ build parser.cc parser.h: bison parser.yy
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	assert.Len(t, edge.outputs_, 2)
 	assert.Equal(t, "parser.cc", edge.outputs_[0].path_)
 	assert.Equal(t, "parser.h", edge.outputs_[1].path_)
@@ -585,7 +585,7 @@ rule echo
 	parser.ParseTest(manifest, &err)
 	require.Equal(t, err, "")
 
-	rule := state.Bindings.LookupRule("echo")
+	rule := state.bindings_.LookupRule("echo")
 	cmd := rule.GetBinding("command")
 	require.NotNil(t, cmd)
 	// $$ 应该被解析为 $
@@ -615,7 +615,7 @@ default foo.o
 	require.Equal(t, err, "")
 
 	// 应该正确解析
-	assert.Len(t, state.Edges, 1)
+	assert.Len(t, state.edges_, 1)
 }
 
 // TestIntegration_Comments 测试注释
@@ -639,7 +639,7 @@ build foo.o: cc foo.c
 	require.Equal(t, err, "")
 
 	// 注释应该被正确处理
-	assert.Len(t, state.Edges, 1)
+	assert.Len(t, state.edges_, 1)
 }
 
 // TestIntegration_NinjaRequiredVersion 测试版本要求
@@ -708,7 +708,7 @@ global_var = after
 	require.Equal(t, err, "")
 
 	// subninja 中的变量不应该影响父级
-	assert.Equal(t, "", state.Bindings.LookupVariable("local_var"))
+	assert.Equal(t, "", state.bindings_.LookupVariable("local_var"))
 }
 
 // TestIntegration_IncludeSharing 测试 include 作用域共享
@@ -731,7 +731,7 @@ rule cc
 	require.Equal(t, err, "")
 
 	// include 中的变量应该可用
-	assert.Equal(t, "shared", state.Bindings.LookupVariable("common_var"))
+	assert.Equal(t, "shared", state.bindings_.LookupVariable("common_var"))
 }
 
 // TestIntegration_ConcurrentBuild 测试并发构建准备
@@ -753,7 +753,7 @@ build c.o: cc c.c
 	require.Equal(t, err, "")
 
 	// 所有边应该是独立的（没有依赖关系）
-	for _, edge := range state.Edges {
+	for _, edge := range state.edges_ {
 		// 每个边只有一个输入（源文件）
 		assert.Len(t, edge.inputs_, 1)
 		// 每个边只有一个输出
@@ -786,19 +786,19 @@ build final.out: finalize step2.out
 	require.Equal(t, err, "")
 
 	// 验证依赖链
-	require.Len(t, state.Edges, 3)
+	require.Len(t, state.edges_, 3)
 
 	// step2 依赖于 step1
 	step2 := state.LookupNode("step2.out")
 	require.NotNil(t, step2)
 	require.NotNil(t, step2.in_edge())
-	assert.Equal(t, "process", step2.in_edge().Rule.Name)
+	assert.Equal(t, "process", step2.in_edge().rule_.Name)
 
 	// final 依赖于 step2
 	final := state.LookupNode("final.out")
 	require.NotNil(t, final)
 	require.NotNil(t, final.in_edge())
-	assert.Equal(t, "finalize", final.in_edge().Rule.Name)
+	assert.Equal(t, "finalize", final.in_edge().rule_.Name)
 }
 
 // TestIntegration_CircularDependency 测试循环依赖检测
@@ -821,5 +821,5 @@ build b.o: cc a.o
 	require.Equal(t, err, "")
 
 	// 验证两条边都被创建
-	assert.Len(t, state.Edges, 2)
+	assert.Len(t, state.edges_, 2)
 }

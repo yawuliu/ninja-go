@@ -127,9 +127,9 @@ func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
 	directlyWanted := e != WantNothing
 
 	if directlyWanted {
-		edge.Pool.EdgeFinished(edge)
+		edge.pool_.EdgeFinished(edge)
 	}
-	edge.Pool.RetrieveReadyEdges(p.ready)
+	edge.pool_.RetrieveReadyEdges(p.ready)
 
 	if result != EdgeSucceeded {
 		return true
@@ -189,7 +189,7 @@ func (p *Plan) scheduleWork(edge *Edge) {
 		return
 	}
 	p.want[edge] = WantToFinish
-	pool := edge.Pool
+	pool := edge.pool_
 	if pool.ShouldDelayEdge() {
 		pool.DelayEdge(edge)
 		pool.RetrieveReadyEdges(p.ready)
@@ -256,7 +256,7 @@ func (p *Plan) scheduleInitialEdges() {
 	pools := make(map[*Pool]bool)
 	for edge, want := range p.want {
 		if want == WantToStart && edge.AllInputsReady() {
-			pool := edge.Pool
+			pool := edge.pool_
 			if pool.ShouldDelayEdge() {
 				pool.DelayEdge(edge)
 				pools[pool] = true

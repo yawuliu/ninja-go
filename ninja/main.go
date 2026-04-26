@@ -83,7 +83,7 @@ func (n *NinjaMain) RebuildManifest(inputFile string, err *string, status Status
 
 // ParsePreviousElapsedTimes 从构建日志中加载每条边上次构建的耗时，用于 ETA 预测。
 func (n *NinjaMain) ParsePreviousElapsedTimes() {
-	for _, edge := range n.state_.Edges {
+	for _, edge := range n.state_.edges_ {
 		for _, out := range edge.outputs_ {
 			logEntry := n.build_log_.LookupByOutput(out.path_)
 			if logEntry == nil {
@@ -116,7 +116,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 	if node != nil {
 		if firstDependent {
 			if len(node.out_edges_) == 0 {
-				// 没有出边，尝试从 deps log 中查找反向依赖
+				// 没有出边，尝试从 deps_ log 中查找反向依赖
 				revNode := n.deps_log_.GetFirstReverseDepsNode(node)
 				if revNode == nil {
 					*err = "'" + path + "' has no out edge_"
@@ -212,7 +212,7 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 					fmt.Fprintf(os.Stderr, "ninja: warning: %v\n", err)
 				}
 			}
-			fmt.Printf("  input: %s\n", edge.Rule.Name)
+			fmt.Printf("  input: %s\n", edge.rule_.Name)
 			for idx, in := range edge.inputs_ {
 				label := ""
 				if edge.IsImplicit(idx) {
@@ -254,7 +254,7 @@ func ToolTargetsList(nodes []*Node, depth, indent int) {
 			fmt.Print("  ")
 		}
 		if edge := n.in_edge(); edge != nil {
-			fmt.Printf("%s: %s\n", n.path_, edge.Rule.Name)
+			fmt.Printf("%s: %s\n", n.path_, edge.rule_.Name)
 			if depth > 1 || depth <= 0 {
 				ToolTargetsList(edge.inputs_, depth-1, indent+1)
 			}
@@ -266,7 +266,7 @@ func ToolTargetsList(nodes []*Node, depth, indent int) {
 
 // ToolTargetsSourceList 打印所有源文件（没有入边的节点）。
 func ToolTargetsSourceList(state *State) {
-	for _, edge := range state.Edges {
+	for _, edge := range state.edges_ {
 		for _, in := range edge.inputs_ {
 			if in.in_edge() == nil {
 				fmt.Println(in.path_)
@@ -278,8 +278,8 @@ func ToolTargetsSourceList(state *State) {
 // ToolTargetsListByRule 打印指定规则生成的所有输出。
 func ToolTargetsListByRule(state *State, ruleName string) {
 	outputs := make(map[string]bool)
-	for _, edge := range state.Edges {
-		if edge.Rule.Name == ruleName {
+	for _, edge := range state.edges_ {
+		if edge.rule_.Name == ruleName {
 			for _, out := range edge.outputs_ {
 				outputs[out.path_] = true
 			}
@@ -292,9 +292,9 @@ func ToolTargetsListByRule(state *State, ruleName string) {
 
 // ToolTargetsListAll 打印所有输出及其所属规则。
 func ToolTargetsListAll(state *State) {
-	for _, edge := range state.Edges {
+	for _, edge := range state.edges_ {
 		for _, out := range edge.outputs_ {
-			fmt.Printf("%s: %s\n", out.path_, edge.Rule.Name)
+			fmt.Printf("%s: %s\n", out.path_, edge.rule_.Name)
 		}
 	}
 }
@@ -326,7 +326,7 @@ func (n *NinjaMain) ToolMSVC(options *Options, args []string) int {
 func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 	var nodes []*Node
 	if len(args) == 0 {
-		// 遍历 deps log 中的所有节点，只保留存活的条目
+		// 遍历 deps_ log 中的所有节点，只保留存活的条目
 		for _, node := range n.deps_log_.Nodes() {
 			if IsDepsEntryLiveFor(node) {
 				nodes = append(nodes, node)
@@ -344,7 +344,7 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 	for _, node := range nodes {
 		deps := n.deps_log_.GetDeps(node)
 		if deps == nil {
-			fmt.Printf("%s: deps not found\n", node.path_)
+			fmt.Printf("%s: deps_ not found\n", node.path_)
 			continue
 		}
 		var err string
@@ -357,7 +357,7 @@ func (n *NinjaMain) ToolDeps(options *Options, args []string) int {
 		if mtime == 0 || mtime > deps.GetMtime() {
 			status = "STALE"
 		}
-		fmt.Printf("%s: #deps %d, deps mtime %d (%s)\n",
+		fmt.Printf("%s: #deps_ %d, deps_ mtime %d (%s)\n",
 			node.path_, deps.GetNodeCount(), deps.GetMtime(), status)
 		for _, dep := range deps.GetNodes() {
 			fmt.Printf("    %s\n", dep.path_)
@@ -458,7 +458,7 @@ options:
 	}
 	// 忽略位置参数（通常没有）
 
-	rules := n.state_.Bindings.GetRules()
+	rules := n.state_.bindings_.GetRules()
 	for name, rule := range rules {
 		fmt.Print(name)
 		if printDescription {
@@ -817,7 +817,7 @@ options:
 
 	fmt.Print("[")
 	first := true
-	for _, edge := range n.state_.Edges {
+	for _, edge := range n.state_.edges_ {
 		if len(edge.inputs_) == 0 {
 			continue
 		}
@@ -829,7 +829,7 @@ options:
 			first = false
 		} else {
 			for _, ruleName := range rules {
-				if edge.Rule.Name == ruleName {
+				if edge.rule_.Name == ruleName {
 					if !first {
 						fmt.Print(",")
 					}
@@ -1059,8 +1059,8 @@ var kTools = []Tool{
 	{"commands", "list all commands required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolCommands},
 	{"inputs", "list all inputs required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolInputs},
 	{"multi-inputs", "print one or more sets of inputs required to build targets", RUN_AFTER_LOAD, (*NinjaMain).ToolMultiInputs},
-	{"deps", "show dependencies stored in the deps log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
-	{"missingdeps", "check deps log dependencies on generated files", RUN_AFTER_LOGS, (*NinjaMain).ToolMissingDeps},
+	{"deps_", "show dependencies stored in the deps_ log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
+	{"missingdeps", "check deps_ log dependencies on generated files", RUN_AFTER_LOGS, (*NinjaMain).ToolMissingDeps},
 	{"graph", "output graphviz dot file for targets", RUN_AFTER_LOAD, (*NinjaMain).ToolGraph},
 	{"query", "show inputs/outputs for a path", RUN_AFTER_LOGS, (*NinjaMain).ToolQuery},
 	{"targets", "list targets by their rule or depth in the DAG", RUN_AFTER_LOAD, (*NinjaMain).ToolTargets},
@@ -1230,7 +1230,7 @@ func (n *NinjaMain) OpenDepsLog(recompactOnly bool) bool {
 	var err string
 	status := n.deps_log_.Load(path, n.state_, &err) // path,
 	if status == LOAD_ERROR {
-		fmt.Printf("loading deps log %s: %s", path, err)
+		fmt.Printf("loading deps_ log %s: %s", path, err)
 		return false
 	}
 	if err != "" {
@@ -1253,7 +1253,7 @@ func (n *NinjaMain) OpenDepsLog(recompactOnly bool) bool {
 
 	if !n.config_.GetDryRun() {
 		if !n.deps_log_.OpenForWrite(path, &err) {
-			fmt.Fprintf(os.Stderr, "ninja: opening deps log: %v\n", err)
+			fmt.Fprintf(os.Stderr, "ninja: opening deps_ log: %v\n", err)
 			return false
 		}
 	}
@@ -1268,12 +1268,12 @@ func (n *NinjaMain) DumpMetrics() {
 	fmt.Println()
 	// Go 的 map 没有 bucket_count 方法，仅输出条目数。
 	fmt.Printf("path->node hash load %.2f (%d entries)\n",
-		float64(len(n.state_.Paths)), len(n.state_.Paths))
+		float64(len(n.state_.paths_)), len(n.state_.paths_))
 }
 
 // EnsureBuildDirExists 确保构建目录存在，若需要则创建它。
 func (n *NinjaMain) EnsureBuildDirExists() bool {
-	n.build_dir_ = n.state_.Bindings.LookupVariable("builddir")
+	n.build_dir_ = n.state_.bindings_.LookupVariable("builddir")
 	if n.build_dir_ != "" && !n.config_.GetDryRun() {
 		// 创建目录（如果不存在）
 		if err := os.MkdirAll(n.build_dir_, 0755); err != nil && !os.IsExist(err) {

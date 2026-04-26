@@ -120,7 +120,7 @@ func (c *Cleaner) CleanAll(generator bool) int {
 	c.Reset()
 	c.PrintHeader()
 	c.LoadDyndeps()
-	for _, edge := range c.state.Edges {
+	for _, edge := range c.state.edges_ {
 		if edge.IsPhony() {
 			continue
 		}
@@ -212,8 +212,8 @@ func (c *Cleaner) CleanTargets(targetNames []string) int {
 
 // DoCleanRule 清理指定规则生成的所有输出。
 func (c *Cleaner) DoCleanRule(rule *Rule) {
-	for _, edge := range c.state.Edges {
-		if edge.Rule.Name == rule.Name {
+	for _, edge := range c.state.edges_ {
+		if edge.rule_.Name == rule.Name {
 			for _, out := range edge.outputs_ {
 				c.Remove(out.path_)
 				c.RemoveEdgeFiles(edge)
@@ -234,7 +234,7 @@ func (c *Cleaner) CleanRule(rule *Rule) int {
 
 // CleanRuleByName 按规则名清理。
 func (c *Cleaner) CleanRuleByName(ruleName string) int {
-	rule := c.state.Bindings.LookupRule(ruleName)
+	rule := c.state.bindings_.LookupRule(ruleName)
 	if rule == nil {
 		fmt.Fprintf(os.Stderr, "ninja: unknown rule '%s'\n", ruleName)
 		return 1
@@ -248,14 +248,14 @@ func (c *Cleaner) CleanRules(ruleNames []string) int {
 	c.PrintHeader()
 	c.LoadDyndeps()
 	for _, name := range ruleNames {
-		rule := c.state.Bindings.LookupRule(name)
+		rule := c.state.bindings_.LookupRule(name)
 		if rule == nil {
 			fmt.Fprintf(os.Stderr, "ninja: unknown rule '%s'\n", name)
 			c.status = 1
 			continue
 		}
 		if c.IsVerbose() {
-			fmt.Printf("Rule %s\n", name)
+			fmt.Printf("rule_ %s\n", name)
 		}
 		c.DoCleanRule(rule)
 	}
@@ -273,7 +273,7 @@ func (c *Cleaner) Reset() {
 
 // LoadDyndeps 加载所有挂起的 dyndep 文件（忽略错误）。
 func (c *Cleaner) LoadDyndeps() {
-	for _, edge := range c.state.Edges {
+	for _, edge := range c.state.edges_ {
 		if dyndepNode := edge.dyndep_; dyndepNode != nil && dyndepNode.dyndep_pending_ {
 			// 忽略错误，尽可能清理
 			var err string

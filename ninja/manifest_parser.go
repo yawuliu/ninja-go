@@ -42,7 +42,7 @@ func NewManifestParser(state *State, file_reader FileSystem, options ManifestPar
 	m.lexer = &Lexer{}
 	m.options = options
 	m.quiet = false
-	m.env = state.Bindings
+	m.env = state.bindings_
 	return m
 }
 
@@ -373,7 +373,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 		if pool == nil {
 			return p.lexer.Error("unknown pool name '"+poolName+"'", err)
 		}
-		edge.Pool = pool
+		edge.pool_ = pool
 	}
 
 	// 13. 添加输出节点
@@ -392,7 +392,7 @@ func (p *ManifestParser) ParseEdge(err *string) bool {
 	// 如果所有输出都已由其他边生成，则丢弃此边（例如重复定义）
 	if len(edge.outputs_) == 0 {
 		// 从 state_ 中移除边（简单实现：从切片末尾删除）
-		p.state.Edges = p.state.Edges[:len(p.state.Edges)-1]
+		p.state.edges_ = p.state.edges_[:len(p.state.edges_)-1]
 		return true
 	}
 	edge.implicit_outs_ = implicitOuts

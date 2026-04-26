@@ -64,10 +64,10 @@ func (g *GraphViz) AddTarget(node *Node) {
 	if len(edge.inputs_) == 1 && len(edge.outputs_) == 1 {
 		// 简单单输入单输出边
 		fmt.Printf("\"%p\" -> \"%p\" [label=\" %s\"]\n",
-			edge.inputs_[0], edge.outputs_[0], edge.Rule.Name)
+			edge.inputs_[0], edge.outputs_[0], edge.rule_.Name)
 	} else {
 		// 复杂边：创建一个椭圆节点表示规则，然后连接输入和输出
-		fmt.Printf("\"%p\" [label=\"%s\", shape=ellipse]\n", edge, edge.Rule.Name)
+		fmt.Printf("\"%p\" [label=\"%s\", shape=ellipse]\n", edge, edge.rule_.Name)
 		for _, out := range edge.outputs_ {
 			fmt.Printf("\"%p\" -> \"%p\"\n", edge, out)
 		}

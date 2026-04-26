@@ -80,8 +80,8 @@ func (e *Executor) Run(edges []*Edge, buildEdge func(e *Edge) error) error {
 			defer wg.Done()
 			for edge := range taskQueue {
 				// 等待池许可
-				if edge.Pool != nil {
-					if err := e.acquirePool(edge.Pool.Name); err != nil {
+				if edge.pool_ != nil {
+					if err := e.acquirePool(edge.pool_.Name); err != nil {
 						select {
 						case errCh <- err:
 						default:
@@ -98,8 +98,8 @@ func (e *Executor) Run(edges []*Edge, buildEdge func(e *Edge) error) error {
 					return
 				}
 				// 释放池
-				if edge.Pool != nil {
-					e.releasePool(edge.Pool.Name)
+				if edge.pool_ != nil {
+					e.releasePool(edge.pool_.Name)
 				}
 				// 唤醒依赖它的边
 				e.mu.Lock()

@@ -24,7 +24,7 @@ func TestPlan_Reset(t *testing.T) {
 	plan := NewPlan(nil)
 
 	// 添加一些状态
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 	plan.want[edge] = WantToStart
 	plan.targets = append(plan.targets, &Node{path_: "target"})
 	plan.commandEdges = 5
@@ -129,13 +129,13 @@ func TestPlan_edgeWanted(t *testing.T) {
 	plan := NewPlan(nil)
 
 	// 普通边
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 	plan.edgeWanted(edge)
 	assert.Equal(t, 1, plan.wantedEdges)
 	assert.Equal(t, 1, plan.commandEdges)
 
 	// Phony 边
-	phonyEdge := &Edge{Rule: &Rule{Name: "phony"}}
+	phonyEdge := &Edge{rule_: &Rule{Name: "phony"}}
 	plan.edgeWanted(phonyEdge)
 	assert.Equal(t, 2, plan.wantedEdges)
 	assert.Equal(t, 1, plan.commandEdges) // phony 不增加 commandEdges
@@ -221,7 +221,7 @@ func TestPlan_scheduleWork(t *testing.T) {
 	// 使用默认池（深度无限）
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	edge.Pool = DefaultPool
+	edge.pool_ = DefaultPool
 
 	// 标记为想要开始
 	plan.want[edge] = WantToStart

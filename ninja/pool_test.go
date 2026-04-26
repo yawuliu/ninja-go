@@ -30,7 +30,7 @@ func TestPool_ShouldDelayEdge(t *testing.T) {
 // TestPool_EdgeScheduled 测试边调度
 func TestPool_EdgeScheduled(t *testing.T) {
 	pool := NewPool("test", 4)
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 
 	// 调度边
 	pool.EdgeScheduled(edge)
@@ -44,7 +44,7 @@ func TestPool_EdgeScheduled(t *testing.T) {
 // TestPool_EdgeScheduled_Unlimited 测试无限池
 func TestPool_EdgeScheduled_Unlimited(t *testing.T) {
 	pool := NewPool("", 0)
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 
 	// 无限池不应该跟踪使用
 	pool.EdgeScheduled(edge)
@@ -54,7 +54,7 @@ func TestPool_EdgeScheduled_Unlimited(t *testing.T) {
 // TestPool_EdgeFinished 测试边完成
 func TestPool_EdgeFinished(t *testing.T) {
 	pool := NewPool("test", 4)
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 
 	// 先调度两条边
 	pool.EdgeScheduled(edge)
@@ -73,8 +73,8 @@ func TestPool_EdgeFinished(t *testing.T) {
 // TestPool_DelayEdge 测试边延迟
 func TestPool_DelayEdge(t *testing.T) {
 	pool := NewPool("test", 2)
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
-	edge2 := &Edge{Rule: &Rule{Name: "cc"}, id_: 2}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
+	edge2 := &Edge{rule_: &Rule{Name: "cc"}, id_: 2}
 
 	// 延迟边
 	pool.DelayEdge(edge1)
@@ -91,9 +91,9 @@ func TestPool_RetrieveReadyEdges(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 
 	// 创建边
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
-	edge2 := &Edge{Rule: &Rule{Name: "cc"}, id_: 2}
-	edge3 := &Edge{Rule: &Rule{Name: "cc"}, id_: 3}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
+	edge2 := &Edge{rule_: &Rule{Name: "cc"}, id_: 2}
+	edge3 := &Edge{rule_: &Rule{Name: "cc"}, id_: 3}
 
 	// 延迟边
 	pool.DelayEdge(edge1)
@@ -114,13 +114,13 @@ func TestPool_RetrieveReadyEdges_WithCurrentUse(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 
 	// 先使用一些容量
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
 	pool.EdgeScheduled(edge1)
 	assert.Equal(t, 1, pool.currentUse)
 
 	// 延迟边
-	edge2 := &Edge{Rule: &Rule{Name: "cc"}, id_: 2}
-	edge3 := &Edge{Rule: &Rule{Name: "cc"}, id_: 3}
+	edge2 := &Edge{rule_: &Rule{Name: "cc"}, id_: 2}
+	edge3 := &Edge{rule_: &Rule{Name: "cc"}, id_: 3}
 	pool.DelayEdge(edge2)
 	pool.DelayEdge(edge3)
 
@@ -136,7 +136,7 @@ func TestPool_RetrieveReadyEdges_Unlimited(t *testing.T) {
 	pool := NewPool("", 0)
 	queue := &EdgePriorityQueue{}
 
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 	pool.DelayEdge(edge)
 
 	// 无限池不应该检索任何边
@@ -148,7 +148,7 @@ func TestPool_RetrieveReadyEdges_Unlimited(t *testing.T) {
 // TestPool_ConcurrentAccess 测试并发访问
 func TestPool_ConcurrentAccess(t *testing.T) {
 	pool := NewPool("test", 10)
-	edge := &Edge{Rule: &Rule{Name: "cc"}}
+	edge := &Edge{rule_: &Rule{Name: "cc"}}
 
 	// 并发调度
 	done := make(chan bool, 10)

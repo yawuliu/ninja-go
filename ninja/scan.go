@@ -112,7 +112,7 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 			}
 		}
 
-		// Load discovered deps.
+		// Load discovered deps_.
 		if !ds.depLoader.LoadDeps(edge, err) {
 			if *err != "" {
 				return false
@@ -217,7 +217,7 @@ func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface FileSys
 }
 
 func (l *ImplicitDepLoader) LoadDeps(edge *Edge, err *string) bool {
-	depsType := edge.GetBinding("deps")
+	depsType := edge.GetBinding("deps_")
 	if depsType != "" {
 		return l.LoadDepsFromLog(edge, err)
 	}
@@ -227,19 +227,19 @@ func (l *ImplicitDepLoader) LoadDeps(edge *Edge, err *string) bool {
 		return l.LoadDepFile(edge, depfile, err)
 	}
 
-	// No deps to load.
+	// No deps_ to load.
 	return true
 }
 
 func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
-	// NOTE: deps are only supported for single-target edges.
+	// NOTE: deps_ are only supported for single-target edges.
 	output := edge.outputs_[0]
 	var deps *Deps
 	if l.deps_log_ != nil {
 		deps = l.deps_log_.GetDeps(output)
 	}
 	if deps == nil {
-		l.explanations_.Record(output, "deps for '%s' are missing",
+		l.explanations_.Record(output, "deps_ for '%s' are missing",
 			output.path_)
 		return false
 	}
@@ -249,10 +249,10 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 		return false
 	}
 
-	// Deps are invalid if the output is newer than the deps.
+	// Deps are invalid if the output is newer than the deps_.
 	if output.mtime_ > deps.mtime {
 		l.explanations_.Record(output,
-			"stored deps info out of date for '%s' (%d vs %d)",
+			"stored deps_ info out of date for '%s' (%d vs %d)",
 			output.path_, deps.mtime, output.mtime_)
 		return false
 	}

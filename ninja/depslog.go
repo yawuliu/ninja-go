@@ -9,16 +9,16 @@ import (
 )
 
 const (
-	// kFileSignature is the log_file_ signature written at the beginning of the deps log.
+	// kFileSignature is the log_file_ signature written at the beginning of the deps_ log.
 	kFileSignature = "# ninjadeps\n"
 	// kFileSignatureSize is the length of the signature (excluding null terminator).
 	kFileSignatureSize = len(kFileSignature)
 )
 
-// kCurrentVersion is the current version of the deps log format.
+// kCurrentVersion is the current version of the deps_ log format.
 const kCurrentVersion int32 = 4
 
-// kMaxRecordSize is the maximum allowed size of a deps log record (in bytes).
+// kMaxRecordSize is the maximum allowed size of a deps_ log record (in bytes).
 const kMaxRecordSize = (1 << 19) - 1 // 524287
 // Deps 表示一个输出的依赖列表
 type Deps struct {
@@ -47,7 +47,7 @@ type DepsLog struct {
 	mu                sync.RWMutex
 	filePath          string
 	file              *os.File
-	deps              []*Deps       // 索引为节点 id_
+	deps_             []*Deps       // 索引为节点 id_
 	nodes             []*Node       // 节点 id_ -> Node
 	reverseDeps       map[int][]int // 依赖节点 id_ -> 被依赖的输出节点 id_ 列表
 	needsRecompaction bool
@@ -56,7 +56,7 @@ type DepsLog struct {
 func NewDepsLog(path string) *DepsLog {
 	return &DepsLog{
 		filePath:    path,
-		deps:        []*Deps{},
+		deps_:       []*Deps{},
 		nodes:       []*Node{},
 		reverseDeps: make(map[int][]int),
 	}
@@ -255,7 +255,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 		*err = errOpen.Error()
 		return LOAD_ERROR
 	}
-	defer f.Close()
+	//defer f.Close()
 
 	// Read signature
 	sigBuf := make([]byte, kFileSignatureSize)
@@ -263,7 +263,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 		// Invalid header
 		f.Close()
 		os.Remove(path)
-		*err = "bad deps log signature or version; starting over"
+		*err = "bad deps_ log signature or version; starting over"
 		return LOAD_SUCCESS
 	}
 
@@ -272,9 +272,9 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 	if read_err := binary.Read(f, binary.LittleEndian, &version); read_err != nil || version != kCurrentVersion {
 		f.Close()
 		if version == 1 {
-			*err = "deps log version change; rebuilding"
+			*err = "deps_ log version change; rebuilding"
 		} else {
-			*err = "bad deps log signature or version; starting over"
+			*err = "bad deps_ log signature or version; starting over"
 		}
 		os.Remove(path)
 		return LOAD_SUCCESS
@@ -399,6 +399,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 		*err += "; recovering"
 		return LOAD_SUCCESS
 	}
+	f.Close()
 
 	// Decide if recompaction is needed
 	const kMinCompactionEntryCount = 1000
@@ -413,10 +414,10 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 
 // GetDeps 获取输出节点的依赖
 func (dl *DepsLog) GetDeps(out *Node) *Deps {
-	if out.id_ < 0 || out.id_ >= len(dl.deps) {
+	if out.id_ < 0 || out.id_ >= len(dl.deps_) {
 		return nil
 	}
-	return dl.deps[out.id_]
+	return dl.deps_[out.id_]
 }
 
 // GetFirstReverseDepsNode 获取依赖某个节点的第一个输出节点
@@ -445,7 +446,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 		}
 	}
 	// 重新记录所有存活的依赖
-	for id, deps := range dl.deps {
+	for id, deps := range dl.deps_ {
 		if deps == nil {
 			continue
 		}
@@ -461,7 +462,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 	newLog.Close()
 
 	// 替换内存数据
-	dl.deps = newLog.deps
+	dl.deps_ = newLog.deps_
 	dl.nodes = newLog.nodes
 
 	return ReplaceContent(path, temp_path, err)
@@ -472,36 +473,34 @@ func (dl *DepsLog) isDepsEntryLive(node *Node) bool {
 	if node.in_edge() == nil {
 		return false
 	}
-	// 检查边的规则是否有 "deps" 属性
-	return node.in_edge().GetBinding("deps") != ""
+	// 检查边的规则是否有 "deps_" 属性
+	return node.in_edge().GetBinding("deps_") != ""
 }
 
-func (dl *DepsLog) UpdateDeps(outID int, deps *Deps) bool {
-	dl.ensureCapacity(outID)
-	old := dl.deps[outID]
-	dl.deps[outID] = deps
-	return old != nil
-}
-
-func (dl *DepsLog) ensureCapacity(id int) {
-	if id >= len(dl.deps) {
-		dl.deps = append(dl.deps, make([]*Deps, id+1-len(dl.deps))...)
-		dl.nodes = append(dl.nodes, make([]*Node, id+1-len(dl.nodes))...)
+func (dl *DepsLog) UpdateDeps(out_id int, deps *Deps) bool {
+	if out_id >= len(dl.deps_) {
+		dl.deps_ = append(dl.deps_, make([]*Deps, out_id+1-len(dl.deps_))...)
 	}
+	delete_old := dl.deps_[out_id] != nil
+	//if delete_old {
+	// slices.Delete(dl.deps_, out_id)
+	//	}
+	dl.deps_[out_id] = deps
+	return delete_old
 }
 
 // / Used for tests.
 func (dl *DepsLog) Nodes() []*Node { return dl.nodes }
 
-func (dl *DepsLog) Deps() []*Deps { return dl.deps }
+func (dl *DepsLog) Deps() []*Deps { return dl.deps_ }
 
 // IsDepsEntryLiveFor 判断节点的依赖记录是否应该保留。
-// 节点必须有入边，且该边的 "deps" 绑定非空。
+// 节点必须有入边，且该边的 "deps_" 绑定非空。
 func IsDepsEntryLiveFor(node *Node) bool {
 	if node.in_edge() == nil {
 		return false
 	}
-	return node.in_edge().GetBinding("deps") != ""
+	return node.in_edge().GetBinding("deps_") != ""
 }
 func (d *DepsLog) OpenForWriteIfNeeded() bool {
 	if d.filePath == "" {

@@ -37,8 +37,17 @@ func (r *Rule) GetBinding(key string) *EvalString {
 
 func IsReservedBinding(key string) bool {
 	switch key {
-	case "command", "depfile", "dyndep", "description", "deps",
-		"generator", "pool", "restat", "rspfile", "rspfile_content", "msvc_deps_prefix":
+	case "command",
+		"depfile",
+		"dyndep",
+		"description",
+		"deps",
+		"generator",
+		"pool",
+		"restat",
+		"rspfile",
+		"rspfile_content",
+		"msvc_deps_prefix":
 		return true
 	}
 	return false

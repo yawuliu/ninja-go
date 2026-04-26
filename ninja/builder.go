@@ -42,7 +42,7 @@ func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 		b.explanations_ = NewExplanations()
 	}
 	b.lock_file_path_ = ".ninja_lock"
-	build_dir := b.state_.Bindings.LookupVariable("builddir")
+	build_dir := b.state_.bindings_.LookupVariable("builddir")
 	b.plan = NewPlan(b)
 	b.scan_ = NewDependencyScan(state, buildLog, depsLog, disk_interface,
 		config.depfile_parser_options, b.explanations_)
@@ -254,7 +254,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 	// extraction itself can fail, which makes the command fail from a
 	// build perspective.
 	var depsNodes []*Node
-	depsType := edge.GetBinding("deps")
+	depsType := edge.GetBinding("deps_")
 	depsPrefix := edge.GetBinding("msvc_deps_prefix")
 	if depsType != "" {
 		var extractErr string
@@ -347,7 +347,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 				return false
 			}
 			if !b.scan_.depsLog.RecordDeps1(o, depsMtime, depsNodes) {
-				*err = "Error writing to deps log: "
+				*err = "Error writing to deps_ log: "
 				return false
 			}
 		}
@@ -373,7 +373,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 	} else if depsType == "gcc" {
 		depfile := result.Edge.GetUnescapedDepfile()
 		if depfile == "" {
-			*err = "edge_ with deps=gcc but no depfile makes no sense"
+			*err = "edge_ with deps_=gcc but no depfile makes no sense"
 			return false
 		}
 
@@ -411,7 +411,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			}
 		}
 	} else {
-		panic("unknown deps type '" + depsType + "'")
+		panic("unknown deps_ type '" + depsType + "'")
 	}
 
 	return true

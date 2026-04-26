@@ -2,111 +2,77 @@ package main
 
 import (
 	"fmt"
-	"sync"
 )
 
 var kDefaultPool *Pool = NewPool("", 0)
 var kConsolePool *Pool = NewPool("console", 1)
 
 type State struct {
-	mu        sync.RWMutex
-	Paths     map[string]*Node
-	Pools     map[string]*Pool
+	paths_    map[string]*Node
+	pools_    map[string]*Pool
 	Rules     map[string]*Rule
-	Edges     []*Edge
-	Bindings  *BindingEnv
-	Defaults  []*Node // default 语句指定的目标
-	nextID    int
-	nodesByID []*Node
+	edges_    []*Edge
+	bindings_ *BindingEnv
+	defaults_ []*Node // default 语句指定的目标
 }
 
 func NewState() *State {
 	s := &State{
-		Paths:     make(map[string]*Node),
-		Pools:     make(map[string]*Pool),
-		Edges:     []*Edge{},
+		paths_:    make(map[string]*Node),
+		pools_:    make(map[string]*Pool),
+		edges_:    []*Edge{},
 		Rules:     make(map[string]*Rule),
-		Bindings:  NewBindingEnv(nil),
-		Defaults:  []*Node{},
-		nodesByID: []*Node{},
+		bindings_: NewBindingEnv(nil),
+		defaults_: []*Node{},
 	}
-	s.Bindings.AddRule(PhonyRule())
+	s.bindings_.AddRule(PhonyRule())
 	s.AddPool(kDefaultPool)
 	s.AddPool(kConsolePool)
 	return s
 }
 
 func (s *State) AddPool(pool *Pool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Pools[pool.Name] = pool
+	if s.LookupPool(pool.Name) != nil {
+		panic("pool_ already defined")
+	}
+	s.pools_[pool.Name] = pool
 }
 
 func (s *State) LookupPool(name string) *Pool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.Pools[name]
-}
-
-func (s *State) AddEdge(rule *Rule) *Edge {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	edge := &Edge{
-		Rule: rule,
-		Pool: kDefaultPool,
-		env_: s.Bindings,
-		id_:  uint64(len(s.Edges)),
-	}
-	s.Edges = append(s.Edges, edge)
-	return edge
-}
-
-func (s *State) AddNode(path string, slashBits uint64) *Node {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n, ok := s.Paths[path]; ok {
-		return n
-	}
-	n := NewNode(path, slashBits)
-	n.id_ = s.nextID
-	s.nextID++
-	s.Paths[path] = n
-	s.nodesByID = append(s.nodesByID, n)
-	return n
-}
-
-func (s *State) GetNodeByID(id int) *Node {
-	if id >= 0 && id < len(s.nodesByID) {
-		return s.nodesByID[id]
+	if _, ok := s.pools_[name]; ok {
+		return s.pools_[name]
 	}
 	return nil
 }
 
+func (s *State) AddEdge(rule *Rule) *Edge {
+	edge := &Edge{
+		rule_: rule,
+		pool_: kDefaultPool,
+		env_:  s.bindings_,
+		id_:   uint64(len(s.edges_)),
+	}
+	s.edges_ = append(s.edges_, edge)
+	return edge
+}
+
 // GetNode 返回指定路径的节点，如果不存在则创建（与 AddNode 相同，但语义更清晰）
-func (s *State) GetNode(path string, slashBits uint64) *Node {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	norm := NormalizePath(path)
-	if n, ok := s.Paths[norm]; ok {
-		return n
+func (s *State) GetNode(path string, slash_bits uint64) *Node {
+	node := s.LookupNode(path)
+	if node != nil {
+		return node
 	}
-	n := &Node{
-		path_:                    norm,
-		slash_bits_:              slashBits,
-		id_:                      s.nextID,
-		generated_by_dep_loader_: true,
-	}
-	s.nextID++
-	s.Paths[norm] = n
-	s.nodesByID = append(s.nodesByID, n)
-	return n
+	node = NewNode(path, slash_bits)
+	s.paths_[node.path_] = node
+	return node
 }
 
 func (s *State) LookupNode(path string) *Node {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	norm := NormalizePath(path)
-	return s.Paths[norm]
+	_, ok := s.paths_[path]
+	if ok {
+		return s.paths_[path]
+	}
+	return nil
 }
 
 func (s *State) SpellcheckNode(path string) *Node {
@@ -116,7 +82,7 @@ func (s *State) SpellcheckNode(path string) *Node {
 	minDistance := maxValidEditDistance + 1
 	var result *Node
 
-	for p, node := range s.Paths {
+	for p, node := range s.paths_ {
 		if node == nil {
 			continue
 		}
@@ -165,17 +131,15 @@ func (s *State) AddDefault(path string, err *string) bool {
 		*err = "unknown target '" + path + "'"
 		return false
 	}
-	s.Defaults = append(s.Defaults, node)
+	s.defaults_ = append(s.defaults_, node)
 	return true
 }
 
 func (s *State) Reset() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, n := range s.Paths {
+	for _, n := range s.paths_ {
 		n.ResetState()
 	}
-	for _, e := range s.Edges {
+	for _, e := range s.edges_ {
 		e.outputs_ready_ = false
 		e.deps_loaded_ = false
 		e.mark_ = VisitNone
@@ -183,25 +147,23 @@ func (s *State) Reset() {
 }
 
 func (s *State) RootNodes(err *string) []*Node {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var root_nodes []*Node
-	for _, e := range s.Edges {
+	for _, e := range s.edges_ {
 		for _, out := range e.outputs_ {
 			if len(out.out_edges_) == 0 {
 				root_nodes = append(root_nodes, out)
 			}
 		}
 	}
-	if len(s.Edges) > 0 && len(root_nodes) == 0 {
+	if len(s.edges_) > 0 && len(root_nodes) == 0 {
 		*err = "could not determine root nodes of build graph"
 	}
 	return root_nodes
 }
 
 func (s *State) DefaultNodes(err *string) []*Node {
-	if len(s.Defaults) > 0 {
-		return s.Defaults
+	if len(s.defaults_) > 0 {
+		return s.defaults_
 	}
 	roots := s.RootNodes(err)
 	return roots

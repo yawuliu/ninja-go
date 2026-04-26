@@ -161,8 +161,8 @@ func (s *MissingDependencyScanner) ProcessNode(node *Node) {
 		s.ProcessNode(in)
 	}
 
-	// 获取依赖信息（从 deps log 或 depfile）
-	depsType := edge.GetBinding("deps")
+	// 获取依赖信息（从 deps_ log 或 depfile）
+	depsType := edge.GetBinding("deps_")
 	if depsType != "" {
 		deps := s.deps_log_.GetDeps(node)
 		if deps != nil {
@@ -239,10 +239,10 @@ func (s *MissingDependencyScanner) ProcessNodeDeps(node *Node, depNodes []*Node)
 		for _, dn := range depNodes {
 			if dn.in_edge() == me {
 				s.generated_nodes_[dn] = true
-				s.generator_rules_[me.Rule] = true
-				ruleNames[me.Rule.Name] = true
+				s.generator_rules_[me.rule_] = true
+				ruleNames[me.rule_.Name] = true
 				if s.delegate_ != nil {
-					s.delegate_.OnMissingDep(node, dn.path_, me.Rule)
+					s.delegate_.OnMissingDep(node, dn.path_, me.rule_)
 				}
 			}
 		}

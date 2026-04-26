@@ -57,7 +57,7 @@ func (e *EdgeEnv) LookupVariable(varName string) string {
 		}
 	}
 
-	eval := e.edge_.Rule.GetBinding(varName)
+	eval := e.edge_.rule_.GetBinding(varName)
 	record_varname := e.recursive_ && eval != nil
 	if record_varname {
 		e.lookups_ = append(e.lookups_, varName)

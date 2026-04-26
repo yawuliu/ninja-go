@@ -9,8 +9,8 @@ const (
 )
 
 type Edge struct {
-	Rule                     *Rule
-	Pool                     *Pool
+	rule_                    *Rule
+	pool_                    *Pool
 	inputs_                  []*Node
 	outputs_                 []*Node
 	validations_             []*Node
@@ -30,7 +30,7 @@ type Edge struct {
 	/// A Jobserver slot instance. Invalid by default.
 	job_slot_ JobserverSlot
 	// Historical info: how long did this edge_ take last time,
-	// as per .ninja_log, if known? Defaults to -1 if unknown.
+	// as per .ninja_log, if known? defaults_ to -1 if unknown.
 	prev_elapsed_time_millis int64 // -1;
 }
 
@@ -92,11 +92,11 @@ func (e *Edge) IsImplicitOut(idx int) bool {
 }
 
 func (e *Edge) IsPhony() bool {
-	return e.Rule != nil && e.Rule.Name == "phony"
+	return e.rule_ != nil && e.rule_.Name == "phony"
 }
 
 func (e *Edge) use_console() bool {
-	return e.Pool == kConsolePool
+	return e.pool_ == kConsolePool
 }
 func (e *Edge) Weight() int { return 1 }
 

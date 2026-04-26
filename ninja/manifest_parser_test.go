@@ -90,7 +90,7 @@ func TestManifestParser_ParseRule(t *testing.T) {
 	require.Equal(t, err, "")
 
 	// 验证规则被添加
-	rule := state.Bindings.LookupRule("cc")
+	rule := state.bindings_.LookupRule("cc")
 	require.NotNil(t, rule)
 	assert.Equal(t, "cc", rule.Name)
 }
@@ -104,13 +104,13 @@ func TestManifestParser_ParseRuleWithMultipleBindings(t *testing.T) {
   command = gcc $in -o $out
   description = CC $out
   depfile = $out.d
-  deps = gcc
+  deps_ = gcc
 `
 	var err string
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	rule := state.Bindings.LookupRule("cc")
+	rule := state.bindings_.LookupRule("cc")
 	require.NotNil(t, rule)
 
 	cmd := rule.GetBinding("command")
@@ -179,9 +179,9 @@ build foo.o: cc foo.c
 	require.Equal(t, err, "")
 
 	// 验证边被创建
-	require.Len(t, state.Edges, 1)
-	edge := state.Edges[0]
-	assert.Equal(t, "cc", edge.Rule.Name)
+	require.Len(t, state.edges_, 1)
+	edge := state.edges_[0]
+	assert.Equal(t, "cc", edge.rule_.Name)
 	require.Len(t, edge.inputs_, 1)
 	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	require.Len(t, edge.outputs_, 1)
@@ -202,7 +202,7 @@ build prog: link foo.o bar.o baz.o
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.inputs_, 3)
 	assert.Equal(t, "foo.o", edge.inputs_[0].path_)
 	assert.Equal(t, "bar.o", edge.inputs_[1].path_)
@@ -223,7 +223,7 @@ build out1 out2 out3: gen input.txt
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.outputs_, 3)
 	assert.Equal(t, "out1", edge.outputs_[0].path_)
 	assert.Equal(t, "out2", edge.outputs_[1].path_)
@@ -244,7 +244,7 @@ build foo.o: cc foo.c | header.h config.h
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.inputs_, 3)
 	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	assert.Equal(t, "header.h", edge.inputs_[1].path_)
@@ -266,7 +266,7 @@ build foo.o: cc foo.c || stamp
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.inputs_, 2)
 	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	assert.Equal(t, "stamp", edge.inputs_[1].path_)
@@ -287,7 +287,7 @@ build foo.o | foo.h: gen foo.c
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.outputs_, 2)
 	assert.Equal(t, "foo.o", edge.outputs_[0].path_)
 	assert.Equal(t, "foo.h", edge.outputs_[1].path_)
@@ -308,7 +308,7 @@ build foo.o: cc foo.c |@ validate.py
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	require.Len(t, edge.validations_, 1)
 	assert.Equal(t, "validate.py", edge.validations_[0].path_)
 }
@@ -328,7 +328,7 @@ build foo.o: cc foo.c
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	cmd := edge.EvaluateCommand(false)
 	assert.Equal(t, "gcc -O2 -Wall foo.c -o foo.o", cmd)
 }
@@ -379,8 +379,8 @@ default foo.o
 	require.Equal(t, err, "")
 
 	// 验证默认目标
-	require.Len(t, state.Defaults, 1)
-	assert.Equal(t, "foo.o", state.Defaults[0].path_)
+	require.Len(t, state.defaults_, 1)
+	assert.Equal(t, "foo.o", state.defaults_[0].path_)
 }
 
 func TestManifestParser_ParseDefault_Multiple(t *testing.T) {
@@ -400,9 +400,9 @@ default foo.o bar.o
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	require.Len(t, state.Defaults, 2)
-	assert.Equal(t, "foo.o", state.Defaults[0].path_)
-	assert.Equal(t, "bar.o", state.Defaults[1].path_)
+	require.Len(t, state.defaults_, 2)
+	assert.Equal(t, "foo.o", state.defaults_[0].path_)
+	assert.Equal(t, "bar.o", state.defaults_[1].path_)
 }
 
 func TestManifestParser_ParseDefault_UnknownTarget(t *testing.T) {
@@ -495,8 +495,8 @@ flags = -O2
 	require.Equal(t, err, "")
 
 	// 验证变量被设置
-	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
-	assert.Equal(t, "-O2", state.Bindings.LookupVariable("flags"))
+	assert.Equal(t, "gcc", state.bindings_.LookupVariable("cc"))
+	assert.Equal(t, "-O2", state.bindings_.LookupVariable("flags"))
 }
 
 func TestManifestParser_ParseVariable_Reference(t *testing.T) {
@@ -513,7 +513,7 @@ command = $cc $ccflags
 	require.Equal(t, err, "")
 
 	// 验证变量引用被正确展开
-	cmd := state.Bindings.LookupVariable("command")
+	cmd := state.bindings_.LookupVariable("command")
 	assert.Equal(t, "gcc -O2", cmd)
 }
 
@@ -546,7 +546,7 @@ func TestManifestParser_ParseInclude(t *testing.T) {
 	require.Equal(t, err, "")
 
 	// 验证包含的文件被解析
-	assert.Equal(t, "gcc", state.Bindings.LookupVariable("cc"))
+	assert.Equal(t, "gcc", state.bindings_.LookupVariable("cc"))
 }
 
 func TestManifestParser_ParseSubninja(t *testing.T) {
@@ -564,8 +564,8 @@ global = after
 	require.Equal(t, err, "")
 
 	// subninja 中的变量不应该影响父级
-	assert.Equal(t, "", state.Bindings.LookupVariable("local"))
-	assert.Equal(t, "after", state.Bindings.LookupVariable("global"))
+	assert.Equal(t, "", state.bindings_.LookupVariable("local"))
+	assert.Equal(t, "after", state.bindings_.LookupVariable("global"))
 }
 
 func TestManifestParser_ParseComments(t *testing.T) {
@@ -584,7 +584,7 @@ rule cc
 	require.Equal(t, err, "")
 
 	// 验证规则被正确解析
-	rule := state.Bindings.LookupRule("cc")
+	rule := state.bindings_.LookupRule("cc")
 	require.NotNil(t, rule)
 }
 
@@ -606,9 +606,9 @@ build prog: link foo.o bar.o
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
-	require.NotNil(t, edge.Pool)
-	assert.Equal(t, "link_pool", edge.Pool.Name)
+	edge := state.edges_[0]
+	require.NotNil(t, edge.pool_)
+	assert.Equal(t, "link_pool", edge.pool_.Name)
 }
 
 func TestManifestParser_ParseBuild_UnknownPool(t *testing.T) {
@@ -639,8 +639,8 @@ func TestManifestParser_ParseBuild_Phony(t *testing.T) {
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	edge := state.Edges[0]
-	assert.Equal(t, "phony", edge.Rule.Name)
+	edge := state.edges_[0]
+	assert.Equal(t, "phony", edge.rule_.Name)
 }
 
 func TestManifestParser_ParseBuild_PhonyCycleWarn(t *testing.T) {
@@ -655,7 +655,7 @@ func TestManifestParser_ParseBuild_PhonyCycleWarn(t *testing.T) {
 	require.Equal(t, err, "")
 
 	// 自引用应该被处理（警告模式下）
-	edge := state.Edges[0]
+	edge := state.edges_[0]
 	assert.Len(t, edge.inputs_, 0) // 自引用被移除
 }
 
@@ -688,11 +688,11 @@ default prog
 	require.Equal(t, err, "")
 
 	// 验证所有边被创建
-	assert.Len(t, state.Edges, 3)
+	assert.Len(t, state.edges_, 3)
 
 	// 验证默认目标
-	assert.Len(t, state.Defaults, 1)
-	assert.Equal(t, "prog", state.Defaults[0].path_)
+	assert.Len(t, state.defaults_, 1)
+	assert.Equal(t, "prog", state.defaults_[0].path_)
 }
 
 func TestManifestParser_ParseError_SyntaxError(t *testing.T) {

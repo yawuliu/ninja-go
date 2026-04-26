@@ -13,20 +13,20 @@ func TestNewState(t *testing.T) {
 	require.NotNil(t, state)
 
 	// 检查初始状态
-	assert.NotNil(t, state.Paths)
-	assert.NotNil(t, state.Pools)
+	assert.NotNil(t, state.paths_)
+	assert.NotNil(t, state.pools_)
 	assert.NotNil(t, state.Rules)
-	assert.NotNil(t, state.Edges)
-	assert.NotNil(t, state.Bindings)
-	assert.NotNil(t, state.Defaults)
+	assert.NotNil(t, state.edges_)
+	assert.NotNil(t, state.bindings_)
+	assert.NotNil(t, state.defaults_)
 	assert.NotNil(t, state.nodesByID)
 
 	// 检查默认池
-	assert.Contains(t, state.Pools, "")
-	assert.Contains(t, state.Pools, "console_")
+	assert.Contains(t, state.pools_, "")
+	assert.Contains(t, state.pools_, "console_")
 
 	// 检查 phony 规则
-	phony := state.Bindings.LookupRule("phony")
+	phony := state.bindings_.LookupRule("phony")
 	assert.NotNil(t, phony)
 }
 
@@ -95,10 +95,10 @@ func TestState_AddEdge(t *testing.T) {
 
 	edge := state.AddEdge(rule)
 	require.NotNil(t, edge)
-	assert.Equal(t, rule, edge.Rule)
+	assert.Equal(t, rule, edge.rule_)
 	assert.Equal(t, uint64(0), edge.id_)
-	assert.Equal(t, kDefaultPool, edge.Pool)
-	assert.Equal(t, state.Bindings, edge.env_)
+	assert.Equal(t, kDefaultPool, edge.pool_)
+	assert.Equal(t, state.bindings_, edge.env_)
 
 	// 添加第二条边，id_ 应该递增
 	edge2 := state.AddEdge(rule)
@@ -177,7 +177,7 @@ func TestState_AddDefault(t *testing.T) {
 	// 添加为默认目标
 	state.AddDefault("target", &err)
 	require.Equal(t, err, "")
-	assert.Len(t, state.Defaults, 1)
+	assert.Len(t, state.defaults_, 1)
 
 	// 不存在的节点应该报错
 	state.AddDefault("nonexistent", &err)
@@ -331,8 +331,8 @@ func TestNode_MarkMissing(t *testing.T) {
 func TestNode_AddOutEdge(t *testing.T) {
 	node := NewNode("test.txt", 0)
 	rule := &Rule{Name: "cc"}
-	edge1 := &Edge{Rule: rule}
-	edge2 := &Edge{Rule: rule}
+	edge1 := &Edge{rule_: rule}
+	edge2 := &Edge{rule_: rule}
 
 	// 添加第一条边
 	node.AddOutEdge(edge1)
@@ -351,7 +351,7 @@ func TestNode_AddOutEdge(t *testing.T) {
 func TestNode_AddValidationOutEdge(t *testing.T) {
 	node := NewNode("test.txt", 0)
 	rule := &Rule{Name: "cc"}
-	edge := &Edge{Rule: rule}
+	edge := &Edge{rule_: rule}
 
 	node.AddValidationOutEdge(edge)
 	assert.Len(t, node.validation_out_edges_, 1)
@@ -394,7 +394,7 @@ func TestEdge_EvaluateCommand(t *testing.T) {
 		Name: "cc",
 	}
 	edge := &Edge{
-		Rule: rule,
+		rule_: rule,
 		inputs_: []*Node{
 			{path_: "foo.c"},
 		},
@@ -413,7 +413,7 @@ func TestEdge_GetBinding(t *testing.T) {
 		Name: "cc",
 	}
 	edge := &Edge{
-		Rule: rule,
+		rule_: rule,
 	}
 
 	// 获取 rule 的变量
@@ -480,12 +480,12 @@ func TestEdge_IsImplicitOut(t *testing.T) {
 func TestEdge_IsPhony(t *testing.T) {
 	// Phony 规则
 	phonyRule := &Rule{Name: "phony"}
-	phonyEdge := &Edge{Rule: phonyRule}
+	phonyEdge := &Edge{rule_: phonyRule}
 	assert.True(t, phonyEdge.IsPhony())
 
 	// 普通规则
 	ccRule := &Rule{Name: "cc"}
-	ccEdge := &Edge{Rule: ccRule}
+	ccEdge := &Edge{rule_: ccRule}
 	assert.False(t, ccEdge.IsPhony())
 
 	// 无规则
@@ -496,11 +496,11 @@ func TestEdge_IsPhony(t *testing.T) {
 // TestEdge_UseConsole 测试控制台池检查
 func TestEdge_UseConsole(t *testing.T) {
 	// Console 池
-	consoleEdge := &Edge{Pool: kConsolePool}
+	consoleEdge := &Edge{pool_: kConsolePool}
 	assert.True(t, consoleEdge.use_console())
 
 	// 默认池
-	defaultEdge := &Edge{Pool: kDefaultPool}
+	defaultEdge := &Edge{pool_: kDefaultPool}
 	assert.False(t, defaultEdge.use_console())
 
 	// 无池
@@ -514,14 +514,14 @@ func TestEdge_AllInputsReady(t *testing.T) {
 
 	// 创建输入节点和边
 	in1 := &Node{path_: "in1"}
-	in1Edge := &Edge{Rule: rule, outputs_ready_: true}
+	in1Edge := &Edge{rule_: rule, outputs_ready_: true}
 	in1.in_edge_ = in1Edge
 
 	in2 := &Node{path_: "in2"}
 	// in2 没有入边（源文件）
 
 	edge := &Edge{
-		Rule:    rule,
+		rule_:   rule,
 		inputs_: []*Node{in1, in2},
 	}
 
@@ -539,7 +539,7 @@ func TestEdge_MaybePhonyCycleDiagnostic(t *testing.T) {
 	phonyRule := &Rule{Name: "phony"}
 	out := &Node{path_: "out"}
 	edge := &Edge{
-		Rule:           phonyRule,
+		rule_:          phonyRule,
 		outputs_:       []*Node{out},
 		implicit_outs_: 0,
 		implicit_deps_: 0,
@@ -548,12 +548,12 @@ func TestEdge_MaybePhonyCycleDiagnostic(t *testing.T) {
 
 	// 非 phony 规则
 	ccRule := &Rule{Name: "cc"}
-	edge2 := &Edge{Rule: ccRule, outputs_: []*Node{out}}
+	edge2 := &Edge{rule_: ccRule, outputs_: []*Node{out}}
 	assert.False(t, edge2.MaybePhonyCycleDiagnostic())
 
 	// 多个输出
 	edge3 := &Edge{
-		Rule:     phonyRule,
+		rule_:    phonyRule,
 		outputs_: []*Node{{path_: "out1"}, {path_: "out2"}},
 	}
 	assert.False(t, edge3.MaybePhonyCycleDiagnostic())

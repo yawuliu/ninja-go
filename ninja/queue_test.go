@@ -12,10 +12,10 @@ func TestEdgePriorityQueue_Len(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 	assert.Equal(t, 0, queue.Len())
 
-	queue.edges = append(queue.edges, &Edge{Rule: &Rule{Name: "cc"}})
+	queue.edges = append(queue.edges, &Edge{rule_: &Rule{Name: "cc"}})
 	assert.Equal(t, 1, queue.Len())
 
-	queue.edges = append(queue.edges, &Edge{Rule: &Rule{Name: "link"}})
+	queue.edges = append(queue.edges, &Edge{rule_: &Rule{Name: "link"}})
 	assert.Equal(t, 2, queue.Len())
 }
 
@@ -24,8 +24,8 @@ func TestEdgePriorityQueue_Less_ByWeight(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 
 	// 添加两条边，不同权重
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1, critical_path_weight_: 10}
-	edge2 := &Edge{Rule: &Rule{Name: "link"}, id_: 2, critical_path_weight_: 20}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1, critical_path_weight_: 10}
+	edge2 := &Edge{rule_: &Rule{Name: "link"}, id_: 2, critical_path_weight_: 20}
 	queue.edges = []*Edge{edge1, edge2}
 
 	// edge2 权重更高，应该排在前面（Less 返回 true 表示 i < j，即 i 优先）
@@ -38,8 +38,8 @@ func TestEdgePriorityQueue_Less_ByID(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 
 	// 两条边权重相同，按 id_ 升序
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 2, critical_path_weight_: 10}
-	edge2 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1, critical_path_weight_: 10}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 2, critical_path_weight_: 10}
+	edge2 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1, critical_path_weight_: 10}
 	queue.edges = []*Edge{edge1, edge2}
 
 	// id_ 小的优先
@@ -50,8 +50,8 @@ func TestEdgePriorityQueue_Less_ByID(t *testing.T) {
 // TestEdgePriorityQueue_Swap 测试交换
 func TestEdgePriorityQueue_Swap(t *testing.T) {
 	queue := &EdgePriorityQueue{}
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
-	edge2 := &Edge{Rule: &Rule{Name: "link"}, id_: 2}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
+	edge2 := &Edge{rule_: &Rule{Name: "link"}, id_: 2}
 	queue.edges = []*Edge{edge1, edge2}
 
 	queue.Swap(0, 1)
@@ -63,7 +63,7 @@ func TestEdgePriorityQueue_Swap(t *testing.T) {
 // TestEdgePriorityQueue_Push 测试推入
 func TestEdgePriorityQueue_Push(t *testing.T) {
 	queue := &EdgePriorityQueue{}
-	edge := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
+	edge := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
 
 	queue.Push(edge)
 
@@ -74,8 +74,8 @@ func TestEdgePriorityQueue_Push(t *testing.T) {
 // TestEdgePriorityQueue_Pop 测试弹出
 func TestEdgePriorityQueue_Pop(t *testing.T) {
 	queue := &EdgePriorityQueue{}
-	edge1 := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
-	edge2 := &Edge{Rule: &Rule{Name: "link"}, id_: 2}
+	edge1 := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
+	edge2 := &Edge{rule_: &Rule{Name: "link"}, id_: 2}
 
 	queue.edges = []*Edge{edge1, edge2}
 
@@ -93,7 +93,7 @@ func TestEdgePriorityQueue_Top(t *testing.T) {
 	assert.Nil(t, queue.Top())
 
 	// 添加边
-	edge := &Edge{Rule: &Rule{Name: "cc"}, id_: 1}
+	edge := &Edge{rule_: &Rule{Name: "cc"}, id_: 1}
 	queue.edges = []*Edge{edge}
 
 	assert.Equal(t, edge, queue.Top())
@@ -105,8 +105,8 @@ func TestEdgePriorityQueue_Top(t *testing.T) {
 func TestEdgePriorityQueue_Clear(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 	queue.edges = []*Edge{
-		{Rule: &Rule{Name: "cc"}},
-		{Rule: &Rule{Name: "link"}},
+		{rule_: &Rule{Name: "cc"}},
+		{rule_: &Rule{Name: "link"}},
 	}
 
 	queue.Clear()
@@ -122,10 +122,10 @@ func TestEdgePriorityQueue_HeapInterface(t *testing.T) {
 
 	// 添加边，按优先级
 	edges := []*Edge{
-		{Rule: &Rule{Name: "a"}, id_: 1, critical_path_weight_: 5},
-		{Rule: &Rule{Name: "b"}, id_: 2, critical_path_weight_: 10},
-		{Rule: &Rule{Name: "c"}, id_: 3, critical_path_weight_: 3},
-		{Rule: &Rule{Name: "d"}, id_: 4, critical_path_weight_: 10},
+		{rule_: &Rule{Name: "a"}, id_: 1, critical_path_weight_: 5},
+		{rule_: &Rule{Name: "b"}, id_: 2, critical_path_weight_: 10},
+		{rule_: &Rule{Name: "c"}, id_: 3, critical_path_weight_: 3},
+		{rule_: &Rule{Name: "d"}, id_: 4, critical_path_weight_: 10},
 	}
 
 	for _, e := range edges {
@@ -155,10 +155,10 @@ func TestEdgePriorityQueue_PriorityOrder(t *testing.T) {
 	queue := &EdgePriorityQueue{}
 
 	// 添加边，打乱顺序
-	queue.Push(&Edge{Rule: &Rule{Name: "low"}, id_: 1, critical_path_weight_: 1})
-	queue.Push(&Edge{Rule: &Rule{Name: "high"}, id_: 2, critical_path_weight_: 100})
-	queue.Push(&Edge{Rule: &Rule{Name: "medium"}, id_: 3, critical_path_weight_: 50})
-	queue.Push(&Edge{Rule: &Rule{Name: "same_high"}, id_: 1, critical_path_weight_: 100})
+	queue.Push(&Edge{rule_: &Rule{Name: "low"}, id_: 1, critical_path_weight_: 1})
+	queue.Push(&Edge{rule_: &Rule{Name: "high"}, id_: 2, critical_path_weight_: 100})
+	queue.Push(&Edge{rule_: &Rule{Name: "medium"}, id_: 3, critical_path_weight_: 50})
+	queue.Push(&Edge{rule_: &Rule{Name: "same_high"}, id_: 1, critical_path_weight_: 100})
 
 	// 堆化
 	heap.Init(queue)
@@ -187,7 +187,7 @@ func TestEdgePriorityQueue_MultipleOperations(t *testing.T) {
 	// 添加多条边
 	for i := 0; i < 100; i++ {
 		edge := &Edge{
-			Rule:                  &Rule{Name: "cc"},
+			rule_:                 &Rule{Name: "cc"},
 			id_:                   uint64(i),
 			critical_path_weight_: int64(i % 10), // 0-9 的权重
 		}
