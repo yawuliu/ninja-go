@@ -119,7 +119,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 				// 没有出边，尝试从 deps log 中查找反向依赖
 				revNode := n.deps_log_.GetFirstReverseDepsNode(node)
 				if revNode == nil {
-					*err = "'" + path + "' has no out edge"
+					*err = "'" + path + "' has no out edge_"
 					return nil
 				}
 				node = revNode
@@ -127,7 +127,7 @@ func (n *NinjaMain) CollectTarget(cpath string, err *string) *Node {
 				edge := node.out_edges_[0]
 				if len(edge.outputs_) == 0 {
 					// 不应发生，防御性代码
-					panic("edge has no outputs")
+					panic("edge_ has no outputs")
 					return nil
 				}
 				node = edge.outputs_[0]
@@ -217,7 +217,7 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 				label := ""
 				if edge.IsImplicit(idx) {
 					label = "| "
-				} else if edge.IsOrderOnly(idx) {
+				} else if edge.is_order_only(idx) {
 					label = "|| "
 				}
 				fmt.Printf("    %s%s\n", label, in.path_)

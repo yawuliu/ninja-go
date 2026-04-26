@@ -278,7 +278,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		return b.plan.EdgeFinished(edge, EdgeFailed, err)
 	}
 
-	// Restat the edge outputs
+	// Restat the edge_ outputs
 	var recordMtime int64 = 0
 	if !b.config.dry_run {
 		restat := edge.GetBindingBool("restat")
@@ -288,7 +288,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 
 		// restat and generator rules must restat the outputs after the build
 		// has finished. if recordMtime == 0, then there was an error while
-		// attempting to touch/stat the temp log_file_ when the edge started and
+		// attempting to touch/stat the temp log_file_ when the edge_ started and
 		// we should fall back to recording the outputs' current mtime in the
 		// log.
 		if recordMtime == 0 || restat || generator {
@@ -369,7 +369,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 	} else if depsType == "gcc" {
 		depfile := result.Edge.GetUnescapedDepfile()
 		if depfile == "" {
-			*err = "edge with deps=gcc but no depfile makes no sense"
+			*err = "edge_ with deps=gcc but no depfile makes no sense"
 			return false
 		}
 

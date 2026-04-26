@@ -130,7 +130,7 @@ func NewStatusPrinter(config BuildConfig) *StatusPrinter {
 func (sp *StatusPrinter) EdgeAddedToPlan(edge *Edge) {
 	sp.total_edges_++
 
-	// Do we know how long did this edge take last time?
+	// Do we know how long did this edge_ take last time?
 	if edge.prev_elapsed_time_millis != -1 {
 		sp.eta_predictable_edges_total_++
 		sp.eta_predictable_edges_remaining_++
@@ -144,7 +144,7 @@ func (sp *StatusPrinter) EdgeAddedToPlan(edge *Edge) {
 func (sp *StatusPrinter) EdgeRemovedFromPlan(edge *Edge) {
 	sp.total_edges_--
 
-	// Do we know how long did this edge take last time?
+	// Do we know how long did this edge_ take last time?
 	if edge.prev_elapsed_time_millis != -1 {
 		sp.eta_predictable_edges_total_--
 		sp.eta_predictable_edges_remaining_--
@@ -176,7 +176,7 @@ func (sp *StatusPrinter) BuildEdgeFinished(edge *Edge, startTimeMillis int64, en
 	elapsed := endTimeMillis - startTimeMillis
 	sp.cpu_time_millis_ += elapsed
 
-	// Do we know how long did this edge take last time?
+	// Do we know how long did this edge_ take last time?
 	if edge.prev_elapsed_time_millis != -1 {
 		sp.eta_predictable_edges_remaining_--
 		sp.eta_predictable_cpu_time_remaining_millis_ -= edge.prev_elapsed_time_millis
@@ -372,7 +372,7 @@ func (sp *StatusPrinter) RecalculateProgressPrediction() {
 
 	// Given the time elapsed on the edges we've just run,
 	// and the runtime of the edges for which we know previous runtime,
-	// what's the edge's average runtime?
+	// what's the edge_'s average runtime?
 	edgesKnownRuntimeTotalMillis := sp.cpu_time_millis_
 	if usePreviousTimes {
 		edgesKnownRuntimeTotalMillis += sp.eta_predictable_cpu_time_remaining_millis_

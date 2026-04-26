@@ -27,7 +27,7 @@ func (g *GraphViz) Start() {
 	fmt.Println("digraph ninja {")
 	fmt.Println("rankdir=\"LR\"")
 	fmt.Println("node [fontsize=10, shape=box, height=0.25]")
-	fmt.Println("edge [fontsize=10]")
+	fmt.Println("edge_ [fontsize=10]")
 }
 
 // AddTarget 递归添加节点及其依赖边到图中。
@@ -73,7 +73,7 @@ func (g *GraphViz) AddTarget(node *Node) {
 		}
 		for idx, in := range edge.inputs_ {
 			orderOnly := ""
-			if edge.IsOrderOnly(idx) {
+			if edge.is_order_only(idx) {
 				orderOnly = " style=dotted"
 			}
 			fmt.Printf("\"%p\" -> \"%p\" [arrowhead=none%s]\n", in, edge, orderOnly)

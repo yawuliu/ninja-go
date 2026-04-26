@@ -454,11 +454,11 @@ func TestEdge_IsOrderOnly(t *testing.T) {
 	}
 
 	// 前 4 个不是 order-only
-	assert.False(t, edge.IsOrderOnly(0))
-	assert.False(t, edge.IsOrderOnly(3))
+	assert.False(t, edge.is_order_only(0))
+	assert.False(t, edge.is_order_only(3))
 
 	// 最后 1 个是 order-only
-	assert.True(t, edge.IsOrderOnly(4))
+	assert.True(t, edge.is_order_only(4))
 }
 
 // TestEdge_IsImplicitOut 测试隐式输出检查

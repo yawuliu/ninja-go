@@ -31,13 +31,13 @@ func (r *DryRunCommandRunner) CanRunMore() int {
 	return 1 << 30
 }
 
-// StartCommand 模拟启动命令：将 edge 放入完成队列
+// StartCommand 模拟启动命令：将 edge_ 放入完成队列
 func (r *DryRunCommandRunner) StartCommand(edge *Edge) bool {
 	r.finished.PushBack(edge)
 	return true
 }
 
-// WaitForCommand 等待一个命令完成：从队列中取出一个 edge，并返回成功结果
+// WaitForCommand 等待一个命令完成：从队列中取出一个 edge_，并返回成功结果
 func (r *DryRunCommandRunner) WaitForCommand(result *CommandResult) bool {
 	if r.finished.Len() == 0 {
 		return false

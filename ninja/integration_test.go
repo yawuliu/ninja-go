@@ -222,7 +222,7 @@ build foo.o: cc foo.c || stamp
 	edge := state.Edges[0]
 	assert.Len(t, edge.inputs_, 2)
 	assert.Equal(t, 1, edge.order_only_deps_)
-	assert.True(t, edge.IsOrderOnly(1))
+	assert.True(t, edge.is_order_only(1))
 }
 
 // TestIntegration_VariableInheritance 测试变量继承

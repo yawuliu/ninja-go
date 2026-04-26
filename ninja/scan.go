@@ -60,34 +60,34 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 		if node.StatusKnown() {
 			return true
 		}
-		// This node has no in-edge; it is dirty if it is missing.
+		// This node has no in-edge_; it is dirty if it is missing.
 		if !node.StatIfNecessary(ds.disk_interface_, err) {
 			return false
 		}
 		if !node.Exists() {
-			ds.explanations_.Record(node, "%s has no in-edge and is missing", node.path_)
+			ds.explanations_.Record(node, "%s has no in-edge_ and is missing", node.path_)
 		}
 		node.SetDirty(!node.Exists())
 		return true
 	}
 
-	// If we already finished this edge then we are done.
+	// If we already finished this edge_ then we are done.
 	if edge.mark_ == VisitDone {
 		return true
 	}
 
-	// If we encountered this edge earlier in the call stack we have a cycle.
+	// If we encountered this edge_ earlier in the call stack we have a cycle.
 	if !ds.VerifyDAG(node, stack, err) {
 		return false
 	}
 
-	// Store any validation nodes from the edge for adding to the initial nodes.
+	// Store any validation nodes from the edge_ for adding to the initial nodes.
 	// Don't recurse into them, that would trigger the dependency cycle detector
 	// if the validation node depends on this node.
 	// RecomputeDirty will add the validation nodes to the initial nodes and recurse into them.
 	*validationNodes = append(*validationNodes, edge.validations_...)
 
-	// mark_ the edge temporarily while in the call stack.
+	// mark_ the edge_ temporarily while in the call stack.
 	edge.mark_ = VisitInStack
 	*stack = append(*stack, node)
 
@@ -96,7 +96,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 	edge.deps_missing_ = false
 
 	if !edge.deps_loaded_ {
-		// This is our first encounter with this edge.
+		// This is our first encounter with this edge_.
 		edge.deps_loaded_ = true
 
 		// If there is a pending dyndep log_file_, visit it now.
@@ -119,7 +119,6 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			}
 			// Failed to load dependency info: rebuild to regenerate it.
 			// LoadDeps() did explanations.Record already, no need to do it here.
-			dirty = true
 			edge.deps_missing_ = true
 		}
 	}
@@ -152,7 +151,7 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 			}
 		}
 
-		if !edge.IsOrderOnly(idx) {
+		if !edge.is_order_only(idx) {
 			// If a regular input is dirty (or missing), we're dirty.
 			// Otherwise consider mtime.
 			if i.Dirty() {
@@ -180,14 +179,14 @@ func (ds *DependencyScan) recomputeNodeDirty(node *Node, stack *[]*Node, validat
 		}
 	}
 
-	// If an edge is dirty, its outputs are normally not ready.
+	// If an edge_ is dirty, its outputs are normally not ready.
 	// (It's possible to be clean but still not be ready in the presence of order-only inputs.)
 	// But phony edges with no inputs have nothing to do, so are always ready.
 	if dirty && !(edge.IsPhony() && len(edge.inputs_) == 0) {
 		edge.outputs_ready_ = false
 	}
 
-	// mark_ the edge as finished during this walk now that it will no longer be in the call stack.
+	// mark_ the edge_ as finished during this walk now that it will no longer be in the call stack.
 	edge.mark_ = VisitDone
 	if (*stack)[len(*stack)-1] != node {
 		panic("assertion failed: stack back is not node")
@@ -309,7 +308,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 	// Update the string slice (depfileParser.outs is a slice of strings, we need to replace)
 	depfileParser.Outs[0] = string(canonicalized)
 
-	// Check that this depfile matches the edge's output.
+	// Check that this depfile matches the edge_'s output.
 	if firstOutput.path_ != string(canonicalized) {
 		l.explanations.Record(firstOutput,
 			"expected depfile '%s' to mention '%s', got '%s'",
@@ -317,7 +316,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 		return false
 	}
 
-	// Ensure that all mentioned outputs are outputs of the edge.
+	// Ensure that all mentioned outputs are outputs of the edge_.
 	for _, o := range depfileParser.Outs {
 		found := false
 		for _, edgeOut := range edge.outputs_ {
@@ -336,7 +335,7 @@ func (l *ImplicitDepLoader) LoadDepFile(edge *Edge, path string, err *string) bo
 }
 
 func (l *ImplicitDepLoader) ProcessDepfileDeps(edge *Edge, depfileIns []string, err *string) bool {
-	// Preallocate space in edge.inputs for the new implicit dependencies.
+	// Preallocate space in edge_.inputs for the new implicit dependencies.
 	// In Go, we can simply extend the slice and fill.
 	startIdx := len(edge.inputs_) - edge.order_only_deps_
 	// Make room for len(depfileIns) new items at the insertion point.
@@ -370,15 +369,15 @@ func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile, err *string) 
 func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool {
 	edge := node.in_edge()
 	if edge == nil {
-		panic("assertion failed: edge != nil")
+		panic("assertion failed: edge_ != nil")
 	}
 
-	// If we have no temporary mark on the edge then we do not yet have a cycle.
+	// If we have no temporary mark on the edge_ then we do not yet have a cycle.
 	if edge.mark_ != VisitInStack {
 		return true
 	}
 
-	// We have this edge earlier in the call stack. Find it.
+	// We have this edge_ earlier in the call stack. Find it.
 	startIdx := -1
 	for i, n := range *stack {
 		if n.in_edge() == edge {
@@ -391,7 +390,7 @@ func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool
 	}
 
 	// Make the cycle clear by reporting its start as the node at its end
-	// instead of some other output of the starting edge.
+	// instead of some other output of the starting edge_.
 	(*stack)[startIdx] = node
 
 	// Construct the error message rejecting the cycle.
@@ -423,7 +422,7 @@ func (s *DependencyScan) RecomputeOutputsDirty(edge *Edge, mostRecentInput *Node
 }
 
 // RecomputeOutputDirty 判断单个输出节点是否需要重新构建（是否脏）。
-// 参数 edge 是产生该输出的边，mostRecentInput 是最近修改的输入节点，
+// 参数 edge_ 是产生该输出的边，mostRecentInput 是最近修改的输入节点，
 // command 是边的完整命令（用于比较命令哈希），output 是输出节点。
 // 返回 true 表示需要重新构建，false 表示 clean。
 func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node, command string, output *Node) bool {
@@ -434,7 +433,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 		// they are used for dirty calculation instead of this fallback.
 		if len(edge.inputs_) == 0 && len(edge.validations_) == 0 && !output.Exists() {
 			ds.explanations_.Record(
-				output, "output %s of phony edge with no inputs doesn't exist",
+				output, "output %s of phony edge_ with no inputs doesn't exist",
 				output.path_)
 			return true
 		}

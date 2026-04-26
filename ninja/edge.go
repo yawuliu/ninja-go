@@ -29,7 +29,7 @@ type Edge struct {
 	mark_                    VisitMark // 0 none, 1 in stack, 2 done
 	/// A Jobserver slot instance. Invalid by default.
 	job_slot_ JobserverSlot
-	// Historical info: how long did this edge take last time,
+	// Historical info: how long did this edge_ take last time,
 	// as per .ninja_log, if known? Defaults to -1 if unknown.
 	prev_elapsed_time_millis int64 // -1;
 }
@@ -55,7 +55,7 @@ func (e *Edge) EvaluateCommand(incl_rsp_file bool) string {
 }
 
 func (e *Edge) GetBinding(key string) string {
-	env := &EdgeEnv{edge: e, escapeInOut: true}
+	env := NewEdgeEnv(e, kShellEscape)
 	return env.LookupVariable(key)
 }
 
@@ -64,27 +64,27 @@ func (e *Edge) GetBindingBool(key string) bool {
 }
 
 func (e *Edge) GetUnescapedDepfile() string {
-	env := &EdgeEnv{edge: e, escapeInOut: false}
+	env := NewEdgeEnv(e, kDoNotEscape)
 	return env.LookupVariable("depfile")
 }
 
 func (e *Edge) GetUnescapedDyndep() string {
-	env := &EdgeEnv{edge: e, escapeInOut: false}
+	env := NewEdgeEnv(e, kDoNotEscape)
 	return env.LookupVariable("dyndep")
 }
 
 func (e *Edge) GetUnescapedRspfile() string {
-	env := &EdgeEnv{edge: e, escapeInOut: false}
+	env := NewEdgeEnv(e, kDoNotEscape)
 	return env.LookupVariable("rspfile")
 }
 
 func (e *Edge) IsImplicit(idx int) bool {
 	n := len(e.inputs_)
-	return idx >= n-e.order_only_deps_-e.implicit_deps_ && !e.IsOrderOnly(idx)
+	return idx >= n-e.order_only_deps_-e.implicit_deps_ && !e.is_order_only(idx)
 }
 
-func (e *Edge) IsOrderOnly(idx int) bool {
-	return idx >= len(e.inputs_)-e.order_only_deps_
+func (e *Edge) is_order_only(index int) bool {
+	return index >= len(e.inputs_)-e.order_only_deps_
 }
 
 func (e *Edge) IsImplicitOut(idx int) bool {

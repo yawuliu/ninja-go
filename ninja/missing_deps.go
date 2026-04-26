@@ -91,7 +91,7 @@ func (s *Scanner) loadDepfileDeps(edge *Edge) []*Node {
 	if depfile == "" {
 		return nil
 	}
-	// 展开 $out 等变量（简化：直接替换，实际应使用 edge.env_）
+	// 展开 $out 等变量（简化：直接替换，实际应使用 edge_.env_）
 	depfile = strings.ReplaceAll(depfile, "$out", edge.outputs_[0].path_)
 	var content string
 	var err string

@@ -1,57 +1,72 @@
 package main
 
 import (
-	"fmt"
+	"slices"
 	"strings"
+)
+
+type EscapeKind int
+
+const (
+	kShellEscape EscapeKind = iota
+	kDoNotEscape
 )
 
 // EdgeEnv 实现 Env 接口，用于展开 $in、$out 等
 type EdgeEnv struct {
-	edge        *Edge
-	escapeInOut bool
-	recursive   bool
-	lookups     []string
+	edge_          *Edge
+	escape_in_out_ EscapeKind
+	recursive_     bool
+	lookups_       []string
+}
+
+func NewEdgeEnv(edge *Edge, escape EscapeKind) *EdgeEnv {
+	e := new(EdgeEnv)
+	e.edge_ = edge
+	e.escape_in_out_ = escape
+	e.recursive_ = false
+	return e
 }
 
 func (e *EdgeEnv) LookupVariable(varName string) string {
 	switch varName {
 	case "in", "in_newline":
 		sep := byte(' ')
-		if varName == "in_newline" {
+		if varName == "in" {
+			sep = ' '
+		} else {
 			sep = '\n'
 		}
-		explicitCount := len(e.edge.inputs_) - e.edge.implicit_deps_ - e.edge.order_only_deps_
-		return e.makePathList(e.edge.inputs_[:explicitCount], sep)
+		explicit_deps_count := len(e.edge_.inputs_) - e.edge_.implicit_deps_ - e.edge_.order_only_deps_
+		return e.makePathList(e.edge_.inputs_[:explicit_deps_count], sep)
 	case "out":
-		explicitCount := len(e.edge.outputs_) - e.edge.implicit_outs_
-		return e.makePathList(e.edge.outputs_[:explicitCount], ' ')
+		explicit_outs_count := len(e.edge_.outputs_) - e.edge_.implicit_outs_
+		return e.makePathList(e.edge_.outputs_[:explicit_outs_count], ' ')
 	}
 
 	// 处理递归变量检测
-	if e.recursive {
-		for _, v := range e.lookups {
-			if v == varName {
-				// 循环依赖
-				panic(fmt.Sprintf("cycle in rule variables: %s", strings.Join(append(e.lookups, varName), " -> ")))
+	if e.recursive_ {
+		if idx := slices.Index(e.lookups_, varName); idx != -1 {
+			var cycle strings.Builder
+			for _, v := range e.lookups_[idx:] {
+				cycle.WriteString(v)
+				cycle.WriteString(" -> ")
 			}
+			cycle.WriteString(varName)
+			panic("cycle in rule variables: " + cycle.String())
 		}
 	}
 
-	eval := e.edge.Rule.GetBinding(varName)
-	if eval == nil {
-		if e.edge.env_ != nil {
-			return e.edge.env_.LookupVariable(varName)
-		}
-		return ""
+	eval := e.edge_.Rule.GetBinding(varName)
+	record_varname := e.recursive_ && eval != nil
+	if record_varname {
+		e.lookups_ = append(e.lookups_, varName)
 	}
 
-	if e.recursive {
-		e.lookups = append(e.lookups, varName)
-	}
-	e.recursive = true
-	result := e.edge.env_.LookupWithFallback(varName, eval, e)
-	if len(e.lookups) > 0 && e.lookups[len(e.lookups)-1] == varName {
-		e.lookups = e.lookups[:len(e.lookups)-1]
+	e.recursive_ = true
+	result := e.edge_.env_.LookupWithFallback(varName, eval, e)
+	if record_varname {
+		e.lookups_ = e.lookups_[:len(e.lookups_)-1]
 	}
 	return result
 }
@@ -60,7 +75,7 @@ func (e *EdgeEnv) makePathList(nodes []*Node, sep byte) string {
 	var parts []string
 	for _, n := range nodes {
 		path := n.path_ // 实际应使用 PathDecanonicalized
-		if e.escapeInOut {
+		if e.escape_in_out_ == kShellEscape {
 			// 需要 shell 转义，这里调用 util.EscapeShell
 			if IsWindows() {
 				parts = append(parts, GetWin32EscapedString(path))

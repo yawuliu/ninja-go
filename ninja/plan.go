@@ -367,7 +367,7 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile, e
 	for _, edge := range dyndepRoots {
 		info := ddf[edge]
 		for _, in := range info.ImplicitInputs {
-			// AddSubTarget 的第三个参数是 dependent，这里用 edge 的第一个输出
+			// AddSubTarget 的第三个参数是 dependent，这里用 edge_ 的第一个输出
 			var dependentNode *Node
 			if len(edge.outputs_) > 0 {
 				dependentNode = edge.outputs_[0]
