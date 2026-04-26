@@ -19,7 +19,6 @@ func TestNewState(t *testing.T) {
 	assert.NotNil(t, state.edges_)
 	assert.NotNil(t, state.bindings_)
 	assert.NotNil(t, state.defaults_)
-	assert.NotNil(t, state.nodesByID)
 
 	// 检查默认池
 	assert.Contains(t, state.pools_, "")
@@ -35,19 +34,19 @@ func TestState_AddNode(t *testing.T) {
 	state := NewState()
 
 	// 添加新节点
-	node1 := state.AddNode("foo.txt", 0)
+	node1 := state.GetNode("foo.txt", 0)
 	require.NotNil(t, node1)
 	assert.Equal(t, "foo.txt", node1.path_)
 	assert.Equal(t, 0, node1.id_)
 
 	// 添加另一个节点
-	node2 := state.AddNode("bar.txt", 0)
+	node2 := state.GetNode("bar.txt", 0)
 	require.NotNil(t, node2)
 	assert.Equal(t, "bar.txt", node2.path_)
 	assert.Equal(t, 1, node2.id_)
 
 	// 重复添加应该返回已有节点
-	node3 := state.AddNode("foo.txt", 0)
+	node3 := state.GetNode("foo.txt", 0)
 	assert.Equal(t, node1, node3)
 }
 
@@ -60,7 +59,7 @@ func TestState_LookupNode(t *testing.T) {
 	assert.Nil(t, node)
 
 	// 添加后查找
-	state.AddNode("exists.txt", 0)
+	state.GetNode("exists.txt", 0)
 	node = state.LookupNode("exists.txt")
 	assert.NotNil(t, node)
 	assert.Equal(t, "exists.txt", node.path_)
@@ -70,22 +69,15 @@ func TestState_LookupNode(t *testing.T) {
 func TestState_GetNodeByID(t *testing.T) {
 	state := NewState()
 
-	node1 := state.AddNode("foo.txt", 0)
-	node2 := state.AddNode("bar.txt", 0)
+	node1 := state.GetNode("foo.txt", 0)
+	node2 := state.GetNode("bar.txt", 0)
 
 	// 通过 id_ 获取
-	found1 := state.GetNodeByID(node1.id_)
+	found1 := state.LookupNode("foo.txt")
 	assert.Equal(t, node1, found1)
 
-	found2 := state.GetNodeByID(node2.id_)
+	found2 := state.LookupNode("bar.txt")
 	assert.Equal(t, node2, found2)
-
-	// 无效 id_
-	invalid := state.GetNodeByID(999)
-	assert.Nil(t, invalid)
-
-	negative := state.GetNodeByID(-1)
-	assert.Nil(t, negative)
 }
 
 // TestState_AddEdge 测试添加边
@@ -168,7 +160,7 @@ func TestState_AddDefault(t *testing.T) {
 	state := NewState()
 
 	// 先添加一个节点
-	state.AddNode("target", 0)
+	state.GetNode("target", 0)
 	rule := &Rule{Name: "phony"}
 	edge := state.AddEdge(rule)
 	var err string
@@ -189,7 +181,7 @@ func TestState_Reset(t *testing.T) {
 	state := NewState()
 
 	// 创建一些节点和边
-	node := state.AddNode("foo.txt", 0)
+	node := state.GetNode("foo.txt", 0)
 	node.dirty_ = true
 	node.mtime_ = 12345
 	node.exists_ = 1
@@ -279,7 +271,7 @@ func TestState_DefaultNodes(t *testing.T) {
 	assert.Equal(t, "output", defaults[0].path_)
 
 	// 设置默认目标后应该返回默认目标
-	state.AddNode("default_target", 0)
+	state.GetNode("default_target", 0)
 	edge2 := state.AddEdge(rule)
 
 	state.AddOut(edge2, "default_target", 0, &err)
