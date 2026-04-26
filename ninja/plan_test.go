@@ -51,8 +51,8 @@ func TestPlan_AddTarget(t *testing.T) {
 	cmdEval.AddText("gcc $in -o $out")
 	rule.AddBinding("command", cmdEval)
 	edge := state.AddEdge(rule)
-	inNode := state.AddNode("in.c", 0)
-	outNode := state.AddNode("out.o", 0)
+	inNode := state.GetNode("in.c", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.inputs_ = []*Node{inNode}
 	edge.outputs_ = []*Node{outNode}
 	var err string
@@ -83,8 +83,8 @@ func TestPlan_AddTarget_MissingInput(t *testing.T) {
 	// 创建图，输入缺失
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	inNode := state.AddNode("missing.c", 0)
-	outNode := state.AddNode("out.o", 0)
+	inNode := state.GetNode("missing.c", 0)
+	outNode := state.GetNode("out.o", 0)
 	// 使用 AddIn 和 AddOut 来正确设置连接关系
 	var err string
 	state.AddIn(edge, "missing.c", 0)
@@ -111,7 +111,7 @@ func TestPlan_AddTarget_AlreadyUpToDate(t *testing.T) {
 	// 创建图
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
 	// 标记输出已就绪
@@ -173,7 +173,7 @@ func TestPlan_EdgeFinished(t *testing.T) {
 	// 创建图: in -> out
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
 	// 标记为 wanted
@@ -199,7 +199,7 @@ func TestPlan_EdgeFinished_Failed(t *testing.T) {
 
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
 	plan.want[edge] = WantToFinish
@@ -221,7 +221,7 @@ func TestPlan_scheduleWork(t *testing.T) {
 	// 使用默认池（深度无限）
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	edge.pool_ = DefaultPool
+	edge.pool_ = kDefaultPool
 
 	// 标记为想要开始
 	plan.want[edge] = WantToStart
@@ -237,19 +237,19 @@ func TestPlan_scheduleWork(t *testing.T) {
 // TestPlan_computeCriticalPath 测试关键路径计算
 func TestPlan_computeCriticalPath(t *testing.T) {
 	state := NewState()
-	plan := NewPlan(&Builder{state: state})
+	plan := NewPlan(&Builder{state_: state})
 
 	// 创建链式图: a -> b -> c
 	rule := &Rule{Name: "cc"}
 
 	edge1 := state.AddEdge(rule)
-	aNode := state.AddNode("a.o", 0)
-	bNode := state.AddNode("b.o", 0)
+	aNode := state.GetNode("a.o", 0)
+	bNode := state.GetNode("b.o", 0)
 	edge1.inputs_ = []*Node{aNode}
 	edge1.outputs_ = []*Node{bNode}
 
 	edge2 := state.AddEdge(rule)
-	cNode := state.AddNode("c.o", 0)
+	cNode := state.GetNode("c.o", 0)
 	edge2.inputs_ = []*Node{bNode}
 	edge2.outputs_ = []*Node{cNode}
 
@@ -301,8 +301,8 @@ func TestPlan_CleanNode(t *testing.T) {
 	// 创建简单图
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	inNode := state.AddNode("in.c", 0)
-	outNode := state.AddNode("out.o", 0)
+	inNode := state.GetNode("in.c", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.inputs_ = []*Node{inNode}
 	edge.outputs_ = []*Node{outNode}
 
@@ -328,12 +328,12 @@ func TestPlan_CleanNode(t *testing.T) {
 // TestPlan_DyndepsLoaded 测试动态依赖加载
 func TestPlan_DyndepsLoaded(t *testing.T) {
 	state := NewState()
-	plan := NewPlan(&Builder{state: state})
+	plan := NewPlan(&Builder{state_: state})
 
 	// 创建基础图
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
 	// 创建 mock dyndep 文件
@@ -351,10 +351,10 @@ func TestPlan_DyndepsLoaded(t *testing.T) {
 // TestPlan_RefreshDyndepDependents 测试刷新动态依赖
 func TestPlan_RefreshDyndepDependents(t *testing.T) {
 	state := NewState()
-	plan := NewPlan(&Builder{state: state})
+	plan := NewPlan(&Builder{state_: state})
 
 	// 创建节点
-	node := state.AddNode("test.o", 0)
+	node := state.GetNode("test.o", 0)
 
 	// 创建 mock scanner
 	scanner := &DependencyScan{}
@@ -368,18 +368,18 @@ func TestPlan_RefreshDyndepDependents(t *testing.T) {
 // TestPlan_nodeFinished 测试节点完成
 func TestPlan_nodeFinished(t *testing.T) {
 	state := NewState()
-	plan := NewPlan(&Builder{state: state})
+	plan := NewPlan(&Builder{state_: state})
 
 	// 创建图
 	rule := &Rule{Name: "cc"}
 	edge1 := state.AddEdge(rule)
-	inNode := state.AddNode("in.c", 0)
-	midNode := state.AddNode("mid.o", 0)
+	inNode := state.GetNode("in.c", 0)
+	midNode := state.GetNode("mid.o", 0)
 	edge1.inputs_ = []*Node{inNode}
 	edge1.outputs_ = []*Node{midNode}
 
 	edge2 := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge2.inputs_ = []*Node{midNode}
 	edge2.outputs_ = []*Node{outNode}
 
@@ -401,8 +401,8 @@ func TestPlan_edgeMaybeReady(t *testing.T) {
 	// 创建边，所有输入就绪
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	inNode := state.AddNode("in.c", 0)
-	outNode := state.AddNode("out.o", 0)
+	inNode := state.GetNode("in.c", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.inputs_ = []*Node{inNode}
 	edge.outputs_ = []*Node{outNode}
 
@@ -423,7 +423,7 @@ func TestPlan_scheduleInitialEdges(t *testing.T) {
 	// 创建立即可用的边
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 	edge.inputs_ = []*Node{} // 无输入，立即可用
 
@@ -445,13 +445,13 @@ func TestPlan_AddTarget_Recursive(t *testing.T) {
 	rule := &Rule{Name: "cc"}
 
 	edge1 := state.AddEdge(rule)
-	cNode := state.AddNode("c.c", 0)
-	bNode := state.AddNode("b.o", 0)
+	cNode := state.GetNode("c.c", 0)
+	bNode := state.GetNode("b.o", 0)
 	edge1.inputs_ = []*Node{cNode}
 	edge1.outputs_ = []*Node{bNode}
 
 	edge2 := state.AddEdge(rule)
-	aNode := state.AddNode("a.o", 0)
+	aNode := state.GetNode("a.o", 0)
 	edge2.inputs_ = []*Node{bNode}
 	edge2.outputs_ = []*Node{aNode}
 
@@ -478,8 +478,8 @@ func TestPlan_unmarkDependents(t *testing.T) {
 	// 创建图
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	inNode := state.AddNode("in.c", 0)
-	outNode := state.AddNode("out.o", 0)
+	inNode := state.GetNode("in.c", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.inputs_ = []*Node{inNode}
 	edge.outputs_ = []*Node{outNode}
 
@@ -503,7 +503,7 @@ func TestPlan_AddTarget_DyndepPending(t *testing.T) {
 	// 创建带 dyndep 的边
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
-	outNode := state.AddNode("out.o", 0)
+	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
 	// 设置 dyndep 待处理（不影响基本测试）

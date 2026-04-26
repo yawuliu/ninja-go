@@ -182,14 +182,14 @@ func TestPool_ConcurrentAccess(t *testing.T) {
 
 // TestDefaultPool 测试默认池
 func TestDefaultPool(t *testing.T) {
-	assert.NotNil(t, DefaultPool)
-	assert.Equal(t, "", DefaultPool.Name)
-	assert.Equal(t, 0, DefaultPool.Depth)
+	assert.NotNil(t, kDefaultPool)
+	assert.Equal(t, "", kDefaultPool.Name)
+	assert.Equal(t, 0, kDefaultPool.Depth)
 }
 
 // TestConsolePool 测试控制台池
 func TestConsolePool_Creation(t *testing.T) {
-	assert.NotNil(t, ConsolePool)
-	assert.Equal(t, "console_", ConsolePool.Name)
-	assert.Equal(t, 1, ConsolePool.Depth)
+	assert.NotNil(t, kConsolePool)
+	assert.Equal(t, "console_", kConsolePool.Name)
+	assert.Equal(t, 1, kConsolePool.Depth)
 }
