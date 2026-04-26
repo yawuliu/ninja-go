@@ -16,7 +16,7 @@ const (
 )
 
 // kCurrentVersion is the current version of the deps log format.
-const kCurrentVersion int = 4
+const kCurrentVersion int32 = 4
 
 // kMaxRecordSize is the maximum allowed size of a deps log record (in bytes).
 const kMaxRecordSize = (1 << 19) - 1 // 524287
@@ -268,7 +268,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 	}
 
 	// Read version
-	var version int
+	var version int32
 	if read_err := binary.Read(f, binary.LittleEndian, &version); read_err != nil || version != kCurrentVersion {
 		f.Close()
 		if version == 1 {

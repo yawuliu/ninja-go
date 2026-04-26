@@ -245,7 +245,7 @@ func (bl *BuildLog) Load(path string, err *string) LoadStatus {
 	// Decide whether to recompact
 	const kMinCompactionEntryCount = 100
 	const kCompactionRatio = 3
-	if logVersion < kCurrentVersion {
+	if logVersion < kBuildLogCurrentVersion {
 		bl.needsRecompaction = true
 	} else if totalEntryCount > kMinCompactionEntryCount &&
 		totalEntryCount > uniqueEntryCount*kCompactionRatio {
