@@ -43,7 +43,7 @@ func TestManifestParser_ParseRuleWithMultipleBindings(t *testing.T) {
   command = gcc $in -o $out
   description = CC $out
   depfile = $out.d
-  deps_ = gcc
+  deps = gcc
 `
 	var err string
 	parser.ParseTest(input, &err)

@@ -93,7 +93,7 @@ func TestIsReservedBinding(t *testing.T) {
 	assert.True(t, IsReservedBinding("depfile"))
 	assert.True(t, IsReservedBinding("dyndep"))
 	assert.True(t, IsReservedBinding("description"))
-	assert.True(t, IsReservedBinding("deps_"))
+	assert.True(t, IsReservedBinding("deps"))
 	assert.True(t, IsReservedBinding("generator"))
 	assert.True(t, IsReservedBinding("pool"))
 	assert.True(t, IsReservedBinding("restat"))

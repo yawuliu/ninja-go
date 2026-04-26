@@ -64,7 +64,11 @@ func (e *EdgeEnv) LookupVariable(varName string) string {
 	}
 
 	e.recursive_ = true
-	result := e.edge_.env_.LookupWithFallback(varName, eval, e)
+	var result string
+	if e.edge_.env_ != nil {
+		result = e.edge_.env_.LookupWithFallback(varName, eval, e)
+	}
+
 	if record_varname {
 		e.lookups_ = e.lookups_[:len(e.lookups_)-1]
 	}

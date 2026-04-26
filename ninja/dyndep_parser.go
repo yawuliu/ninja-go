@@ -20,7 +20,7 @@ func (b *DyndepParser) Load(filename string, err *string, parent *Lexer) bool {
 	var content string
 	status := b.fileReader.ReadFile(filename, &content, err)
 	if status != StatusOkay {
-		*err = fmt.Sprintf("loading '%s': %s", filename, err)
+		*err = fmt.Sprintf("loading '%s': %v", filename, err)
 		if parent != nil {
 			parent.Error(*err, err)
 		}

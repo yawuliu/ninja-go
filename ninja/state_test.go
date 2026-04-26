@@ -21,8 +21,8 @@ func TestNewState(t *testing.T) {
 	assert.NotNil(t, state.defaults_)
 
 	// 检查默认池
-	assert.Contains(t, state.pools_, "")
-	assert.Contains(t, state.pools_, "console_")
+	assert.NotNil(t, state.LookupPool(""))
+	assert.NotNil(t, state.LookupPool("console"))
 
 	// 检查 phony 规则
 	phony := state.bindings_.LookupRule("phony")
@@ -37,13 +37,13 @@ func TestState_AddNode(t *testing.T) {
 	node1 := state.GetNode("foo.txt", 0)
 	require.NotNil(t, node1)
 	assert.Equal(t, "foo.txt", node1.path_)
-	assert.Equal(t, 0, node1.id_)
+	assert.Equal(t, -1, node1.id_)
 
 	// 添加另一个节点
 	node2 := state.GetNode("bar.txt", 0)
 	require.NotNil(t, node2)
 	assert.Equal(t, "bar.txt", node2.path_)
-	assert.Equal(t, 1, node2.id_)
+	assert.Equal(t, -1, node2.id_)
 
 	// 重复添加应该返回已有节点
 	node3 := state.GetNode("foo.txt", 0)
@@ -146,12 +146,12 @@ func TestState_AddOut_Duplicate(t *testing.T) {
 
 	// 同一边的重复输出应该报错
 	state.AddOut(edge1, "output.o", 0, &err)
-	assert.Equal(t, err, "")
+	assert.NotNil(t, err)
 	assert.Contains(t, err, "defined as an output multiple times")
 
 	// 不同边的相同输出应该报错
 	state.AddOut(edge2, "output.o", 0, &err)
-	assert.Equal(t, err, "")
+	assert.NotNil(t, err)
 	assert.Contains(t, err, "multiple rules generate")
 }
 
@@ -173,7 +173,7 @@ func TestState_AddDefault(t *testing.T) {
 
 	// 不存在的节点应该报错
 	state.AddDefault("nonexistent", &err)
-	assert.Equal(t, err, "")
+	assert.NotNil(t, err)
 }
 
 // TestState_Reset 测试重置状态
@@ -198,7 +198,7 @@ func TestState_Reset(t *testing.T) {
 	// 验证状态被重置
 	assert.False(t, node.dirty_)
 	assert.Equal(t, int64(-1), node.mtime_)
-	assert.Equal(t, int8(-1), node.Exists)
+	assert.Equal(t, false, node.Exists())
 
 	assert.False(t, edge.outputs_ready_)
 	assert.False(t, edge.deps_loaded_)
@@ -250,7 +250,7 @@ func TestState_RootNodes_Cycle(t *testing.T) {
 
 	// 这种情况下没有根节点
 	roots := state.RootNodes(&err)
-	assert.Equal(t, err, "")
+	assert.NotNil(t, err)
 	assert.Contains(t, err, "could not determine root nodes")
 	assert.Empty(t, roots)
 }
@@ -290,7 +290,7 @@ func TestNode_NewNode(t *testing.T) {
 	assert.Equal(t, "test.txt", node.path_)
 	assert.Equal(t, uint64(0x1234), node.slash_bits_)
 	assert.Equal(t, int64(-1), node.mtime_)
-	assert.Equal(t, int8(-1), node.Exists)
+	assert.Equal(t, false, node.Exists())
 	assert.True(t, node.generated_by_dep_loader_)
 	assert.Equal(t, -1, node.id_)
 }
@@ -305,7 +305,7 @@ func TestNode_ResetState(t *testing.T) {
 	node.ResetState()
 
 	assert.Equal(t, int64(-1), node.mtime_)
-	assert.Equal(t, int8(-1), node.Exists)
+	assert.Equal(t, false, node.Exists())
 	assert.False(t, node.dirty_)
 }
 
@@ -316,7 +316,7 @@ func TestNode_MarkMissing(t *testing.T) {
 	node.MarkMissing()
 
 	assert.Equal(t, int64(0), node.mtime_)
-	assert.Equal(t, int8(0), node.Exists)
+	assert.Equal(t, false, node.Exists())
 }
 
 // TestNode_AddOutEdge 测试添加出边
