@@ -8,49 +8,50 @@ import (
 type Want int
 
 const (
-	WantNothing Want = iota
-	WantToStart
-	WantToFinish
+	kWantNothing Want = iota
+	kWantToStart
+	kWantToFinish
 ) // Plan 构建计划
 
 type EdgeResult int
 
 const (
-	EdgeFailed EdgeResult = iota
-	EdgeSucceeded
+	kEdgeFailed EdgeResult = iota
+	kEdgeSucceeded
 )
 
 type Plan struct {
-	builder      *Builder
-	want         map[*Edge]Want
-	ready        *EdgePriorityQueue
-	commandEdges int
-	wantedEdges  int
-	targets      []*Node
+	builder_       *Builder
+	want_          map[*Edge]Want
+	ready_         *EdgePriorityQueue
+	command_edges_ int
+	wanted_edges_  int
+	targets_       []*Node
 }
 
 func NewPlan(builder *Builder) *Plan {
 	return &Plan{
-		builder: builder,
-		want:    make(map[*Edge]Want),
-		ready:   &EdgePriorityQueue{},
+		builder_:       builder,
+		want_:          make(map[*Edge]Want),
+		ready_:         &EdgePriorityQueue{},
+		command_edges_: 0,
+		wanted_edges_:  0,
 	}
 }
 
 func (p *Plan) Reset() {
-	p.want = make(map[*Edge]Want)
-	p.ready.Clear()
-	p.commandEdges = 0
-	p.wantedEdges = 0
-	p.targets = nil
+	p.want_ = make(map[*Edge]Want)
+	p.ready_.Clear()
+	p.command_edges_ = 0
+	p.wanted_edges_ = 0
 }
 
 func (p *Plan) AddTarget(target *Node, err *string) bool {
-	p.targets = append(p.targets, target)
+	p.targets_ = append(p.targets_, target)
 	return p.addSubTarget(target, nil, err, nil)
 }
 
-func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk map[*Edge]bool) bool {
+func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndep_walk map[*Edge]bool) bool {
 	edge := node.in_edge()
 	if edge == nil {
 		// 叶子节点：若是源文件且缺失且不是由dep loader生成，则报错
@@ -68,23 +69,23 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk
 		return false
 	}
 
-	want, exists := p.want[edge]
+	want, exists := p.want_[edge]
 	if !exists {
-		want = WantNothing
-		p.want[edge] = want
+		want = kWantNothing
+		p.want_[edge] = want
 	}
 
-	if dyndepWalk != nil && want == WantToFinish {
+	if dyndep_walk != nil && want == kWantToFinish {
 		return false
 	}
 
-	if node.dirty_ && want == WantNothing {
-		p.want[edge] = WantToStart
+	if node.dirty_ && want == kWantNothing {
+		p.want_[edge] = kWantToStart
 		p.edgeWanted(edge)
 	}
 
-	if dyndepWalk != nil {
-		dyndepWalk[edge] = true
+	if dyndep_walk != nil {
+		dyndep_walk[edge] = true
 	}
 
 	if exists {
@@ -92,7 +93,7 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk
 	}
 
 	for _, in := range edge.inputs_ {
-		if !p.addSubTarget(in, node, err, dyndepWalk) && *err != "" {
+		if !p.addSubTarget(in, node, err, dyndep_walk) && *err != "" {
 			return false
 		}
 	}
@@ -100,45 +101,53 @@ func (p *Plan) addSubTarget(node *Node, dependent *Node, err *string, dyndepWalk
 }
 
 func (p *Plan) edgeWanted(edge *Edge) {
-	p.wantedEdges++
+	p.wanted_edges_++
 	if !edge.IsPhony() {
-		p.commandEdges++
-		if p.builder != nil && p.builder.status_ != nil {
-			p.builder.status_.EdgeAddedToPlan(edge)
+		p.command_edges_++
+		if p.builder_ != nil {
+			p.builder_.status_.EdgeAddedToPlan(edge)
 		}
 	}
 }
 
 func (p *Plan) FindWork() *Edge {
-	if p.ready.Len() == 0 {
+	if p.ready_.Len() == 0 {
 		return nil
 	}
-	work := p.ready.Top()
-	// 若使用jobserver，则尝试获取令牌（此处简化）
-	p.ready.Pop()
+	work := p.ready_.Top()
+	// If jobserver mode is enabled, try to acquire a token first,
+	// and return null in case of failure.
+	if p.builder_ != nil && p.builder_.jobserver_ != nil {
+		work.job_slot_ = p.builder_.jobserver_.TryAcquire()
+		if !work.job_slot_.IsValid() {
+			return nil
+		}
+	}
+
+	p.ready_.Pop()
 	return work
 }
 
 func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
-	e, exists := p.want[edge]
+	e, exists := p.want_[edge]
 	if !exists {
 		panic(errors.New("EdgeFinished"))
 	}
-	directlyWanted := e != WantNothing
+	directlyWanted := e != kWantNothing
 
 	if directlyWanted {
 		edge.pool_.EdgeFinished(edge)
 	}
-	edge.pool_.RetrieveReadyEdges(p.ready)
+	edge.pool_.RetrieveReadyEdges(p.ready_)
 
-	if result != EdgeSucceeded {
+	if result != kEdgeSucceeded {
 		return true
 	}
 
 	if directlyWanted {
-		p.wantedEdges--
+		p.wanted_edges_--
 	}
-	delete(p.want, edge)
+	delete(p.want_, edge)
 	edge.outputs_ready_ = true
 
 	for _, out := range edge.outputs_ {
@@ -152,30 +161,31 @@ func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
 func (p *Plan) nodeFinished(node *Node, err *string) bool {
 	// 若此节点提供 dyndep 信息，则加载
 	if node.dyndep_pending_ {
-		if p.builder == nil {
+		if p.builder_ == nil {
 			panic(fmt.Errorf("dyndep requires Plan to have a Builder"))
 		}
-		return p.builder.LoadDyndeps(node, err)
+		return p.builder_.LoadDyndeps(node, err)
 	}
 
 	for _, outEdge := range node.out_edges_ {
-		want, exists := p.want[outEdge]
+		want, exists := p.want_[outEdge]
 		if !exists {
 			continue
 		}
-		if !p.edgeMaybeReady(outEdge, want, err) {
+		if !p.EdgeMaybeReady(p.want_, outEdge, want, err) {
 			return false
 		}
 	}
 	return true
 }
 
-func (p *Plan) edgeMaybeReady(edge *Edge, want Want, err *string) bool {
+func (p *Plan) EdgeMaybeReady(target map[*Edge]Want, want_e_first *Edge, want_e_second Want, err *string) bool {
+	edge := want_e_first
 	if edge.AllInputsReady() {
-		if want != WantNothing {
-			p.scheduleWork(edge)
+		if want_e_second != kWantNothing {
+			p.ScheduleWork(target, want_e_first, want_e_second)
 		} else {
-			if !p.EdgeFinished(edge, EdgeSucceeded, err) {
+			if !p.EdgeFinished(edge, kEdgeSucceeded, err) {
 				return false
 			}
 		}
@@ -183,25 +193,33 @@ func (p *Plan) edgeMaybeReady(edge *Edge, want Want, err *string) bool {
 	return true
 }
 
-func (p *Plan) scheduleWork(edge *Edge) {
-	e, exists := p.want[edge]
-	if !exists || e != WantToStart {
+func (p *Plan) ScheduleWork(target map[*Edge]Want, want_e_first *Edge, want_e_second Want) {
+	if want_e_second == kWantToFinish {
+		// This edge has already been scheduled.  We can get here again if an edge
+		// and one of its dependencies share an order-only input, or if a node
+		// duplicates an out edge (see https://github.com/ninja-build/ninja/pull/519).
+		// Avoid scheduling the work again.
 		return
 	}
-	p.want[edge] = WantToFinish
+	if want_e_second != kWantToStart {
+		panic(fmt.Sprintf("ScheduleWork want_e_second=%v", want_e_second))
+	}
+	target[want_e_first] = kWantToFinish
+
+	edge := want_e_first
 	pool := edge.pool_
 	if pool.ShouldDelayEdge() {
 		pool.DelayEdge(edge)
-		pool.RetrieveReadyEdges(p.ready)
+		pool.RetrieveReadyEdges(p.ready_)
 	} else {
 		pool.EdgeScheduled(edge)
-		p.ready.Push(edge)
+		p.ready_.Push(edge)
 	}
 }
 
 func (p *Plan) PrepareQueue() {
 	p.computeCriticalPath()
-	p.scheduleInitialEdges()
+	p.ScheduleInitialEdges()
 }
 
 func (p *Plan) computeCriticalPath() {
@@ -221,7 +239,7 @@ func (p *Plan) computeCriticalPath() {
 		}
 		sorted = append(sorted, edge)
 	}
-	for _, target := range p.targets {
+	for _, target := range p.targets_ {
 		if edge := target.in_edge(); edge != nil {
 			dfs(edge)
 		}
@@ -251,31 +269,33 @@ func (p *Plan) computeCriticalPath() {
 	}
 }
 
-func (p *Plan) scheduleInitialEdges() {
-	p.ready.Clear()
+func (p *Plan) ScheduleInitialEdges() {
+	if p.ready_.Len() == 0 {
+		panic("ScheduleInitialEdges called before PrepareQueue")
+	}
 	pools := make(map[*Pool]bool)
-	for edge, want := range p.want {
-		if want == WantToStart && edge.AllInputsReady() {
+	for edge, want := range p.want_ {
+		if want == kWantToStart && edge.AllInputsReady() {
 			pool := edge.pool_
 			if pool.ShouldDelayEdge() {
 				pool.DelayEdge(edge)
 				pools[pool] = true
 			} else {
-				p.scheduleWork(edge)
+				p.ScheduleWork(p.want_, edge, want)
 			}
 		}
 	}
 	for pool := range pools {
-		pool.RetrieveReadyEdges(p.ready)
+		pool.RetrieveReadyEdges(p.ready_)
 	}
 }
 
 func (p *Plan) MoreToDo() bool {
-	return p.wantedEdges > 0 && p.commandEdges > 0
+	return p.wanted_edges_ > 0 && p.command_edges_ > 0
 }
 
 func (p *Plan) CommandEdgeCount() int {
-	return p.commandEdges
+	return p.command_edges_
 }
 
 // CleanNode 将节点标记为 clean，并递归清理所有依赖该节点的边（如果这些边不再 dirty）。
@@ -284,8 +304,8 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 
 	for _, outEdge := range node.out_edges_ {
 		// 忽略不在计划中的边，或者已经被标记为不想要的边
-		want, exists := p.want[outEdge]
-		if !exists || want == WantNothing {
+		want, exists := p.want_[outEdge]
+		if !exists || want == kWantNothing {
 			continue
 		}
 
@@ -329,12 +349,12 @@ func (p *Plan) CleanNode(scan *DependencyScan, node *Node, err *string) bool {
 				}
 
 				// 将该边从计划中移除
-				p.want[outEdge] = WantNothing
-				p.wantedEdges--
+				p.want_[outEdge] = kWantNothing
+				p.wanted_edges_--
 				if !outEdge.IsPhony() {
-					p.commandEdges--
-					if p.builder != nil && p.builder.status_ != nil {
-						p.builder.status_.EdgeRemovedFromPlan(outEdge)
+					p.command_edges_--
+					if p.builder_ != nil && p.builder_.status_ != nil {
+						p.builder_.status_.EdgeRemovedFromPlan(outEdge)
 					}
 				}
 			}
@@ -356,7 +376,7 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile, e
 		if edge.outputs_ready_ {
 			continue
 		}
-		if _, ok := p.want[edge]; !ok {
+		if _, ok := p.want_[edge]; !ok {
 			continue
 		}
 		dyndepRoots = append(dyndepRoots, edge)
@@ -380,18 +400,18 @@ func (p *Plan) DyndepsLoaded(scan *DependencyScan, node *Node, ddf DyndepFile, e
 
 	// 添加该节点的出边（原本应在 NodeFinished 中处理）
 	for _, outEdge := range node.out_edges_ {
-		if _, ok := p.want[outEdge]; ok {
+		if _, ok := p.want_[outEdge]; ok {
 			dyndepWalk[outEdge] = true
 		}
 	}
 
 	// 检查这些边是否就绪
 	for edge := range dyndepWalk {
-		want, ok := p.want[edge]
+		want, ok := p.want_[edge]
 		if !ok {
 			continue
 		}
-		if !p.edgeMaybeReady(edge, want, err) {
+		if !p.EdgeMaybeReady(p.want_, edge, want, err) {
 			return false
 		}
 	}
@@ -431,12 +451,12 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 		if edge == nil || edge.outputs_ready_ {
 			continue
 		}
-		want, ok := p.want[edge]
+		want, ok := p.want_[edge]
 		if !ok {
 			continue
 		}
-		if want == WantNothing {
-			p.want[edge] = WantToStart
+		if want == kWantNothing {
+			p.want_[edge] = kWantToStart
 			p.edgeWanted(edge)
 		}
 	}
@@ -447,7 +467,7 @@ func (p *Plan) RefreshDyndepDependents(scan *DependencyScan, node *Node, err *st
 func (p *Plan) unmarkDependents(node *Node, dependents map[*Node]bool) {
 	for _, outEdge := range node.out_edges_ {
 		// 如果该边不在计划中，跳过
-		if _, ok := p.want[outEdge]; !ok {
+		if _, ok := p.want_[outEdge]; !ok {
 			continue
 		}
 		// 如果边尚未标记为已访问，则将其标记清除并递归处理其输出节点

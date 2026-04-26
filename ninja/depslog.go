@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"sync"
 	"syscall"
 )
 
@@ -44,52 +43,49 @@ func (d *Deps) GetNodes() []*Node {
 }
 
 type DepsLog struct {
-	mu                sync.RWMutex
-	filePath          string
-	file              *os.File
-	deps_             []*Deps       // 索引为节点 id_
-	nodes             []*Node       // 节点 id_ -> Node
-	reverseDeps       map[int][]int // 依赖节点 id_ -> 被依赖的输出节点 id_ 列表
-	needsRecompaction bool
+	file_path_          string
+	file_               *os.File
+	deps_               []*Deps // 索引为节点 id_
+	nodes_              []*Node // 节点 id_ -> Node
+	needs_recompaction_ bool
 }
 
 func NewDepsLog(path string) *DepsLog {
 	return &DepsLog{
-		filePath:    path,
-		deps_:       []*Deps{},
-		nodes:       []*Node{},
-		reverseDeps: make(map[int][]int),
+		file_path_: path,
+		deps_:      []*Deps{},
+		nodes_:     []*Node{},
 	}
 }
 func (dl *DepsLog) Close() error {
 	dl.openForWriteIfNeeded()
-	if dl.file != nil {
-		err := dl.file.Close()
-		dl.file = nil
+	if dl.file_ != nil {
+		err := dl.file_.Close()
+		dl.file_ = nil
 		return err
 	}
 	return nil
 }
 
 func (dl *DepsLog) OpenForWrite(path string, err *string) bool {
-	if dl.needsRecompaction {
+	if dl.needs_recompaction_ {
 		if !dl.Recompact(path, err) {
 			return false
 		}
 	}
-	dl.filePath = path
+	dl.file_path_ = path
 	return true
 }
 
 func (dl *DepsLog) openForWriteIfNeeded() bool {
-	if dl.file != nil || dl.filePath == "" {
+	if dl.file_ != nil || dl.file_path_ == "" {
 		return true
 	}
-	f, err := os.OpenFile(dl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(dl.file_path_, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return false
 	}
-	dl.file = f
+	dl.file_ = f
 	// 检查文件是否为空
 	info, err := f.Stat()
 	if err != nil {
@@ -114,7 +110,7 @@ func (d *DepsLog) RecordDeps(node *Node, mtime int64, nodeCount int, nodes []*No
 	// Track whether there's any new data to be recorded.
 	madeChange := false
 
-	// Assign ids to all nodes that are missing one.
+	// Assign ids to all nodes_ that are missing one.
 	if node.id() < 0 {
 		if !d.RecordId(node) {
 			return false
@@ -165,33 +161,33 @@ func (d *DepsLog) RecordDeps(node *Node, mtime int64, nodeCount int, nodes []*No
 	size |= 0x80000000 // Deps record: set high bit.
 
 	// Write size
-	if err := binary.Write(d.file, binary.LittleEndian, uint32(size)); err != nil {
+	if err := binary.Write(d.file_, binary.LittleEndian, uint32(size)); err != nil {
 		return false
 	}
 	// Write node id
 	id := int32(node.id())
-	if err := binary.Write(d.file, binary.LittleEndian, id); err != nil {
+	if err := binary.Write(d.file_, binary.LittleEndian, id); err != nil {
 		return false
 	}
 	// Write mtime low 32 bits
 	mtimeLow := uint32(mtime & 0xffffffff)
-	if err := binary.Write(d.file, binary.LittleEndian, mtimeLow); err != nil {
+	if err := binary.Write(d.file_, binary.LittleEndian, mtimeLow); err != nil {
 		return false
 	}
 	// Write mtime high 32 bits
 	mtimeHigh := uint32((mtime >> 32) & 0xffffffff)
-	if err := binary.Write(d.file, binary.LittleEndian, mtimeHigh); err != nil {
+	if err := binary.Write(d.file_, binary.LittleEndian, mtimeHigh); err != nil {
 		return false
 	}
 	// Write each dependency node id
 	for i := 0; i < nodeCount; i++ {
 		id = int32(nodes[i].id())
-		if err := binary.Write(d.file, binary.LittleEndian, id); err != nil {
+		if err := binary.Write(d.file_, binary.LittleEndian, id); err != nil {
 			return false
 		}
 	}
 	// Flush
-	if err := d.file.Sync(); err != nil {
+	if err := d.file_.Sync(); err != nil {
 		return false
 	}
 
@@ -219,27 +215,27 @@ func (dl *DepsLog) RecordId(node *Node) bool {
 	}
 	// 写入节点记录（最高位为0）
 	recordSize := uint32(size)
-	if err := binary.Write(dl.file, binary.LittleEndian, recordSize); err != nil {
+	if err := binary.Write(dl.file_, binary.LittleEndian, recordSize); err != nil {
 		return false
 	}
-	if _, err := dl.file.Write([]byte(path)); err != nil {
+	if _, err := dl.file_.Write([]byte(path)); err != nil {
 		return false
 	}
-	if _, err := dl.file.Write([]byte{0}); err != nil {
+	if _, err := dl.file_.Write([]byte{0}); err != nil {
 		return false
 	}
 	if padding > 0 {
-		if _, err := dl.file.Write(make([]byte, padding)); err != nil {
+		if _, err := dl.file_.Write(make([]byte, padding)); err != nil {
 			return false
 		}
 	}
-	id := len(dl.nodes)
+	id := len(dl.nodes_)
 	checksum := uint32(^id)
-	if err := binary.Write(dl.file, binary.LittleEndian, checksum); err != nil {
+	if err := binary.Write(dl.file_, binary.LittleEndian, checksum); err != nil {
 		return false
 	}
 	node.id_ = id
-	dl.nodes = append(dl.nodes, node)
+	dl.nodes_ = append(dl.nodes_, node)
 	return true
 }
 
@@ -329,7 +325,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 			valid := true
 			for i := 0; i < depsCount; i++ {
 				nodeID := int(data[3+i])
-				if nodeID >= len(d.nodes) || d.nodes[nodeID] == nil {
+				if nodeID >= len(d.nodes_) || d.nodes_[nodeID] == nil {
 					valid = false
 					break
 				}
@@ -341,7 +337,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 
 			deps := &Deps{mtime: mtime, node_count: depsCount, nodes: make([]*Node, depsCount)}
 			for i := 0; i < depsCount; i++ {
-				deps.nodes[i] = d.nodes[int(data[3+i])]
+				deps.nodes[i] = d.nodes_[int(data[3+i])]
 			}
 			totalDepRecordCount++
 			if !d.UpdateDeps(outID, deps) {
@@ -366,7 +362,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 				break
 			}
 			expectedID := int(^checksum) // unary complement
-			actualID := len(d.nodes)
+			actualID := len(d.nodes_)
 			if expectedID != actualID {
 				readFailed = true
 				break
@@ -378,7 +374,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 				break
 			}
 			node.set_id(actualID)
-			d.nodes = append(d.nodes, node)
+			d.nodes_ = append(d.nodes_, node)
 		}
 	}
 
@@ -406,7 +402,7 @@ func (d *DepsLog) Load(path string, state *State, err *string) LoadStatus {
 	const kCompactionRatio = 3
 	if totalDepRecordCount > kMinCompactionEntryCount &&
 		totalDepRecordCount > uniqueDepRecordCount*kCompactionRatio {
-		d.needsRecompaction = true
+		d.needs_recompaction_ = true
 	}
 
 	return LOAD_SUCCESS
@@ -421,12 +417,19 @@ func (dl *DepsLog) GetDeps(out *Node) *Deps {
 }
 
 // GetFirstReverseDepsNode 获取依赖某个节点的第一个输出节点
-func (dl *DepsLog) GetFirstReverseDepsNode(dep *Node) *Node {
-	revs, ok := dl.reverseDeps[dep.id_]
-	if !ok || len(revs) == 0 {
-		return nil
+func (dl *DepsLog) GetFirstReverseDepsNode(node *Node) *Node {
+	for id := 0; id < len(dl.deps_); id++ {
+		deps := dl.deps_[id]
+		if deps == nil {
+			continue
+		}
+		for i := 0; i < deps.node_count; i++ {
+			if deps.nodes[i] == node {
+				return dl.nodes_[id]
+			}
+		}
 	}
-	return dl.nodes[revs[0]]
+	return nil
 }
 
 // Recompact 重新压实日志
@@ -440,7 +443,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 		return false
 	}
 	// 重置所有节点的 id_
-	for _, n := range dl.nodes {
+	for _, n := range dl.nodes_ {
 		if n != nil {
 			n.id_ = -1
 		}
@@ -450,7 +453,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 		if deps == nil {
 			continue
 		}
-		outNode := dl.nodes[id]
+		outNode := dl.nodes_[id]
 		if outNode == nil || !dl.isDepsEntryLive(outNode) {
 			continue
 		}
@@ -463,7 +466,7 @@ func (dl *DepsLog) Recompact(path string, err *string) bool {
 
 	// 替换内存数据
 	dl.deps_ = newLog.deps_
-	dl.nodes = newLog.nodes
+	dl.nodes_ = newLog.nodes_
 
 	return ReplaceContent(path, temp_path, err)
 }
@@ -490,7 +493,7 @@ func (dl *DepsLog) UpdateDeps(out_id int, deps *Deps) bool {
 }
 
 // / Used for tests.
-func (dl *DepsLog) Nodes() []*Node { return dl.nodes }
+func (dl *DepsLog) Nodes() []*Node { return dl.nodes_ }
 
 func (dl *DepsLog) Deps() []*Deps { return dl.deps_ }
 
@@ -503,12 +506,12 @@ func IsDepsEntryLiveFor(node *Node) bool {
 	return node.in_edge().GetBinding("deps_") != ""
 }
 func (d *DepsLog) OpenForWriteIfNeeded() bool {
-	if d.filePath == "" {
+	if d.file_path_ == "" {
 		return true
 	}
 
 	var err error
-	d.file, err = os.OpenFile(d.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	d.file_, err = os.OpenFile(d.file_path_, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return false
 	}
@@ -518,36 +521,36 @@ func (d *DepsLog) OpenForWriteIfNeeded() bool {
 	// For consistency, we'll just use the log_file_ as is.
 
 	// Set close-on-exec
-	if fd := d.file.Fd(); fd > 0 {
+	if fd := d.file_.Fd(); fd > 0 {
 		syscall.CloseOnExec(syscall.Handle(fd))
 	}
 
 	// In append mode, log_file_ pointer is already at end; but ensure we're at end.
-	if _, err := d.file.Seek(0, os.SEEK_END); err != nil {
+	if _, err := d.file_.Seek(0, os.SEEK_END); err != nil {
 		return false
 	}
 
 	// Check if log_file_ is empty
-	stat, err := d.file.Stat()
+	stat, err := d.file_.Stat()
 	if err != nil {
 		return false
 	}
 	if stat.Size() == 0 {
 		// Write signature
-		if _, err := d.file.Write([]byte(kFileSignature)); err != nil {
+		if _, err := d.file_.Write([]byte(kFileSignature)); err != nil {
 			return false
 		}
 		// Write version
-		if err := binary.Write(d.file, binary.LittleEndian, kCurrentVersion); err != nil {
+		if err := binary.Write(d.file_, binary.LittleEndian, kCurrentVersion); err != nil {
 			return false
 		}
 	}
 
 	// Flush
-	if err := d.file.Sync(); err != nil {
+	if err := d.file_.Sync(); err != nil {
 		return false
 	}
 
-	d.filePath = ""
+	d.file_path_ = ""
 	return true
 }

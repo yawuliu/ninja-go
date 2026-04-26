@@ -229,8 +229,8 @@ func (sp *StatusPrinter) BuildEdgeFinished(edge *Edge, startTimeMillis int64, en
 		// isatty(stderr) to decide if they should print colored output.
 		// To make it possible to use colored output with ninja, subprocesses should
 		// be run with a flag that forces them to always print color escape codes.
-		// To make sure these escape codes don't show up in a file if ninja's output
-		// is piped to a file, ninja strips ansi escape codes again if it's not
+		// To make sure these escape codes don't show up in a file_ if ninja's output
+		// is piped to a file_, ninja strips ansi escape codes again if it's not
 		// writing to a |smart_terminal_|.
 		if sp.printer_.supports_color() || !strings.Contains(output, "\x1b") {
 			sp.printer_.PrintOnNewLine(output)

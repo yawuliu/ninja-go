@@ -4,25 +4,18 @@ import (
 	"fmt"
 )
 
-// DyndepInfo 对应 C++ 的 Dyndeps
-type DyndepInfo struct {
-	Used            bool
-	Restat          bool
-	ImplicitInputs  []*Node
-	ImplicitOutputs []*Node
-}
-
 // DyndepLoader 对应 C++ 的 DyndepLoader
 type DyndepLoader struct {
-	state         *State
-	diskInterface FileSystem // 文件读取接口
-	explanations  *Explanations
+	state_          *State
+	disk_interface_ FileSystem // 文件读取接口
+	explanations_   *Explanations
 }
 
-func NewDyndepLoader(state *State, diskInterface FileSystem) *DyndepLoader {
+func NewDyndepLoader(state *State, diskInterface FileSystem, explanations *Explanations) *DyndepLoader {
 	return &DyndepLoader{
-		state:         state,
-		diskInterface: diskInterface,
+		state_:          state,
+		disk_interface_: diskInterface,
+		explanations_:   explanations,
 	}
 }
 
@@ -38,8 +31,8 @@ func (l *DyndepLoader) loadDyndeps(node *Node, ddf *DyndepFile, err *string) boo
 	node.dyndep_pending_ = false
 
 	// 记录解释（可选）
-	if l.explanations != nil {
-		l.explanations.Record(node, "loading dyndep log_file_ '%s'", node.path_)
+	if l.explanations_ != nil {
+		l.explanations_.Record(node, "loading dyndep log_file_ '%s'", node.path_)
 	}
 
 	// 加载 dyndep 文件
@@ -122,6 +115,6 @@ func (l *DyndepLoader) UpdateEdge(edge *Edge, dyndeps *Dyndeps, err *string) boo
 
 // loadDyndepFile 读取文件内容并调用解析器。
 func (l *DyndepLoader) loadDyndepFile(node *Node, ddf *DyndepFile, err *string) bool {
-	parser := NewDyndepParser(l.state, l.diskInterface, ddf)
+	parser := NewDyndepParser(l.state_, l.disk_interface_, ddf)
 	return parser.Load(node.path_, err, nil)
 }

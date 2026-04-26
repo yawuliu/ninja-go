@@ -12,11 +12,11 @@ func TestNewPlan(t *testing.T) {
 	plan := NewPlan(nil)
 	require.NotNil(t, plan)
 
-	assert.NotNil(t, plan.want)
-	assert.NotNil(t, plan.ready)
-	assert.Empty(t, plan.targets)
-	assert.Equal(t, 0, plan.commandEdges)
-	assert.Equal(t, 0, plan.wantedEdges)
+	assert.NotNil(t, plan.want_)
+	assert.NotNil(t, plan.ready_)
+	assert.Empty(t, plan.targets_)
+	assert.Equal(t, 0, plan.command_edges_)
+	assert.Equal(t, 0, plan.wanted_edges_)
 }
 
 // TestPlan_Reset 测试 Plan 重置
@@ -25,19 +25,19 @@ func TestPlan_Reset(t *testing.T) {
 
 	// 添加一些状态
 	edge := &Edge{rule_: &Rule{Name: "cc"}}
-	plan.want[edge] = WantToStart
-	plan.targets = append(plan.targets, &Node{path_: "target"})
-	plan.commandEdges = 5
-	plan.wantedEdges = 10
+	plan.want_[edge] = kWantToStart
+	plan.targets_ = append(plan.targets_, &Node{path_: "target"})
+	plan.command_edges_ = 5
+	plan.wanted_edges_ = 10
 
 	// 重置
 	plan.Reset()
 
 	// 验证状态被重置
-	assert.Empty(t, plan.want)
-	assert.Empty(t, plan.targets)
-	assert.Equal(t, 0, plan.commandEdges)
-	assert.Equal(t, 0, plan.wantedEdges)
+	assert.Empty(t, plan.want_)
+	assert.Empty(t, plan.targets_)
+	assert.Equal(t, 0, plan.command_edges_)
+	assert.Equal(t, 0, plan.wanted_edges_)
 }
 
 // TestPlan_AddTarget 测试添加目标
@@ -68,11 +68,11 @@ func TestPlan_AddTarget(t *testing.T) {
 	assert.True(t, ok)
 
 	// 验证目标被添加
-	assert.Len(t, plan.targets, 1)
-	assert.Equal(t, outNode, plan.targets[0])
+	assert.Len(t, plan.targets_, 1)
+	assert.Equal(t, outNode, plan.targets_[0])
 
 	// 验证边被标记为 wanted
-	assert.Equal(t, WantToStart, plan.want[edge])
+	assert.Equal(t, kWantToStart, plan.want_[edge])
 }
 
 // TestPlan_AddTarget_MissingInput 测试缺失输入
@@ -131,14 +131,14 @@ func TestPlan_edgeWanted(t *testing.T) {
 	// 普通边
 	edge := &Edge{rule_: &Rule{Name: "cc"}}
 	plan.edgeWanted(edge)
-	assert.Equal(t, 1, plan.wantedEdges)
-	assert.Equal(t, 1, plan.commandEdges)
+	assert.Equal(t, 1, plan.wanted_edges_)
+	assert.Equal(t, 1, plan.command_edges_)
 
 	// Phony 边
 	phonyEdge := &Edge{rule_: &Rule{Name: "phony"}}
 	plan.edgeWanted(phonyEdge)
-	assert.Equal(t, 2, plan.wantedEdges)
-	assert.Equal(t, 1, plan.commandEdges) // phony 不增加 commandEdges
+	assert.Equal(t, 2, plan.wanted_edges_)
+	assert.Equal(t, 1, plan.command_edges_) // phony 不增加 command_edges_
 }
 
 // TestPlan_FindWork 测试查找工作
@@ -154,15 +154,15 @@ func TestPlan_FindWork(t *testing.T) {
 	rule := &Rule{Name: "cc"}
 	edge := state.AddEdge(rule)
 	edge.inputs_ = []*Node{} // 无输入，立即可用
-	plan.want[edge] = WantToFinish
+	plan.want_[edge] = kWantToFinish
 
 	// 添加到优先队列
-	plan.ready.Push(edge)
+	plan.ready_.Push(edge)
 
 	// 查找工作
 	work = plan.FindWork()
 	assert.Equal(t, edge, work)
-	assert.Equal(t, 0, plan.ready.Len())
+	assert.Equal(t, 0, plan.ready_.Len())
 }
 
 // TestPlan_EdgeFinished 测试边完成
@@ -177,18 +177,18 @@ func TestPlan_EdgeFinished(t *testing.T) {
 	edge.outputs_ = []*Node{outNode}
 
 	// 标记为 wanted
-	plan.want[edge] = WantToFinish
-	plan.wantedEdges = 1
-	plan.commandEdges = 1
+	plan.want_[edge] = kWantToFinish
+	plan.wanted_edges_ = 1
+	plan.command_edges_ = 1
 
 	// 完成边
 	var err string
-	plan.EdgeFinished(edge, EdgeSucceeded, &err)
+	plan.EdgeFinished(edge, kEdgeSucceeded, &err)
 	require.Equal(t, err, "")
 
 	// 验证状态
-	assert.Equal(t, 0, plan.wantedEdges)
-	assert.NotContains(t, plan.want, edge)
+	assert.Equal(t, 0, plan.wanted_edges_)
+	assert.NotContains(t, plan.want_, edge)
 	assert.True(t, edge.outputs_ready_)
 }
 
@@ -202,11 +202,11 @@ func TestPlan_EdgeFinished_Failed(t *testing.T) {
 	outNode := state.GetNode("out.o", 0)
 	edge.outputs_ = []*Node{outNode}
 
-	plan.want[edge] = WantToFinish
+	plan.want_[edge] = kWantToFinish
 
 	// 边失败
 	var err string
-	plan.EdgeFinished(edge, EdgeFailed, &err)
+	plan.EdgeFinished(edge, kEdgeFailed, &err)
 	require.Equal(t, err, "")
 
 	// 输出不应标记为就绪
@@ -224,14 +224,14 @@ func TestPlan_scheduleWork(t *testing.T) {
 	edge.pool_ = kDefaultPool
 
 	// 标记为想要开始
-	plan.want[edge] = WantToStart
+	plan.want_[edge] = kWantToStart
 
 	// 调度工作
-	plan.scheduleWork(edge)
+	plan.ScheduleWork(plan.want_, edge, kWantToStart)
 
 	// 应该被标记为想要完成，并加入队列
-	assert.Equal(t, WantToFinish, plan.want[edge])
-	assert.Equal(t, 1, plan.ready.Len())
+	assert.Equal(t, kWantToFinish, plan.want_[edge])
+	assert.Equal(t, 1, plan.ready_.Len())
 }
 
 // TestPlan_computeCriticalPath 测试关键路径计算
@@ -275,13 +275,13 @@ func TestPlan_MoreToDo(t *testing.T) {
 	assert.False(t, plan.MoreToDo())
 
 	// 添加 wanted 边
-	plan.wantedEdges = 1
-	plan.commandEdges = 1
+	plan.wanted_edges_ = 1
+	plan.command_edges_ = 1
 
 	assert.True(t, plan.MoreToDo())
 
 	// 没有 command 边了
-	plan.commandEdges = 0
+	plan.command_edges_ = 0
 	assert.False(t, plan.MoreToDo())
 }
 
@@ -290,7 +290,7 @@ func TestPlan_CommandEdgeCount(t *testing.T) {
 	plan := NewPlan(nil)
 	assert.Equal(t, 0, plan.CommandEdgeCount())
 
-	plan.commandEdges = 5
+	plan.command_edges_ = 5
 	assert.Equal(t, 5, plan.CommandEdgeCount())
 }
 
@@ -309,9 +309,9 @@ func TestPlan_CleanNode(t *testing.T) {
 	// 创建 mock scanner
 	scanner := &DependencyScan{}
 
-	// 创建 plan
+	// 创建 plan_
 	plan := NewPlan(nil)
-	plan.want[edge] = WantToFinish
+	plan.want_[edge] = kWantToFinish
 
 	// 清理节点
 	inNode.dirty_ = true
@@ -384,8 +384,8 @@ func TestPlan_nodeFinished(t *testing.T) {
 	edge2.outputs_ = []*Node{outNode}
 
 	// 设置计划
-	plan.want[edge1] = WantToStart
-	plan.want[edge2] = WantToStart
+	plan.want_[edge1] = kWantToStart
+	plan.want_[edge2] = kWantToStart
 
 	// 完成中间节点
 	var err string
@@ -407,11 +407,11 @@ func TestPlan_edgeMaybeReady(t *testing.T) {
 	edge.outputs_ = []*Node{outNode}
 
 	// 输入就绪
-	plan.want[edge] = WantToStart
+	plan.want_[edge] = kWantToStart
 
 	// 检查边是否就绪
 	var err string
-	plan.edgeMaybeReady(edge, WantToStart, &err)
+	plan.EdgeMaybeReady(plan.want_, edge, kWantToStart, &err)
 	require.Equal(t, err, "")
 }
 
@@ -427,13 +427,13 @@ func TestPlan_scheduleInitialEdges(t *testing.T) {
 	edge.outputs_ = []*Node{outNode}
 	edge.inputs_ = []*Node{} // 无输入，立即可用
 
-	plan.want[edge] = WantToStart
+	plan.want_[edge] = kWantToStart
 
 	// 调度初始边
-	plan.scheduleInitialEdges()
+	plan.ScheduleInitialEdges()
 
 	// 验证边被调度
-	assert.Equal(t, 1, plan.ready.Len())
+	assert.Equal(t, 1, plan.ready_.Len())
 }
 
 // TestPlan_AddTarget_Recursive 测试递归添加目标
@@ -466,8 +466,8 @@ func TestPlan_AddTarget_Recursive(t *testing.T) {
 	assert.True(t, ok)
 
 	// 验证所有边都被标记
-	assert.Contains(t, plan.want, edge1)
-	assert.Contains(t, plan.want, edge2)
+	assert.Contains(t, plan.want_, edge1)
+	assert.Contains(t, plan.want_, edge2)
 }
 
 // TestPlan_unmarkDependents 测试取消标记依赖
@@ -485,7 +485,7 @@ func TestPlan_unmarkDependents(t *testing.T) {
 
 	// 设置标记
 	edge.mark_ = VisitDone
-	plan.want[edge] = WantToStart
+	plan.want_[edge] = kWantToStart
 
 	// 取消标记
 	dependents := make(map[*Node]bool)

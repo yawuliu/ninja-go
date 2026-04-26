@@ -6,7 +6,7 @@ import (
 
 // Parser 是所有解析器的接口
 type Parser interface {
-	// Load 加载并解析文件，如果 parent 不为 nil，则使用其 lexer 的上下文
+	// Load 加载并解析文件，如果 parent 不为 nil，则使用其 lexer_ 的上下文
 	Load(filename string, err *string, parent *Lexer) bool
 	// Parse 解析文件内容（由具体解析器实现）
 	Parse(filename, input string, err *string) bool

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -81,7 +82,7 @@ func (e *EdgeEnv) makePathList(nodes []*Node, sep byte) string {
 		path := n.path_ // 实际应使用 PathDecanonicalized
 		if e.escape_in_out_ == kShellEscape {
 			// 需要 shell 转义，这里调用 util.EscapeShell
-			if IsWindows() {
+			if runtime.GOOS == "windows" {
 				parts = append(parts, GetWin32EscapedString(path))
 			} else {
 				parts = append(parts, GetShellEscapedString(path))

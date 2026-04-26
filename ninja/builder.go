@@ -6,18 +6,18 @@ import (
 
 // Builder 主构建器
 type Builder struct {
-	state_          *State
-	config          *BuildConfig
-	buildLog        *BuildLog
-	depsLog         *DepsLog
+	state_  *State
+	config_ *BuildConfig
+	//build_log_        *BuildLog
+	//depsLog         *DepsLog
 	running_edges_  map[*Edge]int
-	disk            FileSystem
-	plan            *Plan
+	disk_interface_ FileSystem
+	plan_           *Plan
 	status_         Status
-	exitCode        ExitStatus
+	exit_code_      ExitStatus
 	explanations_   *Explanations
 	scan_           *DependencyScan
-	commandRunner   CommandRunner
+	command_runner_ CommandRunner
 	lock_file_path_ string
 	jobserver_      JobserverClient
 	/// Time the build started.
@@ -28,11 +28,11 @@ func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 	depsLog *DepsLog, start_time_millis int64,
 	disk_interface FileSystem, status Status) *Builder {
 	b := &Builder{
-		state_:             state,
-		config:             config,
-		buildLog:           buildLog,
-		depsLog:            depsLog,
-		disk:               disk_interface,
+		state_:  state,
+		config_: config,
+		//build_log_:           build_log_,
+		//depsLog:            depsLog,
+		disk_interface_:    disk_interface,
 		status_:            status,
 		start_time_millis_: start_time_millis,
 		lock_file_path_:    ".ninja_lock",
@@ -43,7 +43,7 @@ func NewBuilder(state *State, config *BuildConfig, buildLog *BuildLog,
 	}
 	b.lock_file_path_ = ".ninja_lock"
 	build_dir := b.state_.bindings_.LookupVariable("builddir")
-	b.plan = NewPlan(b)
+	b.plan_ = NewPlan(b)
 	b.scan_ = NewDependencyScan(state, buildLog, depsLog, disk_interface,
 		config.depfile_parser_options, b.explanations_)
 	if build_dir != "" {
@@ -77,13 +77,13 @@ func (b *Builder) AddTarget(target *Node, err *string) bool {
 		return false
 	}
 	if edge := target.in_edge(); edge == nil || !edge.outputs_ready_ {
-		if !b.plan.AddTarget(target, err) {
+		if !b.plan_.AddTarget(target, err) {
 			return false
 		}
 	}
 	for _, vn := range validationNodes {
 		if e := vn.in_edge(); e != nil && !e.outputs_ready_ {
-			if !b.plan.AddTarget(vn, err) {
+			if !b.plan_.AddTarget(vn, err) {
 				return false
 			}
 		}
@@ -91,37 +91,37 @@ func (b *Builder) AddTarget(target *Node, err *string) bool {
 	return true
 }
 func (b *Builder) AlreadyUpToDate() bool {
-	return !b.plan.MoreToDo()
+	return !b.plan_.MoreToDo()
 }
 
 func (b *Builder) Build(err *string) ExitStatus {
 	if b.AlreadyUpToDate() {
 		return ExitSuccess
 	}
-	b.plan.PrepareQueue()
+	b.plan_.PrepareQueue()
 
-	if b.commandRunner == nil {
-		if b.config.dry_run {
-			b.commandRunner = NewDryRunCommandRunner()
+	if b.command_runner_ == nil {
+		if b.config_.dry_run {
+			b.command_runner_ = NewDryRunCommandRunner()
 		} else {
-			b.commandRunner = NewRealCommandRunner(b.config, b.jobserver_)
+			b.command_runner_ = NewRealCommandRunner(b.config_, b.jobserver_)
 		}
 	}
 
 	b.status_.BuildStarted()
 	pendingCommands := 0
-	failuresAllowed := b.config.failures_allowed
+	failuresAllowed := b.config_.failures_allowed
 
-	for b.plan.MoreToDo() {
+	for b.plan_.MoreToDo() {
 		// 启动命令
 		if failuresAllowed > 0 {
-			for b.commandRunner.CanRunMore() > 0 {
-				edge := b.plan.FindWork()
+			for b.command_runner_.CanRunMore() > 0 {
+				edge := b.plan_.FindWork()
 				if edge == nil {
 					break
 				}
 				if edge.GetBindingBool("generator") {
-					b.buildLog.Close()
+					b.scan_.build_log_.Close()
 				}
 				if !b.StartEdge(edge, err) {
 					b.Cleanup()
@@ -129,7 +129,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 					return ExitFailure
 				}
 				if edge.IsPhony() {
-					if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
+					if !b.plan_.EdgeFinished(edge, kEdgeSucceeded, err) {
 						b.Cleanup()
 						b.status_.BuildFinished()
 						return ExitFailure
@@ -137,7 +137,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 				} else {
 					pendingCommands++
 				}
-				if pendingCommands == 0 && !b.plan.MoreToDo() {
+				if pendingCommands == 0 && !b.plan_.MoreToDo() {
 					break
 				}
 			}
@@ -146,7 +146,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		// 等待命令完成
 		if pendingCommands > 0 {
 			var result CommandResult
-			if !b.commandRunner.WaitForCommand(&result) || result.Status == ExitInterrupted {
+			if !b.command_runner_.WaitForCommand(&result) || result.Status == ExitInterrupted {
 				b.Cleanup()
 				b.status_.BuildFinished()
 				*err = "interrupted by user"
@@ -167,7 +167,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		// 无法继续
 		b.status_.BuildFinished()
 		if failuresAllowed == 0 {
-			if b.config.failures_allowed > 1 {
+			if b.config_.failures_allowed > 1 {
 				*err = "subcommands failed"
 			} else {
 				*err = "subcommand failed"
@@ -175,7 +175,7 @@ func (b *Builder) Build(err *string) ExitStatus {
 		} else {
 			*err = "stuck [this is a bug]"
 		}
-		return b.exitCode
+		return b.exit_code_
 	}
 
 	b.status_.BuildFinished()
@@ -195,7 +195,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	b.status_.BuildEdgeStarted(edge, start_time_millis)
 
 	var buildStart int64
-	if b.config.dry_run {
+	if b.config_.dry_run {
 		buildStart = 0
 	} else {
 		buildStart = -1
@@ -205,12 +205,12 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	// filesystem mtime to record later
 	// XXX: this will block; do we care?
 	for _, o := range edge.outputs_ {
-		if !b.disk.MakeDirs(o.path_) {
+		if !b.disk_interface_.MakeDirs(o.path_) {
 			return false
 		}
 		if buildStart == -1 {
-			b.disk.WriteFile(b.lock_file_path_, "", false)
-			buildStart = b.disk.Stat(b.lock_file_path_, err)
+			b.disk_interface_.WriteFile(b.lock_file_path_, "", false)
+			buildStart = b.disk_interface_.Stat(b.lock_file_path_, err)
 			if buildStart == -1 {
 				buildStart = 0
 			}
@@ -221,7 +221,7 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 
 	// Create depfile directory if needed.
 	depfile := edge.GetUnescapedDepfile()
-	if depfile != "" && !b.disk.MakeDirs(depfile) {
+	if depfile != "" && !b.disk_interface_.MakeDirs(depfile) {
 		return false
 	}
 
@@ -229,13 +229,13 @@ func (b *Builder) StartEdge(edge *Edge, err *string) bool {
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" {
 		content := edge.GetBinding("rspfile_content")
-		if !b.disk.WriteFile(rspfile, content, true) {
+		if !b.disk_interface_.WriteFile(rspfile, content, true) {
 			return false
 		}
 	}
 
 	// start command computing and run it
-	if !b.commandRunner.StartCommand(edge) {
+	if !b.command_runner_.StartCommand(edge) {
 		*err = "command '" + edge.EvaluateCommand(false) + "' failed."
 		return false
 	}
@@ -249,7 +249,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 	edge := result.Edge
 
 	// First try to extract dependencies from the result, if any.
-	// This must happen first as it filters the command output (we want
+	// This must happen first as it filters the command output (we want_
 	// to filter /showIncludes output, even on compile failure) and
 	// extraction itself can fail, which makes the command fail from a
 	// build perspective.
@@ -279,12 +279,12 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 
 	// The rest of this function only applies to successful commands.
 	if !result.Success() {
-		return b.plan.EdgeFinished(edge, EdgeFailed, err)
+		return b.plan_.EdgeFinished(edge, kEdgeFailed, err)
 	}
 
 	// Restat the edge_ outputs
 	var recordMtime int64 = 0
-	if !b.config.dry_run {
+	if !b.config_.dry_run {
 		restat := edge.GetBindingBool("restat")
 		generator := edge.GetBindingBool("generator")
 		nodeCleaned := false
@@ -297,7 +297,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		// log.
 		if recordMtime == 0 || restat || generator {
 			for _, o := range edge.outputs_ {
-				newMtime := b.disk.Stat(o.path_, err)
+				newMtime := b.disk_interface_.Stat(o.path_, err)
 				if newMtime == -1 {
 					return false
 				}
@@ -308,7 +308,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 					// The rule command did not change the output. Propagate the clean
 					// state_ through the build graph.
 					// Note that this also applies to nonexistent outputs (mtime == 0).
-					if !b.plan.CleanNode(b.scan_, o, err) {
+					if !b.plan_.CleanNode(b.scan_, o, err) {
 						return false
 					}
 					nodeCleaned = true
@@ -320,29 +320,29 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 		}
 	}
 
-	if !b.plan.EdgeFinished(edge, EdgeSucceeded, err) {
+	if !b.plan_.EdgeFinished(edge, kEdgeSucceeded, err) {
 		return false
 	}
 
 	// Delete any left over response log_file_.
 	rspfile := edge.GetUnescapedRspfile()
 	if rspfile != "" && !g_keep_rsp {
-		b.disk.RemoveFile(rspfile)
+		b.disk_interface_.RemoveFile(rspfile)
 	}
 
-	if b.scan_.buildLog != nil {
-		if !b.scan_.buildLog.RecordCommand(edge, int(startTimeMillis), int(endTimeMillis), recordMtime) {
+	if b.scan_.build_log_ != nil {
+		if !b.scan_.build_log_.RecordCommand(edge, int(startTimeMillis), int(endTimeMillis), recordMtime) {
 			*err = "Error writing to build log: " // Need to handle errno appropriately
 			return false
 		}
 	}
 
-	if depsType != "" && !b.config.dry_run {
+	if depsType != "" && !b.config_.dry_run {
 		if len(edge.outputs_) == 0 {
 			panic("should have been rejected by parser")
 		}
 		for _, o := range edge.outputs_ {
-			depsMtime := b.disk.Stat(o.path_, err)
+			depsMtime := b.disk_interface_.Stat(o.path_, err)
 			if depsMtime == -1 {
 				return false
 			}
@@ -379,7 +379,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 
 		// Read depfile content. Treat a missing depfile as empty.
 		var content string
-		status := b.disk.ReadFile(depfile, &content, err)
+		status := b.disk_interface_.ReadFile(depfile, &content, err)
 		if status == StatusNotFound {
 			*err = "" // clear error
 		} else if status == StatusOtherError {
@@ -389,7 +389,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 			return true
 		}
 
-		deps := NewDepfileParser(b.config.depfile_parser_options)
+		deps := NewDepfileParser(b.config_.depfile_parser_options)
 		if !deps.Parse(content, err) {
 			return false
 		}
@@ -405,7 +405,7 @@ func (b *Builder) extractDeps(result *CommandResult, depsType, depsPrefix string
 		}
 
 		if !g_keep_depfile {
-			if errRemove := b.disk.RemoveFile(depfile); errRemove != 0 {
+			if errRemove := b.disk_interface_.RemoveFile(depfile); errRemove != 0 {
 				*err = "deleting depfile  failed \n"
 				return false
 			}
@@ -424,7 +424,7 @@ func (b *Builder) LoadDyndeps(node *Node, err *string) bool {
 		return false
 	}
 	// 更新构建计划
-	if !b.plan.DyndepsLoaded(b.scan_, node, ddf, err) {
+	if !b.plan_.DyndepsLoaded(b.scan_, node, ddf, err) {
 
 		return false
 	}
@@ -433,9 +433,9 @@ func (b *Builder) LoadDyndeps(node *Node, err *string) bool {
 
 // Cleanup 清理中断或失败构建产生的临时文件和部分输出。
 func (b *Builder) Cleanup() {
-	if b.commandRunner != nil {
-		activeEdges := b.commandRunner.GetActiveEdges()
-		b.commandRunner.Abort()
+	if b.command_runner_ != nil {
+		activeEdges := b.command_runner_.GetActiveEdges()
+		b.command_runner_.Abort()
 
 		for _, edge := range activeEdges {
 			depfile := edge.GetUnescapedDepfile()
@@ -444,28 +444,28 @@ func (b *Builder) Cleanup() {
 				// 但如果规则使用了 depfile，则始终删除（考虑这种情况：由于 depfile 中提到的头文件修改导致需要重建输出，
 				// 但命令在触及输出文件之前被中断）。
 				var err string
-				newMtime := b.disk.Stat(out.path_, &err)
+				newMtime := b.disk_interface_.Stat(out.path_, &err)
 				if newMtime == -1 {
 					b.status_.Error("%v", err)
 				}
 				if depfile != "" || out.mtime_ != newMtime {
-					b.disk.RemoveFile(out.path_)
+					b.disk_interface_.RemoveFile(out.path_)
 				}
 			}
 			if depfile != "" {
-				b.disk.RemoveFile(depfile)
+				b.disk_interface_.RemoveFile(depfile)
 			}
 		}
 	}
 
 	// 删除锁文件
 	var err string
-	if b.disk.Stat(b.lock_file_path_, &err) > 0 {
-		b.disk.RemoveFile(b.lock_file_path_)
+	if b.disk_interface_.Stat(b.lock_file_path_, &err) > 0 {
+		b.disk_interface_.RemoveFile(b.lock_file_path_)
 	}
 }
 
-// / Set Jobserver client instance for this builder.
+// / Set Jobserver client instance for this builder_.
 func (b *Builder) SetJobserverClient(jobserver_client JobserverClient) {
 	b.jobserver_ = jobserver_client
 }

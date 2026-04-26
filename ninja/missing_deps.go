@@ -281,12 +281,12 @@ func (s *MissingDependencyScanner) HadMissingDeps() bool {
 
 // PrintStats 打印统计信息。
 func (s *MissingDependencyScanner) PrintStats() {
-	fmt.Printf("Processed %d nodes.\n", len(s.seen_))
+	fmt.Printf("Processed %d nodes_.\n", len(s.seen_))
 	if s.HadMissingDeps() {
 		fmt.Printf("Error: There are %d missing dependency paths.\n", s.missing_dep_path_count_)
-		fmt.Printf("%d targets had depfile dependencies on %d distinct generated inputs (from %d rules) without a non-depfile dep path to the generator.\n",
+		fmt.Printf("%d targets_ had depfile dependencies on %d distinct generated inputs (from %d rules) without a non-depfile dep path to the generator.\n",
 			len(s.nodes_missing_deps_), len(s.generated_nodes_), len(s.generator_rules_))
-		fmt.Println("There might be build flakiness if any of the targets listed above are built alone, or not late enough, in a clean output directory.")
+		fmt.Println("There might be build flakiness if any of the targets_ listed above are built alone, or not late enough, in a clean output directory.")
 	} else {
 		fmt.Println("No missing dependencies on generated files found.")
 	}

@@ -7,42 +7,42 @@ import (
 
 // Cleaner 负责清理构建产物。
 type Cleaner struct {
-	state             *State
-	config            *BuildConfig
-	dyndepLoader      *DyndepLoader
-	removed           map[string]bool
-	cleaned           map[*Node]bool
-	cleanedFilesCount int
-	disk              FileSystem
-	status            int
+	state_               *State
+	config_              *BuildConfig
+	dyndep_loader_       *DyndepLoader
+	removed_             map[string]bool
+	cleaned_             map[*Node]bool
+	cleaned_files_count_ int
+	disk_interface_      FileSystem
+	status_              int
 }
 
 // NewCleaner 创建 Cleaner 实例。
-func NewCleaner(state *State, config *BuildConfig, disk FileSystem) *Cleaner {
+func NewCleaner(state *State, config *BuildConfig, disk_interface FileSystem) *Cleaner {
 	return &Cleaner{
-		state:        state,
-		config:       config,
-		dyndepLoader: NewDyndepLoader(state, disk),
-		removed:      make(map[string]bool),
-		cleaned:      make(map[*Node]bool),
-		disk:         disk,
+		state_:          state,
+		config_:         config,
+		dyndep_loader_:  NewDyndepLoader(state, disk_interface, nil),
+		removed_:        make(map[string]bool),
+		cleaned_:        make(map[*Node]bool),
+		disk_interface_: disk_interface,
 	}
 }
 
 // IsVerbose 是否详细输出。
 func (c *Cleaner) IsVerbose() bool {
-	return c.config.verbosity != 0 && (c.config.verbosity == 2 || c.config.dry_run)
+	return c.config_.verbosity != 0 && (c.config_.verbosity == 2 || c.config_.dry_run)
 }
 
 // RemoveFile 删除文件，返回错误（模拟 C++ 的返回值）。
 func (c *Cleaner) RemoveFile(path string) int {
-	return c.disk.RemoveFile(path)
+	return c.disk_interface_.RemoveFile(path)
 }
 
 // FileExists 检查文件是否存在。
 func (c *Cleaner) FileExists(path string) bool {
 	var err string
-	mtime := c.disk.Stat(path, &err)
+	mtime := c.disk_interface_.Stat(path, &err)
 	if mtime == -1 {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func (c *Cleaner) FileExists(path string) bool {
 
 // Report 报告已删除的文件。
 func (c *Cleaner) Report(path string) {
-	c.cleanedFilesCount++
+	c.cleaned_files_count_++
 	if c.IsVerbose() {
 		fmt.Printf("Remove %s\n", path)
 	}
@@ -59,7 +59,7 @@ func (c *Cleaner) Report(path string) {
 
 // IsAlreadyRemoved 检查文件是否已被标记删除。
 func (c *Cleaner) IsAlreadyRemoved(path string) bool {
-	return c.removed[path]
+	return c.removed_[path]
 }
 
 // Remove 删除文件（如果尚未删除）。
@@ -67,8 +67,8 @@ func (c *Cleaner) Remove(path string) {
 	if c.IsAlreadyRemoved(path) {
 		return
 	}
-	c.removed[path] = true
-	if c.config.dry_run {
+	c.removed_[path] = true
+	if c.config_.dry_run {
 		if c.FileExists(path) {
 			c.Report(path)
 		}
@@ -77,7 +77,7 @@ func (c *Cleaner) Remove(path string) {
 		if ret == 0 {
 			c.Report(path)
 		} else if ret == -1 {
-			c.status = 1
+			c.status_ = 1
 		}
 	}
 }
@@ -96,7 +96,7 @@ func (c *Cleaner) RemoveEdgeFiles(edge *Edge) {
 
 // PrintHeader 打印清理开始信息。
 func (c *Cleaner) PrintHeader() {
-	if c.config.verbosity == 0 {
+	if c.config_.verbosity == 0 {
 		return
 	}
 	fmt.Print("Cleaning...")
@@ -109,10 +109,10 @@ func (c *Cleaner) PrintHeader() {
 
 // PrintFooter 打印清理完成信息。
 func (c *Cleaner) PrintFooter() {
-	if c.config.verbosity == 0 {
+	if c.config_.verbosity == 0 {
 		return
 	}
-	fmt.Printf("%d files.\n", c.cleanedFilesCount)
+	fmt.Printf("%d files.\n", c.cleaned_files_count_)
 }
 
 // CleanAll 清理所有构建产物（可选清理 generator 规则产生的文件）。
@@ -120,7 +120,7 @@ func (c *Cleaner) CleanAll(generator bool) int {
 	c.Reset()
 	c.PrintHeader()
 	c.LoadDyndeps()
-	for _, edge := range c.state.edges_ {
+	for _, edge := range c.state_.edges_ {
 		if edge.IsPhony() {
 			continue
 		}
@@ -133,7 +133,7 @@ func (c *Cleaner) CleanAll(generator bool) int {
 		c.RemoveEdgeFiles(edge)
 	}
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // CleanDead 清理构建日志中不再由 manifest 产生的输出。
@@ -142,13 +142,13 @@ func (c *Cleaner) CleanDead(entries map[string]*LogEntry) int {
 	c.PrintHeader()
 	c.LoadDyndeps()
 	for output := range entries {
-		node := c.state.LookupNode(output)
+		node := c.state_.LookupNode(output)
 		if node == nil || (node.in_edge() == nil && len(node.out_edges_) == 0) {
 			c.Remove(output)
 		}
 	}
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // DoCleanTarget 递归清理目标及其依赖。
@@ -159,12 +159,12 @@ func (c *Cleaner) DoCleanTarget(target *Node) {
 			c.RemoveEdgeFiles(edge)
 		}
 		for _, in := range edge.inputs_ {
-			if !c.cleaned[in] {
+			if !c.cleaned_[in] {
 				c.DoCleanTarget(in)
 			}
 		}
 	}
-	c.cleaned[target] = true
+	c.cleaned_[target] = true
 }
 
 // CleanTarget 清理单个目标。
@@ -174,12 +174,12 @@ func (c *Cleaner) CleanTarget(target *Node) int {
 	c.LoadDyndeps()
 	c.DoCleanTarget(target)
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // CleanTargetByName 按名称清理目标。
 func (c *Cleaner) CleanTargetByName(targetName string) int {
-	node := c.state.LookupNode(targetName)
+	node := c.state_.LookupNode(targetName)
 	if node == nil {
 		fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", targetName)
 		return 1
@@ -195,10 +195,10 @@ func (c *Cleaner) CleanTargets(targetNames []string) int {
 	for _, target_name := range targetNames {
 		var slash_bits uint64
 		CanonicalizePathString(&target_name, &slash_bits)
-		target := c.state.LookupNode(target_name)
+		target := c.state_.LookupNode(target_name)
 		if target == nil {
 			fmt.Fprintf(os.Stderr, "ninja: unknown target '%s'\n", target_name)
-			c.status = 1
+			c.status_ = 1
 			continue
 		}
 		if c.IsVerbose() {
@@ -207,12 +207,12 @@ func (c *Cleaner) CleanTargets(targetNames []string) int {
 		c.DoCleanTarget(target)
 	}
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // DoCleanRule 清理指定规则生成的所有输出。
 func (c *Cleaner) DoCleanRule(rule *Rule) {
-	for _, edge := range c.state.edges_ {
+	for _, edge := range c.state_.edges_ {
 		if edge.rule_.Name == rule.Name {
 			for _, out := range edge.outputs_ {
 				c.Remove(out.path_)
@@ -229,12 +229,12 @@ func (c *Cleaner) CleanRule(rule *Rule) int {
 	c.LoadDyndeps()
 	c.DoCleanRule(rule)
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // CleanRuleByName 按规则名清理。
 func (c *Cleaner) CleanRuleByName(ruleName string) int {
-	rule := c.state.bindings_.LookupRule(ruleName)
+	rule := c.state_.bindings_.LookupRule(ruleName)
 	if rule == nil {
 		fmt.Fprintf(os.Stderr, "ninja: unknown rule '%s'\n", ruleName)
 		return 1
@@ -248,10 +248,10 @@ func (c *Cleaner) CleanRules(ruleNames []string) int {
 	c.PrintHeader()
 	c.LoadDyndeps()
 	for _, name := range ruleNames {
-		rule := c.state.bindings_.LookupRule(name)
+		rule := c.state_.bindings_.LookupRule(name)
 		if rule == nil {
 			fmt.Fprintf(os.Stderr, "ninja: unknown rule '%s'\n", name)
-			c.status = 1
+			c.status_ = 1
 			continue
 		}
 		if c.IsVerbose() {
@@ -260,24 +260,24 @@ func (c *Cleaner) CleanRules(ruleNames []string) int {
 		c.DoCleanRule(rule)
 	}
 	c.PrintFooter()
-	return c.status
+	return c.status_
 }
 
 // Reset 重置内部状态。
 func (c *Cleaner) Reset() {
-	c.status = 0
-	c.cleanedFilesCount = 0
-	c.removed = make(map[string]bool)
-	c.cleaned = make(map[*Node]bool)
+	c.status_ = 0
+	c.cleaned_files_count_ = 0
+	c.removed_ = make(map[string]bool)
+	c.cleaned_ = make(map[*Node]bool)
 }
 
 // LoadDyndeps 加载所有挂起的 dyndep 文件（忽略错误）。
 func (c *Cleaner) LoadDyndeps() {
-	for _, edge := range c.state.edges_ {
+	for _, edge := range c.state_.edges_ {
 		if dyndepNode := edge.dyndep_; dyndepNode != nil && dyndepNode.dyndep_pending_ {
 			// 忽略错误，尽可能清理
 			var err string
-			_ = c.dyndepLoader.LoadDyndeps(dyndepNode, &err)
+			_ = c.dyndep_loader_.LoadDyndeps(dyndepNode, &err)
 		}
 	}
 }

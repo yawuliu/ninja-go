@@ -156,7 +156,7 @@ func (s *State) RootNodes(err *string) []*Node {
 		}
 	}
 	if len(s.edges_) > 0 && len(root_nodes) == 0 {
-		*err = "could not determine root nodes of build graph"
+		*err = "could not determine root nodes_ of build graph"
 	}
 	return root_nodes
 }

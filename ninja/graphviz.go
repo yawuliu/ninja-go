@@ -16,7 +16,7 @@ type GraphViz struct {
 // NewGraphViz 创建 GraphViz 实例。
 func NewGraphViz(state *State, diskInterface FileSystem) *GraphViz {
 	return &GraphViz{
-		dyndepLoader: NewDyndepLoader(state, diskInterface),
+		dyndepLoader: NewDyndepLoader(state, diskInterface, nil),
 		visitedNodes: make(map[*Node]bool),
 		visitedEdges: make(map[*Edge]bool),
 	}

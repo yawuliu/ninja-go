@@ -267,12 +267,12 @@ func TestBindingEnv_EmptyVariable(t *testing.T) {
 func TestBindingEnv_RuleShadowing(t *testing.T) {
 	parent := NewBindingEnv(nil)
 	parentRule := NewRule("cc")
-	parentRule.AddBinding("command", &EvalString{singleToken: "gcc"})
+	parentRule.AddBinding("command", &EvalString{single_token_: "gcc"})
 	parent.AddRule(parentRule)
 
 	child := NewBindingEnv(parent)
 	childRule := NewRule("cc")
-	childRule.AddBinding("command", &EvalString{singleToken: "clang"})
+	childRule.AddBinding("command", &EvalString{single_token_: "clang"})
 	child.AddRule(childRule)
 
 	// 子环境应该看到自己的规则

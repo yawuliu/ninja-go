@@ -103,7 +103,7 @@ func TestLexer_ReadPath(t *testing.T) {
 			require.True(t, ok)
 			// path 需要环境来求值，这里只检查片段
 			if len(path.fragments) == 0 {
-				assert.Equal(t, tt.expected, path.singleToken)
+				assert.Equal(t, tt.expected, path.single_token_)
 			} else if len(path.fragments) == 1 {
 				assert.Equal(t, tt.expected, path.fragments[0].Text)
 			}

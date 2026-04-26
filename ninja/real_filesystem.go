@@ -126,14 +126,14 @@ func (fs *RealFileSystem) WriteFile(path string, contents string, crlf_on_window
 	}
 	file, err = os.OpenFile(path, flags, perm)
 	if err != nil {
-		// Error("WriteFile(%s): Unable to create file. %s", ...) - we ignore the logging function
+		// Error("WriteFile(%s): Unable to create file_. %s", ...) - we ignore the logging function
 		return false
 	}
 	defer file.Close()
 
 	_, err = file.WriteString(contents)
 	if err != nil {
-		// Error("WriteFile(%s): Unable to write to the file. %s", ...)
+		// Error("WriteFile(%s): Unable to write to the file_. %s", ...)
 		return false
 	}
 	return true
@@ -231,7 +231,7 @@ func (fs *RealFileSystem) StatSingleFile(path string, err *string) int64 {
 
 	// Check for reparse point
 	if attrs.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		// Open the file to get its final path
+		// Open the file_ to get its final path
 		pathPtr, _ := syscall.UTF16PtrFromString(path)
 		handle, errOpen := syscall.CreateFile(pathPtr, 0, 0, nil, syscall.OPEN_EXISTING,
 			syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
@@ -305,7 +305,7 @@ func (fs *RealFileSystem) StatAllFilesInDir(dir string, stamps *DirCache, err *s
 		mtime = 0
 		// Check for reparse point (symlink)
 		if ffd.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-			// Stat the linked file
+			// Stat the linked file_
 			fullPath := dir + `\` + name
 			mtime = fs.StatSingleFile(fullPath, err)
 			if mtime == -1 {

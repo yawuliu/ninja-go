@@ -96,7 +96,7 @@ func (p *ManifestParser) Parse(filename, input string, err *string) bool {
 			}
 			value := val.Evaluate(p.env)
 			if key == "ninja_required_version" {
-				// 解析版本号，设置到 lexer 中
+				// 解析版本号，设置到 lexer_ 中
 				major, minor := ParseVersion(value)
 				p.lexer.manifestVersionMajor = major
 				p.lexer.manifestVersionMinor = minor

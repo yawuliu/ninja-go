@@ -255,7 +255,7 @@ func CanonicalizePathBytes(path []byte, lenPtr *int, slashBits *uint64) {
 	}
 
 	// For absolute paths, skip the leading directory separator
-	// as this one should never be removed from the result.
+	// as this one should never be removed_ from the result.
 	if isPathSeparator(path[src]) {
 		if runtime.GOOS == "windows" {
 			// Windows network path starts with //

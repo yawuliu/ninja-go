@@ -21,7 +21,7 @@ func NewDepfileParser(options *DepfileParserOptions) *DepfileParser {
 func (p *DepfileParser) Parse(content string, err *string) bool {
 	// in: current parser input point.
 	// end: end of input.
-	// parsing_targets: whether we are parsing targets or dependencies.
+	// parsing_targets: whether we are parsing targets_ or dependencies.
 	b := []byte(content)
 	in := 0
 	end := len(b)

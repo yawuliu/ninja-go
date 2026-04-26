@@ -1,12 +1,12 @@
 package main
 
 type DependencyScan struct {
-	state           *State
-	buildLog        *BuildLog
-	depsLog         *DepsLog
+	state      *State
+	build_log_ *BuildLog
+	//depsLog         *DepsLog
 	disk_interface_ FileSystem
-	depLoader       *ImplicitDepLoader
-	dyndepLoader    *DyndepLoader
+	dep_loader_     *ImplicitDepLoader
+	dyndep_loader_  *DyndepLoader
 	explanations_   *Explanations
 }
 
@@ -14,18 +14,18 @@ func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 	disk_interface FileSystem,
 	depfile_parser_options *DepfileParserOptions, explanations *Explanations) *DependencyScan {
 	return &DependencyScan{
-		state:           state,
-		buildLog:        buildLog,
-		depsLog:         depsLog,
+		state:      state,
+		build_log_: buildLog,
+		// depsLog:         depsLog,
 		disk_interface_: disk_interface,
-		depLoader:       NewImplicitDepLoader(state, depsLog, disk_interface, depfile_parser_options, explanations),
-		dyndepLoader:    NewDyndepLoader(state, disk_interface),
+		dep_loader_:     NewImplicitDepLoader(state, depsLog, disk_interface, depfile_parser_options, explanations),
+		dyndep_loader_:  NewDyndepLoader(state, disk_interface, nil),
 		explanations_:   explanations,
 	}
 }
 
 func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*Node, err *string) bool {
-	// queue of nodes to process
+	// queue of nodes_ to process
 	nodes := []*Node{initialNode}
 
 	for len(nodes) > 0 {
@@ -39,7 +39,7 @@ func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*N
 			return false
 		}
 
-		// append new validation nodes to the queue
+		// append new validation nodes_ to the queue
 		nodes = append(nodes, newValidationNodes...)
 
 		if len(newValidationNodes) > 0 {
@@ -81,10 +81,10 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 		return false
 	}
 
-	// Store any validation nodes from the edge_ for adding to the initial nodes.
+	// Store any validation nodes_ from the edge_ for adding to the initial nodes_.
 	// Don't recurse into them, that would trigger the dependency cycle detector
 	// if the validation node depends on this node.
-	// RecomputeDirty will add the validation nodes to the initial nodes and recurse into them.
+	// RecomputeDirty will add the validation nodes_ to the initial nodes_ and recurse into them.
 	*validationNodes = append(*validationNodes, edge.validations_...)
 
 	// mark_ the edge_ temporarily while in the call stack.
@@ -105,7 +105,7 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 				return false
 			}
 			if edge.dyndep_.in_edge() == nil || edge.dyndep_.in_edge().outputs_ready_ {
-				// The dyndep log_file_ is ready, so load it now.
+				// The dyndep log_file_ is ready_, so load it now.
 				if !ds.LoadDyndeps(edge.dyndep_, err) {
 					return false
 				}
@@ -113,7 +113,7 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 		}
 
 		// Load discovered deps_.
-		if !ds.depLoader.LoadDeps(edge, err) {
+		if !ds.dep_loader_.LoadDeps(edge, err) {
 			if *err != "" {
 				return false
 			}
@@ -124,7 +124,7 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 		}
 	}
 
-	// Visit all inputs before checking if any of them is ready.
+	// Visit all inputs before checking if any of them is ready_.
 	// Newly encountered edges may load dyndep files and gain outputs that correspond to some of our inputs.
 	for _, i := range edge.inputs_ {
 		if !ds.RecomputeNodeDirty(i, stack, validationNodes, err) {
@@ -145,7 +145,7 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 	// We're dirty if any of the inputs is dirty.
 	var mostRecentInput *Node
 	for idx, i := range edge.inputs_ {
-		// If an input is not ready, neither are our outputs.
+		// If an input is not ready_, neither are our outputs.
 		if inEdge := i.in_edge(); inEdge != nil {
 			if !inEdge.outputs_ready_ {
 				edge.outputs_ready_ = false
@@ -180,9 +180,9 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 		}
 	}
 
-	// If an edge_ is dirty, its outputs are normally not ready.
-	// (It's possible to be clean but still not be ready in the presence of order-only inputs.)
-	// But phony edges with no inputs have nothing to do, so are always ready.
+	// If an edge_ is dirty, its outputs are normally not ready_.
+	// (It's possible to be clean but still not be ready_ in the presence of order-only inputs.)
+	// But phony edges with no inputs have nothing to do, so are always ready_.
 	if dirty && !(edge.IsPhony() && len(edge.inputs_) == 0) {
 		edge.outputs_ready_ = false
 	}
@@ -198,11 +198,11 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 }
 
 func (s *DependencyScan) LoadDyndeps(node *Node, err *string) bool {
-	return s.dyndepLoader.LoadDyndeps(node, err)
+	return s.dyndep_loader_.LoadDyndeps(node, err)
 }
 
 func (s *DependencyScan) LoadDyndeps2(node *Node, ddf *DyndepFile, err *string) bool {
-	return s.dyndepLoader.loadDyndeps(node, ddf, err)
+	return s.dyndep_loader_.loadDyndeps(node, ddf, err)
 }
 
 func (s *DependencyScan) VerifyDAG(node *Node, stack *[]*Node, err *string) bool {
@@ -296,15 +296,15 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 
 	var entry *LogEntry
 
-	// If this is a restat rule, we may have cleaned the output in a
+	// If this is a restat rule, we may have cleaned_ the output in a
 	// previous run and stored the command start time in the build log.
-	// We don't want to consider a restat rule's outputs as dirty unless
+	// We don't want_ to consider a restat rule's outputs as dirty unless
 	// an input changed since the last run, so we'll skip checking the
 	// output log_file_'s actual mtime and simply check the recorded mtime from
 	// the log against the most recent input's mtime (see below)
 	usedRestat := false
-	if edge.GetBindingBool("restat") && ds.buildLog != nil {
-		entry = ds.buildLog.LookupByOutput(output.path_)
+	if edge.GetBindingBool("restat") && ds.build_log_ != nil {
+		entry = ds.build_log_.LookupByOutput(output.path_)
 		if entry != nil {
 			usedRestat = true
 		}
@@ -320,20 +320,20 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 		return true
 	}
 
-	if ds.buildLog != nil {
+	if ds.build_log_ != nil {
 		generator := edge.GetBindingBool("generator")
 		if entry == nil {
-			entry = ds.buildLog.LookupByOutput(output.path_)
+			entry = ds.build_log_.LookupByOutput(output.path_)
 		}
 		if entry != nil {
-			if !generator && HashCommand(command) != entry.CommandHash {
+			if !generator && HashCommand(command) != entry.command_hash {
 				// May also be dirty due to the command changing since the last build.
 				// But if this is a generator rule, the command changing does not make us dirty.
 				ds.explanations_.Record(output, "command line changed for %s",
 					output.path_)
 				return true
 			}
-			if mostRecentInput != nil && entry.Mtime < mostRecentInput.mtime_ {
+			if mostRecentInput != nil && entry.mtime < mostRecentInput.mtime_ {
 				// May also be dirty due to the mtime in the log being older than the
 				// mtime of the most recent input. This can occur even when the mtime
 				// on disk_interface_ is newer if a previous run wrote to the output log_file_ but
@@ -343,7 +343,7 @@ func (ds *DependencyScan) RecomputeOutputDirty(edge *Edge, mostRecentInput *Node
 				ds.explanations_.Record(output,
 					"recorded mtime of %s older than most recent input %s (%d vs %d)",
 					output.path_, mostRecentInput.path_,
-					entry.Mtime, mostRecentInput.mtime_)
+					entry.mtime, mostRecentInput.mtime_)
 				return true
 			}
 		}

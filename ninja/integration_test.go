@@ -41,7 +41,7 @@ func (m *mockFSIntegration) ReadFile(path string, contents *string, err *string)
 		*contents = content
 		return 0
 	}
-	*err = fmt.Sprintf("no such file or directory: %s", path)
+	*err = fmt.Sprintf("no such file_ or directory: %s", path)
 	return 1
 }
 
@@ -417,8 +417,8 @@ rule ar
   command = ar rcs $out $in
 
 # Object files
-build main.o: cc main.c | config.h
-build util.o: cc util.c | config.h
+build main.o: cc main.c | config_.h
+build util.o: cc util.c | config_.h
 build helper.o: cc helper.c
 
 # Library
@@ -519,7 +519,7 @@ rule gen
   command = ./gen.py $in $out
   generator = 1
 
-build config.h: gen config.in
+build config_.h: gen config_.in
 `
 	var err string
 	parser.ParseTest(manifest, &err)

@@ -251,7 +251,7 @@ func TestState_RootNodes_Cycle(t *testing.T) {
 	// 这种情况下没有根节点
 	roots := state.RootNodes(&err)
 	assert.NotNil(t, err)
-	assert.Contains(t, err, "could not determine root nodes")
+	assert.Contains(t, err, "could not determine root nodes_")
 	assert.Empty(t, roots)
 }
 

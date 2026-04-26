@@ -29,7 +29,7 @@ type NinjaMain struct {
 	/// Build configuration set from flags (e.g. parallelism).
 	config_ *BuildConfig
 
-	/// Loaded state_ (rules, nodes).
+	/// Loaded state_ (rules, nodes_).
 	state_ *State
 
 	/// Functions for accessing the disk_interface_.
@@ -89,7 +89,7 @@ func (n *NinjaMain) ParsePreviousElapsedTimes() {
 			if logEntry == nil {
 				continue // 可能该边的其他输出有记录，继续检查下一个输出
 			}
-			edge.prev_elapsed_time_millis = int64(logEntry.EndTime - logEntry.StartTime)
+			edge.prev_elapsed_time_millis = int64(logEntry.end_time - logEntry.start_time)
 			break // 只要找到一个输出有记录即可，继续下一条边
 		}
 	}
@@ -194,7 +194,7 @@ func (n *NinjaMain) ToolQuery(options *Options, args []string) int {
 		return 1
 	}
 
-	dyndepLoader := NewDyndepLoader(n.state_, n.disk_interface_)
+	dyndepLoader := NewDyndepLoader(n.state_, n.disk_interface_, nil)
 
 	for _, arg := range args {
 		var err string
@@ -481,7 +481,7 @@ func (n *NinjaMain) ToolWinCodePage(options *Options, args []string) int {
 	// 注：Go 的 runtime 未直接提供 GetACP，但可以检查环境或使用默认假定。
 	// 简单实现：判断是否处于 UTF-8 环境（如代码页 65001）
 	// 这里输出固定信息，实际需要调用 Windows API。
-	fmt.Println("Build file encoding: ANSI") // 或检测是否为 UTF-8
+	fmt.Println("Build file_ encoding: ANSI") // 或检测是否为 UTF-8
 	return 0
 }
 
@@ -523,7 +523,7 @@ func (n *NinjaMain) ToolCommands(options *Options, args []string) int {
 		if args[i] == "-s" {
 			mode = PCM_Single
 		} else if args[i] == "-h" {
-			fmt.Println(`usage: ninja -t commands [options] [targets]
+			fmt.Println(`usage: ninja -t commands [options] [targets_]
 
 options:
   -s     only print the final command to build [target], not the whole chain`)
@@ -563,9 +563,9 @@ func (n *NinjaMain) ToolInputs(options *Options, args []string) int {
 		case "-d", "--dependency-order":
 			dependencyOrder = true
 		case "-h", "--help":
-			fmt.Printf(`Usage: ninja -t inputs [options] [targets]
+			fmt.Printf(`Usage: ninja -t inputs [options] [targets_]
 
-List all inputs used for a set of targets, sorted in dependency order.
+List all inputs used for a set of targets_, sorted in dependency order.
 Note that by default, results are shell escaped, and sorted alphabetically,
 and never include validation target paths.
 
@@ -630,13 +630,13 @@ func (n *NinjaMain) ToolMultiInputs(options *Options, args []string) int {
 			delimiter = args[i+1]
 			i++
 		case "-h", "--help":
-			fmt.Printf(`Usage: ninja -t multi-inputs [options] [targets]
+			fmt.Printf(`Usage: ninja -t multi-inputs [options] [targets_]
 
-Print one or more sets of inputs required to build targets, sorted in dependency order.
+Print one or more sets of inputs required to build targets_, sorted in dependency order.
 The tool works like inputs tool but with addition of the target for each line.
 The output will be a series of lines with the following elements:
 <target> <delimiter> <input> <terminator>
-Note that a given input may appear for several targets if it is used by more than one targets.
+Note that a given input may appear for several targets_ if it is used by more than one targets_.
 
 Options:
   -h, --help                   Print this message.
@@ -685,11 +685,11 @@ func (n *NinjaMain) ToolClean(options *Options, args []string) int {
 		case "-r":
 			cleanRules = true
 		case "-h":
-			fmt.Println(`usage: ninja -t clean [options] [targets]
+			fmt.Println(`usage: ninja -t clean [options] [targets_]
 
 options:
   -g     also clean files marked as ninja generator output
-  -r     interpret targets as a list of rules to clean instead`)
+  -r     interpret targets_ as a list of rules to clean instead`)
 			return 1
 		default:
 			targets = append(targets, args[i])
@@ -737,14 +737,14 @@ func EvaluateCommandWithRspfile(edge *Edge, mode EvaluateCommandMode) string {
 		return command
 	}
 
-	// 查找 rspfile 在命令中的位置（需考虑 @rspfile、-f rspfile、--option-file=rspfile 三种模式）
+	// 查找 rspfile 在命令中的位置（需考虑 @rspfile、-f rspfile、--option-file_=rspfile 三种模式）
 	idx := strings.Index(command, rspfile)
 	if idx == -1 || idx == 0 {
 		return command
 	}
 	// 检查前一个字符
 	prevChar := command[idx-1]
-	if prevChar != '@' && !strings.Contains(command[idx-14:idx], "--option-file=") && !strings.Contains(command[idx-3:idx], "-f ") {
+	if prevChar != '@' && !strings.Contains(command[idx-14:idx], "--option-file_=") && !strings.Contains(command[idx-3:idx], "-f ") {
 		return command
 	}
 
@@ -756,8 +756,8 @@ func EvaluateCommandWithRspfile(edge *Edge, mode EvaluateCommandMode) string {
 	case prevChar == '@':
 		// @rspfile 形式
 		return command[:idx-1] + rspContent + command[idx+len(rspfile):]
-	case strings.Contains(command[idx-14:idx], "--option-file="):
-		// --option-file=rspfile 形式
+	case strings.Contains(command[idx-14:idx], "--option-file_="):
+		// --option-file_=rspfile 形式
 		return command[:idx-14] + rspContent + command[idx+len(rspfile):]
 	case strings.Contains(command[idx-3:idx], "-f "):
 		// -f rspfile 形式
@@ -780,7 +780,7 @@ func PrintCompdbObjectsForEdge(directory string, edge *Edge, evalMode EvaluateCo
 		PrintJSONString(directory)
 		fmt.Printf("\",\n    \"command\": \"")
 		PrintJSONString(command)
-		fmt.Printf("\",\n    \"file\": \"")
+		fmt.Printf("\",\n    \"file_\": \"")
 		PrintJSONString(input.path_)
 		fmt.Printf("\",\n    \"output\": \"")
 		PrintJSONString(edge.outputs_[0].path_)
@@ -802,7 +802,7 @@ func (n *NinjaMain) ToolCompilationDatabase(options *Options, args []string) int
 			fmt.Println(`usage: ninja -t compdb [options] [rules]
 
 options:
-  -x     expand @rspfile style response file invocations`)
+  -x     expand @rspfile style response file_ invocations`)
 			return 1
 		default:
 			rules = append(rules, args[i])
@@ -863,7 +863,7 @@ const (
 	ActionEmitCommands
 )
 
-// CompdbTargets 解析 compdb-targets 子工具的参数
+// CompdbTargets 解析 compdb-targets_ 子工具的参数
 type CompdbTargets struct {
 	Action   CompdbTargetsAction
 	EvalMode EvaluateCommandMode
@@ -890,7 +890,7 @@ func CreateCompdbTargetsFromArgs(args []string) *CompdbTargets {
 		}
 	}
 	if len(positional) == 0 {
-		fmt.Fprintln(os.Stderr, "compdb-targets expects the name of at least one target")
+		fmt.Fprintln(os.Stderr, "compdb-targets_ expects the name of at least one target")
 		ret.Action = ActionDisplayHelpAndExit
 	} else {
 		ret.Targets = positional
@@ -898,7 +898,7 @@ func CreateCompdbTargetsFromArgs(args []string) *CompdbTargets {
 	return ret
 }
 
-// PrintCompdb 输出 JSON 编译数据库（用于 compdb-targets）
+// PrintCompdb 输出 JSON 编译数据库（用于 compdb-targets_）
 func PrintCompdb(directory string, edges []*Edge, evalMode EvaluateCommandMode) {
 	fmt.Print("[")
 	first := true
@@ -921,11 +921,11 @@ func (n *NinjaMain) ToolCompilationDatabaseForTargets(options *Options, args []s
 
 	switch compdb.Action {
 	case ActionDisplayHelpAndExit:
-		fmt.Println(`usage: ninja -t compdb [-hx] target [targets]
+		fmt.Println(`usage: ninja -t compdb [-hx] target [targets_]
 
 options:
   -h     display this help message
-  -x     expand @rspfile style response file invocations`)
+  -x     expand @rspfile style response file_ invocations`)
 		return 1
 
 	case ActionEmitCommands:
@@ -1056,16 +1056,16 @@ type Tool struct {
 var kTools = []Tool{
 	{"browse", "browse dependency graph in a web browser", RUN_AFTER_LOAD, (*NinjaMain).ToolBrowse},
 	{"clean", "clean built files", RUN_AFTER_LOAD, (*NinjaMain).ToolClean},
-	{"commands", "list all commands required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolCommands},
-	{"inputs", "list all inputs required to rebuild given targets", RUN_AFTER_LOAD, (*NinjaMain).ToolInputs},
-	{"multi-inputs", "print one or more sets of inputs required to build targets", RUN_AFTER_LOAD, (*NinjaMain).ToolMultiInputs},
+	{"commands", "list all commands required to rebuild given targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolCommands},
+	{"inputs", "list all inputs required to rebuild given targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolInputs},
+	{"multi-inputs", "print one or more sets of inputs required to build targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolMultiInputs},
 	{"deps_", "show dependencies stored in the deps_ log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
 	{"missingdeps", "check deps_ log dependencies on generated files", RUN_AFTER_LOGS, (*NinjaMain).ToolMissingDeps},
-	{"graph", "output graphviz dot file for targets", RUN_AFTER_LOAD, (*NinjaMain).ToolGraph},
+	{"graph", "output graphviz dot file_ for targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolGraph},
 	{"query", "show inputs/outputs for a path", RUN_AFTER_LOGS, (*NinjaMain).ToolQuery},
-	{"targets", "list targets by their rule or depth in the DAG", RUN_AFTER_LOAD, (*NinjaMain).ToolTargets},
+	{"targets_", "list targets_ by their rule or depth in the DAG", RUN_AFTER_LOAD, (*NinjaMain).ToolTargets},
 	{"compdb", "dump JSON compilation database to stdout", RUN_AFTER_LOAD, (*NinjaMain).ToolCompilationDatabase},
-	{"compdb-targets", "dump JSON compilation database for a given list of targets to stdout", RUN_AFTER_LOAD, (*NinjaMain).ToolCompilationDatabaseForTargets},
+	{"compdb-targets_", "dump JSON compilation database for a given list of targets_ to stdout", RUN_AFTER_LOAD, (*NinjaMain).ToolCompilationDatabaseForTargets},
 	{"recompact", "recompacts ninja-internal data structures", RUN_AFTER_LOAD, (*NinjaMain).ToolRecompact},
 	{"restat", "restats all outputs in the build log", RUN_AFTER_FLAGS, (*NinjaMain).ToolRestat},
 	{"rules", "list all rules", RUN_AFTER_LOAD, (*NinjaMain).ToolRules},
@@ -1136,7 +1136,7 @@ multiple modes can be enabled via -d FOO -d BAR`)
 
 // / Command-line options.
 type Options struct {
-	/// Build file to load.
+	/// Build file_ to load.
 	input_file string
 
 	/// Directory to change into before running.
@@ -1267,7 +1267,7 @@ func (n *NinjaMain) DumpMetrics() {
 	}
 	fmt.Println()
 	// Go 的 map 没有 bucket_count 方法，仅输出条目数。
-	fmt.Printf("path->node hash load %.2f (%d entries)\n",
+	fmt.Printf("path->node hash load %.2f (%d entries_)\n",
 		float64(len(n.state_.paths_)), len(n.state_.paths_))
 }
 
@@ -1397,7 +1397,7 @@ func NewDeferGuessParallelism(config *BuildConfig) *DeferGuessParallelism {
 	}
 }
 
-// Refresh 如果 needGuess 为 true，则设置 config.parallelism 并标记为 false。
+// Refresh 如果 needGuess 为 true，则设置 config_.parallelism 并标记为 false。
 func (d *DeferGuessParallelism) Refresh() {
 	if d.needGuess {
 		d.needGuess = false
@@ -1471,7 +1471,7 @@ func readFlags(args []string, options *Options, config *BuildConfig) (int, []str
 		} else if arg == "-f" {
 			i++
 			if i >= len(args) {
-				fmt.Fprintln(os.Stderr, "ninja: -f requires a file")
+				fmt.Fprintln(os.Stderr, "ninja: -f requires a file_")
 				return 1, nil
 			}
 			options.input_file = args[i]
@@ -1684,9 +1684,9 @@ func main() {
 }
 
 func usage(config BuildConfig) {
-	fmt.Fprintf(os.Stderr, `usage: ninja [options] [targets...]
+	fmt.Fprintf(os.Stderr, `usage: ninja [options] [targets_...]
 
-if targets are unspecified, builds the 'default' target (see manual).
+if targets_ are unspecified, builds the 'default' target (see manual).
 
 options:
   --version      print ninja version ("%s")
@@ -1694,7 +1694,7 @@ options:
   --quiet        don't show progress status_, just command output
 
   -C DIR   change to DIR before doing anything else
-  -f FILE  specify input build file [default=build.ninja]
+  -f FILE  specify input build file_ [default=build.ninja]
 
   -j N     run N jobs in parallel (0 means infinity) [default=%d on this system]
   -k N     keep going until N jobs fail (0 means infinity) [default=1]

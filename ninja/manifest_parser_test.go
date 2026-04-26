@@ -177,7 +177,7 @@ func TestManifestParser_ParseBuild_ImplicitInputs(t *testing.T) {
 	input := `rule cc
   command = gcc $in -o $out
 
-build foo.o: cc foo.c | header.h config.h
+build foo.o: cc foo.c | header.h config_.h
 `
 	var err string
 	parser.ParseTest(input, &err)
@@ -187,7 +187,7 @@ build foo.o: cc foo.c | header.h config.h
 	require.Len(t, edge.inputs_, 3)
 	assert.Equal(t, "foo.c", edge.inputs_[0].path_)
 	assert.Equal(t, "header.h", edge.inputs_[1].path_)
-	assert.Equal(t, "config.h", edge.inputs_[2].path_)
+	assert.Equal(t, "config_.h", edge.inputs_[2].path_)
 	assert.Equal(t, 2, edge.implicit_deps_)
 }
 
@@ -467,7 +467,7 @@ func TestManifestParser_ParseVersion(t *testing.T) {
 	parser.ParseTest(input, &err)
 	require.Equal(t, err, "")
 
-	// 验证版本被设置到 lexer
+	// 验证版本被设置到 lexer_
 	assert.Equal(t, 1, parser.lexer.manifestVersionMajor)
 	assert.Equal(t, 14, parser.lexer.manifestVersionMinor)
 }

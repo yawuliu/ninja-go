@@ -43,8 +43,8 @@ func TestEvalString_SingleToken(t *testing.T) {
 	es := &EvalString{}
 	es.AddText("hello")
 
-	// 第一个文本应该设置 singleToken
-	assert.Equal(t, "hello", es.singleToken)
+	// 第一个文本应该设置 single_token_
+	assert.Equal(t, "hello", es.single_token_)
 	assert.Empty(t, es.fragments)
 
 	env := newMockEnv()
@@ -61,7 +61,7 @@ func TestEvalString_MultipleTexts(t *testing.T) {
 
 	// 多个文本应该合并到 fragments
 	// 注意：第一次AddText设置singleToken，第二次触发转换，后续合并到最后一个fragment
-	assert.Empty(t, es.singleToken)
+	assert.Empty(t, es.single_token_)
 	require.Len(t, es.fragments, 2)
 	assert.Equal(t, "hello", es.fragments[0].Text)
 	assert.Equal(t, " world", es.fragments[1].Text)
@@ -211,7 +211,7 @@ func TestEvalString_Clear(t *testing.T) {
 	es.Clear()
 
 	assert.True(t, es.Empty())
-	assert.Empty(t, es.singleToken)
+	assert.Empty(t, es.single_token_)
 	assert.Empty(t, es.fragments)
 }
 
@@ -297,18 +297,18 @@ func TestEvalString_UnparseEmpty(t *testing.T) {
 	assert.Equal(t, "", result)
 }
 
-// TestEvalString_Transition 测试 singleToken 到 fragments 的转换
+// TestEvalString_Transition 测试 single_token_ 到 fragments 的转换
 func TestEvalString_Transition(t *testing.T) {
 	es := &EvalString{}
 
-	// 先添加文本，应该设置 singleToken
+	// 先添加文本，应该设置 single_token_
 	es.AddText("first")
-	assert.Equal(t, "first", es.singleToken)
+	assert.Equal(t, "first", es.single_token_)
 	assert.Empty(t, es.fragments)
 
 	// 添加变量，应该转换到 fragments
 	es.AddSpecial("var")
-	assert.Empty(t, es.singleToken)
+	assert.Empty(t, es.single_token_)
 	require.Len(t, es.fragments, 2)
 	assert.Equal(t, "first", es.fragments[0].Text)
 	assert.False(t, es.fragments[0].IsSpecial)

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"sync"
 )
 
 const (
@@ -24,26 +23,26 @@ type BuildLogUser interface {
 
 // LogEntry 表示一条构建记录
 type LogEntry struct {
-	Output      string
-	CommandHash uint64
-	StartTime   int
-	EndTime     int
-	Mtime       int64
+	output       string
+	command_hash uint64
+	start_time   int
+	end_time     int
+	mtime        int64
 }
 
 // BuildLog 管理 .ninja_log 文件
 type BuildLog struct {
-	mu                sync.RWMutex
-	filePath          string
-	log_file_         *os.File
-	entries           map[string]*LogEntry
-	needsRecompaction bool
+	log_file_path_      string
+	log_file_           *os.File
+	entries_            map[string]*LogEntry
+	needs_recompaction_ bool
 }
 
 func NewBuildLog(path string) *BuildLog {
 	return &BuildLog{
-		filePath: path,
-		entries:  make(map[string]*LogEntry),
+		log_file_path_:      path,
+		entries_:            make(map[string]*LogEntry),
+		needs_recompaction_: false,
 	}
 }
 
@@ -60,7 +59,7 @@ func (bl *BuildLog) Close() error {
 
 // OpenForWrite 准备写入日志，如果需要则先执行 recompact
 func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser, err *string) bool {
-	if bl.needsRecompaction {
+	if bl.needs_recompaction_ {
 		if !bl.Recompact(path, user, err) {
 			return false
 		}
@@ -68,16 +67,16 @@ func (bl *BuildLog) OpenForWrite(path string, user BuildLogUser, err *string) bo
 	if bl.log_file_ != nil {
 		panic("log_file_ should be nil")
 	}
-	bl.filePath = path
+	bl.log_file_path_ = path
 	return true
 }
 
 // openForWriteIfNeeded 在首次写入时打开文件并写入签名
 func (bl *BuildLog) openForWriteIfNeeded() bool {
-	if bl.log_file_ != nil || bl.filePath == "" {
+	if bl.log_file_ != nil || bl.log_file_path_ == "" {
 		return true
 	}
-	f, err := os.OpenFile(bl.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(bl.log_file_path_, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return false
 	}
@@ -109,15 +108,15 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool 
 
 	for _, out := range edge.outputs_ {
 		path := out.path_
-		entry, ok := bl.entries[path]
+		entry, ok := bl.entries_[path]
 		if !ok {
-			entry = &LogEntry{Output: path}
-			bl.entries[path] = entry
+			entry = &LogEntry{output: path}
+			bl.entries_[path] = entry
 		}
-		entry.CommandHash = commandHash
-		entry.StartTime = start
-		entry.EndTime = end
-		entry.Mtime = mtime
+		entry.command_hash = commandHash
+		entry.start_time = start
+		entry.end_time = end
+		entry.mtime = mtime
 
 		if !bl.openForWriteIfNeeded() {
 			return false
@@ -137,8 +136,8 @@ func (bl *BuildLog) RecordCommand(edge *Edge, start, end int, mtime int64) bool 
 // writeEntry 将单条记录写入文件
 func (bl *BuildLog) writeEntry(f *os.File, entry *LogEntry) bool {
 	_, err := fmt.Fprintf(f, "%d\t%d\t%d\t%s\t%d\n",
-		entry.StartTime, entry.EndTime, entry.Mtime,
-		entry.Output, entry.CommandHash)
+		entry.start_time, entry.end_time, entry.mtime,
+		entry.output, entry.command_hash)
 	if err != nil {
 		return false
 	}
@@ -147,9 +146,10 @@ func (bl *BuildLog) writeEntry(f *os.File, entry *LogEntry) bool {
 
 // LookupByOutput 根据输出路径查找记录
 func (bl *BuildLog) LookupByOutput(path string) *LogEntry {
-	bl.mu.RLock()
-	defer bl.mu.RUnlock()
-	return bl.entries[path]
+	if _, ok := bl.entries_[path]; ok {
+		return bl.entries_[path]
+	}
+	return nil
 }
 
 type LoadStatus int
@@ -228,28 +228,28 @@ func (bl *BuildLog) Load(path string, err *string) LoadStatus {
 		output := string(parts[3])
 		commandHash, _ := strconv.ParseUint(string(parts[4]), 10, 64)
 
-		entry, ok := bl.entries[output]
+		entry, ok := bl.entries_[output]
 		if !ok {
-			entry = &LogEntry{Output: output}
-			bl.entries[output] = entry
+			entry = &LogEntry{output: output}
+			bl.entries_[output] = entry
 			uniqueEntryCount++
 		}
 		totalEntryCount++
 
-		entry.StartTime = startTime
-		entry.EndTime = endTime
-		entry.Mtime = mtime
-		entry.CommandHash = commandHash
+		entry.start_time = startTime
+		entry.end_time = endTime
+		entry.mtime = mtime
+		entry.command_hash = commandHash
 	}
 
 	// Decide whether to recompact
 	const kMinCompactionEntryCount = 100
 	const kCompactionRatio = 3
 	if logVersion < kBuildLogCurrentVersion {
-		bl.needsRecompaction = true
+		bl.needs_recompaction_ = true
 	} else if totalEntryCount > kMinCompactionEntryCount &&
 		totalEntryCount > uniqueEntryCount*kCompactionRatio {
-		bl.needsRecompaction = true
+		bl.needs_recompaction_ = true
 	}
 
 	return LOAD_SUCCESS
@@ -271,10 +271,7 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 		return false
 	}
 
-	bl.mu.RLock()
-	defer bl.mu.RUnlock()
-
-	for output, entry := range bl.entries {
+	for output, entry := range bl.entries_ {
 		if user.IsPathDead(output) {
 			continue
 		}
@@ -284,9 +281,9 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 		}
 	}
 	// 删除死亡记录
-	for output := range bl.entries {
+	for output := range bl.entries_ {
 		if user.IsPathDead(output) {
-			delete(bl.entries, output)
+			delete(bl.entries_, output)
 		}
 	}
 
@@ -309,22 +306,19 @@ func (bl *BuildLog) Restat(path string, disk FileSystem, outputs []string, err *
 		return false
 	}
 
-	bl.mu.Lock()
-	defer bl.mu.Unlock()
-
 	skipMap := make(map[string]bool)
 	for _, out := range outputs {
 		skipMap[out] = true
 	}
 
-	for output, entry := range bl.entries {
+	for output, entry := range bl.entries_ {
 		// 如果输出在 outputs 列表中，则更新其 mtime
 		if skipMap[output] {
 			mtime := disk.Stat(output, err)
 			if mtime == -1 {
 				return false
 			}
-			entry.Mtime = mtime
+			entry.mtime = mtime
 		}
 		if !bl.writeEntry(f, entry) {
 			*err = fmt.Sprintf("failed to write entry for output %s", output)
@@ -335,4 +329,4 @@ func (bl *BuildLog) Restat(path string, disk FileSystem, outputs []string, err *
 	return ReplaceContent(tempPath, path, err)
 }
 
-func (bl *BuildLog) Entries() map[string]*LogEntry { return bl.entries }
+func (bl *BuildLog) Entries() map[string]*LogEntry { return bl.entries_ }

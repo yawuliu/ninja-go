@@ -62,7 +62,7 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 
 	nodes := deps.nodes
 	nodeCount := deps.node_count
-	// Insert nodes before the order-only dependencies
+	// Insert nodes_ before the order-only dependencies
 	insertPos := len(edge.inputs_) - edge.order_only_deps_
 	edge.inputs_ = append(edge.inputs_[:insertPos], append(nodes, edge.inputs_[insertPos:]...)...)
 	edge.implicit_deps_ += nodeCount
@@ -145,7 +145,7 @@ func (l *ImplicitDepLoader) ProcessDepfileDeps(edge *Edge, depfileIns []string, 
 	// Make room for len(depfileIns) new items at the insertion point.
 	edge.inputs_ = append(edge.inputs_[:startIdx], append(make([]*Node, len(depfileIns)), edge.inputs_[startIdx:]...)...)
 
-	// Add all nodes as implicit dependencies.
+	// Add all nodes_ as implicit dependencies.
 	for i, path := range depfileIns {
 		// Canonicalize the path and get slash bits.
 		var slash_bits uint64
