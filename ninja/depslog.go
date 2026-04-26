@@ -476,8 +476,8 @@ func (dl *DepsLog) isDepsEntryLive(node *Node) bool {
 	if node.in_edge() == nil {
 		return false
 	}
-	// 检查边的规则是否有 "deps_" 属性
-	return node.in_edge().GetBinding("deps_") != ""
+	// 检查边的规则是否有 "deps" 属性
+	return node.in_edge().GetBinding("deps") != ""
 }
 
 func (dl *DepsLog) UpdateDeps(out_id int, deps *Deps) bool {
@@ -498,12 +498,12 @@ func (dl *DepsLog) Nodes() []*Node { return dl.nodes_ }
 func (dl *DepsLog) Deps() []*Deps { return dl.deps_ }
 
 // IsDepsEntryLiveFor 判断节点的依赖记录是否应该保留。
-// 节点必须有入边，且该边的 "deps_" 绑定非空。
+// 节点必须有入边，且该边的 "deps" 绑定非空。
 func IsDepsEntryLiveFor(node *Node) bool {
 	if node.in_edge() == nil {
 		return false
 	}
-	return node.in_edge().GetBinding("deps_") != ""
+	return node.in_edge().GetBinding("deps") != ""
 }
 func (d *DepsLog) OpenForWriteIfNeeded() bool {
 	if d.file_path_ == "" {

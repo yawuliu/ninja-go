@@ -19,8 +19,12 @@ func NewImplicitDepLoader(state *State, depsLog *DepsLog, disk_interface FileSys
 	}
 }
 
+func (l *ImplicitDepLoader) deps_log() *DepsLog {
+	return l.deps_log_
+}
+
 func (l *ImplicitDepLoader) LoadDeps(edge *Edge, err *string) bool {
-	depsType := edge.GetBinding("deps_")
+	depsType := edge.GetBinding("deps")
 	if depsType != "" {
 		return l.LoadDepsFromLog(edge, err)
 	}

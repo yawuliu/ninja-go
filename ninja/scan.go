@@ -23,7 +23,9 @@ func NewDependencyScan(state *State, buildLog *BuildLog, depsLog *DepsLog,
 		explanations_:   explanations,
 	}
 }
-
+func (s *DependencyScan) deps_log() *DepsLog {
+	return s.dep_loader_.deps_log()
+}
 func (s *DependencyScan) RecomputeDirty(initialNode *Node, validationNodes *[]*Node, err *string) bool {
 	// queue of nodes_ to process
 	nodes := []*Node{initialNode}

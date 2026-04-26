@@ -162,7 +162,7 @@ func (s *MissingDependencyScanner) ProcessNode(node *Node) {
 	}
 
 	// 获取依赖信息（从 deps_ log 或 depfile）
-	depsType := edge.GetBinding("deps_")
+	depsType := edge.GetBinding("deps")
 	if depsType != "" {
 		deps := s.deps_log_.GetDeps(node)
 		if deps != nil {

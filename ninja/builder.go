@@ -253,12 +253,12 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 	// to filter /showIncludes output, even on compile failure) and
 	// extraction itself can fail, which makes the command fail from a
 	// build perspective.
-	var depsNodes []*Node
-	depsType := edge.GetBinding("deps_")
+	var deps_nodes []*Node
+	depsType := edge.GetBinding("deps")
 	depsPrefix := edge.GetBinding("msvc_deps_prefix")
 	if depsType != "" {
 		var extractErr string
-		if !b.extractDeps(result, depsType, depsPrefix, &depsNodes, &extractErr) && result.Success() {
+		if !b.extractDeps(result, depsType, depsPrefix, &deps_nodes, &extractErr) && result.Success() {
 			if result.Output != "" {
 				result.Output += "\n"
 			}
@@ -346,7 +346,7 @@ func (b *Builder) FinishCommand(result *CommandResult, err *string) bool {
 			if depsMtime == -1 {
 				return false
 			}
-			if !b.scan_.depsLog.RecordDeps1(o, depsMtime, depsNodes) {
+			if !b.scan_.deps_log().RecordDeps1(o, depsMtime, deps_nodes) {
 				*err = "Error writing to deps_ log: "
 				return false
 			}

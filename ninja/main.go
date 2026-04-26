@@ -1059,7 +1059,7 @@ var kTools = []Tool{
 	{"commands", "list all commands required to rebuild given targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolCommands},
 	{"inputs", "list all inputs required to rebuild given targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolInputs},
 	{"multi-inputs", "print one or more sets of inputs required to build targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolMultiInputs},
-	{"deps_", "show dependencies stored in the deps_ log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
+	{"deps", "show dependencies stored in the deps_ log", RUN_AFTER_LOGS, (*NinjaMain).ToolDeps},
 	{"missingdeps", "check deps_ log dependencies on generated files", RUN_AFTER_LOGS, (*NinjaMain).ToolMissingDeps},
 	{"graph", "output graphviz dot file_ for targets_", RUN_AFTER_LOAD, (*NinjaMain).ToolGraph},
 	{"query", "show inputs/outputs for a path", RUN_AFTER_LOGS, (*NinjaMain).ToolQuery},
