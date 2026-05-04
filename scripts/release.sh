@@ -73,46 +73,6 @@ echo "=== Creating tag $VERSION ==="
 git tag -a "$VERSION" -m "ninja-go $VERSION"
 git push origin "$VERSION"
 
-# ---- Release notes ----
-REPO_URL="$(gh repo view --json url -q .url)"
-RELEASE_URL="${REPO_URL}/releases/download/$VERSION"
-
-NOTES=$(cat <<EOF
-## ninja-go $VERSION
-
-Go 语言移植的 [Ninja](https://ninja-build.org/) 构建系统。
-
-### 下载
-
-| 平台 | 文件 |
-|------|------|
-| Windows (amd64) | [ninja-go-${VERSION}-windows-amd64.exe](${RELEASE_URL}/ninja-go-${VERSION}-windows-amd64.exe) |
-| Linux (amd64) | [ninja-go-${VERSION}-linux-amd64](${RELEASE_URL}/ninja-go-${VERSION}-linux-amd64) |
-
-### 支持的子工具
-
-browse, clean, cleandead, commands, compdb, deps, graph, inputs,
-missingdeps, multi-inputs, query, recompact, restat, rules, targets, wincodepage
-
-### 命令行选项
-
-\`-C\`, \`-f\`, \`-j\`, \`-k\`, \`-l\`, \`-n\`, \`-d\`, \`-t\`, \`-w\`, \`-v\`, \`--version\`
-
-### 校验和
-
-\`\`\`
-$(cd "$BUILD_DIR" && sha256sum "${TARGETS[@]}")
-\`\`\`
-EOF
-)
-
-# ---- Create GitHub release ----
-echo ""
-echo "=== Creating GitHub release ==="
-gh release create "$VERSION" \
-    --title "ninja-go $VERSION" \
-    --notes "$NOTES" \
-    "${BINARIES[@]}"
 
 # ---- Cleanup ----
 rm -rf "$BUILD_DIR"
@@ -120,3 +80,42 @@ rm -rf "$BUILD_DIR"
 echo ""
 echo "=== Release $VERSION created ==="
 echo "URL: ${REPO_URL}/releases/tag/$VERSION"
+# ---- Release notes (write to temp file) ----
+REPO_URL="$(gh repo view --json url -q .url)"
+RELEASE_URL="${REPO_URL}/releases/download/$VERSION"
+NOTES_FILE="$BUILD_DIR/release_notes.md"
+
+cat > "$NOTES_FILE" << NOTESEOF
+## ninja-go $VERSION
+
+Go port of [Ninja](https://ninja-build.org/) build system.
+
+### Downloads
+
+| Platform | File |
+|----------|------|
+| Windows (amd64) | [ninja-go-${VERSION}-windows-amd64.exe](${RELEASE_URL}/ninja-go-${VERSION}-windows-amd64.exe) |
+| Linux (amd64) | [ninja-go-${VERSION}-linux-amd64](${RELEASE_URL}/ninja-go-${VERSION}-linux-amd64) |
+
+### Usage
+
+```bash
+ninja-go -C /path/to/build/dir
+ninja-go -j 8
+ninja-go -t targets all
+```
+
+### Checksums
+
+```
+$(cd "$BUILD_DIR" && sha256sum "${TARGETS[@]}")
+```
+NOTESEOF
+
+# ---- Create GitHub release ----
+echo ""
+echo "=== Creating GitHub release ==="
+gh release create "$VERSION" \
+    --title "ninja-go $VERSION" \
+    --notes-file "$NOTES_FILE" \
+    "${BINARIES[@]}"

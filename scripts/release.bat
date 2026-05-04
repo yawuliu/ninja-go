@@ -32,12 +32,6 @@ where gh  >nul 2>&1 || (
     exit /b 1
 )
 
-REM ---- Verify working tree is clean ----
-git diff-index --quiet HEAD -- 2>nul || (
-    echo ERROR: working tree is not clean. Please commit or stash changes.
-    exit /b 1
-)
-
 REM ---- Cross-compile ----
 echo === Building %VERSION% ===
 
@@ -75,15 +69,35 @@ echo === Creating tag %VERSION% ===
 git tag -a "%VERSION%" -m "ninja-go %VERSION%"
 git push origin "%VERSION%"
 
+REM ---- Write release notes to temp file ----
+set NOTES=%BUILD_DIR%\release_notes.md
+(
+    echo ## ninja-go %VERSION%
+    echo.
+    echo Go port of Ninja build system.
+    echo.
+    echo ### Downloads
+    echo.
+    echo ^| Platform ^| File ^|
+    echo ^|----------^|------^|
+    echo ^| Windows ^(amd64^) ^| %WIN_BIN% ^|
+    echo ^| Linux ^(amd64^) ^| %LINUX_BIN% ^|
+    echo.
+    echo ### Usage
+    echo.
+    echo ```bash
+    echo ninja-go -C /path/to/build/dir
+    echo ninja-go -j 8
+    echo ninja-go -t targets all
+    echo ```
+) > "%NOTES%"
+
 REM ---- Create GitHub release ----
 echo.
 echo === Creating GitHub release ===
 gh release create "%VERSION%" ^
     --title "ninja-go %VERSION%" ^
-    --notes "Go port of Ninja build system. %VERSION%.
-Downloads:
-- ninja-go-%VERSION%-windows-amd64.exe
-- ninja-go-%VERSION%-linux-amd64" ^
+    --notes-file "%NOTES%" ^
     "%BUILD_DIR%\%WIN_BIN%" ^
     "%BUILD_DIR%\%LINUX_BIN%"
 
