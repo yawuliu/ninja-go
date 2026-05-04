@@ -1,0 +1,17 @@
+# Go项目概述
+- 技术栈：ninja-go是一个把ninja build的cpp移植到golang的实现
+- 技术栈：Go 1.25.1, using go modules。
+- 项目结构：
+    - `ninja/`: go版本的ninja移植实现
+    - `ninja-cpp/`: 原始的c++版本的ninja实现
+    - `testdata/cmake-examples/`: 准备用来做编译测试的样例cmake工程
+- 开发命令
+    - `go mod tidy`: 整理依赖
+- 项目结构：
+    - `ninja/main.go`: 程序主函数
+- 开发命令
+    - `go mod tidy`: 整理依赖
+- 备注
+    - 本机环境cmake路径： F:\dev8\cmake-3.27.6-windows-x86_64\bin\cmake.exe
+    - 本机make路径：D:\soft\TDM-GCC-64\bin\mingw32-make.exe
+    - 本机gcc路径：D:\soft\TDM-GCC-64\bin\gcc.exe

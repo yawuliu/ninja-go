@@ -1,0 +1,18 @@
+# 依赖与构建产物（最大黑洞）
+vendor/
+dist/
+*.exe
+*.test
+
+# 日志和锁文件
+*.log
+go.sum
+
+# 版本控制与IDE配置
+.git/
+.idea/
+.vscode/
+ninja-cpp/.github/
+ninja-cpp/.idea/
+ninja-cpp/cmake-build-debug/
+
