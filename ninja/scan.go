@@ -170,9 +170,9 @@ func (ds *DependencyScan) RecomputeNodeDirty(node *Node, stack *[]*Node, validat
 
 	// We may also be dirty due to output state_: missing outputs, out of date outputs, etc.
 	if !dirty {
-		if !ds.RecomputeOutputsDirty(edge, mostRecentInput, &dirty, err) {
-			return false
-		}
+		// RecomputeOutputsDirty returns false when all outputs are clean,
+		// not on error — so don't treat its return value as an error.
+		ds.RecomputeOutputsDirty(edge, mostRecentInput, &dirty, err)
 	}
 
 	// Finally, visit each output and update their dirty state_ if necessary.
