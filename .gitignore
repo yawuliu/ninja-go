@@ -31,5 +31,8 @@ testdata/cmake-examples/**/CMakeCache.txt
 *.obj
 *.exe
 
+# Release artifacts
+/_release/
+
 # Claude config (local only)
 /.claude/settings.local.json
