@@ -1,4 +1,35 @@
-_build/
+# ninja-go binary
+/ninja-go.exe
+/ninja-go
+
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+_build/
+testdata/cmake-examples/_build/
+
+# CMake generated
+testdata/cmake-examples/**/CMakeFiles/
+testdata/cmake-examples/**/CMakeCache.txt
+
+# Ninja logs
+.ninja_log
 .ninja_deps
+*.ninja_log
+*.ninja_deps
+
+# Test outputs
+*.o
+*.obj
+*.exe
+
+# Claude config (local only)
 /.claude/settings.local.json
