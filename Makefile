@@ -6,7 +6,7 @@
 CMAKE          ?= F:/dev8/cmake-3.27.6-windows-x86_64/bin/cmake.exe
 # Real ninja (C++ build) for cmake generation only
 # Must be absolute so cmake can find it from the build directory
-NINJA_REAL     ?= $(CURDIR)/ninja.exe
+NINJA_REAL     ?= F:/dev8/vcpkg/downloads/tools/ninja/1.10.2-windows/ninja.exe
 # TDM-GCC: D:/soft/TDM-GCC-64/bin
 GCC            ?= D:/soft/TDM-GCC-64/bin/gcc.exe
 GXX            ?= D:/soft/TDM-GCC-64/bin/g++.exe
@@ -19,10 +19,7 @@ RM             := rm -f
 # 跨平台的 mkdir -p
 ifeq ($(OS),Windows_NT)
 # Windows 原生 cmd 的 mkdir 可以直接创建多级目录，但不需要 -p
-# 这里定义一个函数，先检查目录是否存在，若不存在则创建
-define MKDIR
-	@if not exist "$(1)" mkdir "$(1)"
-endef
+	MKDIR = D:/soft/Git/usr/bin/mkdir.exe -p
 else
 	MKDIR = mkdir -p
 endif

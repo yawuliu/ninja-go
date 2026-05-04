@@ -46,7 +46,7 @@ func (l *ImplicitDepLoader) LoadDepsFromLog(edge *Edge, err *string) bool {
 		deps = l.deps_log_.GetDeps(output)
 	}
 	if deps == nil {
-		l.explanations_.Record(output, "deps_ for '%s' are missing",
+		l.explanations_.Record(output, "deps for '%s' are missing",
 			output.path_)
 		return false
 	}

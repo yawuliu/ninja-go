@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -131,7 +130,10 @@ func (p *Plan) FindWork() *Edge {
 func (p *Plan) EdgeFinished(edge *Edge, result EdgeResult, err *string) bool {
 	e, exists := p.want_[edge]
 	if !exists {
-		panic(errors.New("EdgeFinished"))
+		// Edge may have already been finished by a chained nodeFinished call
+		// (e.g., when a phony edge's completion cascades through multiple
+		// dependent edges). C++ uses assert() which is a no-op in release.
+		return true
 	}
 	directlyWanted := e != kWantNothing
 

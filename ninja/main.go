@@ -985,9 +985,10 @@ const EXIT_SUCCESS = 0
 const EXIT_FAILURE = 1
 
 // ToolRestat 重新统计构建日志中指定输出文件的 mtime。
+// ToolRestat 重新统计构建日志中指定输出文件的 mtime。
 func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 	// 解析选项
-	buildDir := n.build_dir_ // 使用结构体已有的 build_dir 字段
+	buildDir := n.build_dir_
 	var outputs []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--builddir" {
@@ -1010,26 +1011,28 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 		logPath = buildDir + "/" + logPath
 	}
 
+	// ToolRestat runs before build_log_ / disk_interface_ are initialized
+	// (RUN_AFTER_FLAGS), so create local instances.
+	buildLog := NewBuildLog(logPath)
+	diskInterface := NewRealFileSystem()
+
 	// 加载构建日志
 	var err string
-	status := n.build_log_.Load(logPath, &err)
+	status := buildLog.Load(logPath, &err)
 	if status == LOAD_ERROR {
-		// 如果文件不存在，忽略
 		fmt.Fprintf(os.Stderr, "ninja: loading build log %s: %v\n", logPath, err)
 		return EXIT_FAILURE
 	}
 	if status == LOAD_NOT_FOUND {
-		// Nothing to restat, ignore this
 		return EXIT_SUCCESS
 	}
 	if err != "" {
-		// Hack: Load() can return a warning via err by returning LOAD_SUCCESS.
 		fmt.Printf("%s", err)
 		err = ""
 	}
 
 	// 调用 Restat 更新记录
-	success := n.build_log_.Restat(logPath, n.disk_interface_, outputs, &err)
+	success := buildLog.Restat(logPath, diskInterface, outputs, &err)
 	if !success {
 		fmt.Fprintf(os.Stderr, "ninja: failed restat: %v\n", err)
 		return EXIT_FAILURE
@@ -1037,7 +1040,7 @@ func (n *NinjaMain) ToolRestat(options *Options, args []string) int {
 
 	// 如果不是 dry run，重新打开日志文件用于写入
 	if !n.config_.GetDryRun() {
-		if !n.build_log_.OpenForWrite(logPath, n, &err) {
+		if !buildLog.OpenForWrite(logPath, n, &err) {
 			fmt.Fprintf(os.Stderr, "ninja: opening build log: %v\n", err)
 			return EXIT_FAILURE
 		}
