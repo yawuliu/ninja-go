@@ -36,3 +36,6 @@ testdata/cmake-examples/**/CMakeCache.txt
 
 # Claude config (local only)
 /.claude/settings.local.json
+/ninja-cpp/
+/go.sum
+/testdata/cmake-examples/
