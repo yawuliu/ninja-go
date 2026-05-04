@@ -16,7 +16,16 @@ GXX            ?= D:/soft/TDM-GCC-64/bin/g++.exe
 SHELL          := sh
 NINJA_GO_BIN   := ninja-go.exe
 RM             := rm -f
-MKDIR          := mkdir -p
+# 跨平台的 mkdir -p
+ifeq ($(OS),Windows_NT)
+# Windows 原生 cmd 的 mkdir 可以直接创建多级目录，但不需要 -p
+# 这里定义一个函数，先检查目录是否存在，若不存在则创建
+define MKDIR
+	@if not exist "$(1)" mkdir "$(1)"
+endef
+else
+	MKDIR = mkdir -p
+endif
 RMDIR          := rm -rf
 
 GO             := go
