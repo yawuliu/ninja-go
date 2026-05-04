@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // Pool 管理延迟边
 type Pool struct {
@@ -59,4 +62,14 @@ func (p *Pool) RetrieveReadyEdges(queue *EdgePriorityQueue) {
 		}
 	}
 	p.delayed = remaining
+}
+
+func (p *Pool) Dump() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	fmt.Printf("%s (%d/%d) ->\n", p.Name, p.currentUse, p.Depth)
+	for _, edge := range p.delayed {
+		fmt.Printf("\t")
+		edge.Dump()
+	}
 }

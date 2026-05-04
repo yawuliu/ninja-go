@@ -161,6 +161,28 @@ func (s *State) RootNodes(err *string) []*Node {
 	return root_nodes
 }
 
+func (s *State) Dump() {
+	for _, node := range s.paths_ {
+		status := "unknown"
+		if node.StatusKnown() {
+			if node.dirty_ {
+				status = "dirty"
+			} else {
+				status = "clean"
+			}
+		}
+		fmt.Printf("%s %s [id:%d]\n", node.path_, status, node.id_)
+	}
+	if len(s.pools_) > 0 {
+		fmt.Printf("resource_pools:\n")
+		for _, pool := range s.pools_ {
+			if pool.Name != "" {
+				pool.Dump()
+			}
+		}
+	}
+}
+
 func (s *State) DefaultNodes(err *string) []*Node {
 	if len(s.defaults_) > 0 {
 		return s.defaults_

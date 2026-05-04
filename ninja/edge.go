@@ -1,5 +1,9 @@
 package main
 
+import (
+	"fmt"
+)
+
 type VisitMark int8
 
 const (
@@ -102,4 +106,29 @@ func (e *Edge) Weight() int { return 1 }
 
 func (e *Edge) MaybePhonyCycleDiagnostic() bool {
 	return e.IsPhony() && len(e.outputs_) == 1 && e.implicit_outs_ == 0 && e.implicit_deps_ == 0
+}
+
+func (e *Edge) Dump() {
+	fmt.Printf("[ ")
+	for _, in := range e.inputs_ {
+		fmt.Printf("%s ", in.path_)
+	}
+	fmt.Printf("--%s-> ", e.rule_.Name)
+	for _, out := range e.outputs_ {
+		fmt.Printf("%s ", out.path_)
+	}
+	if len(e.validations_) > 0 {
+		fmt.Printf(" validations ")
+		for _, v := range e.validations_ {
+			fmt.Printf("%s ", v.path_)
+		}
+	}
+	if e.pool_ != nil {
+		if e.pool_.Name != "" {
+			fmt.Printf("(in pool '%s')", e.pool_.Name)
+		}
+	} else {
+		fmt.Printf("(null pool?)")
+	}
+	fmt.Printf("] %p\n", e)
 }

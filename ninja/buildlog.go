@@ -264,9 +264,9 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 		*err = create_err.Error()
 		return false
 	}
-	defer f.Close()
 
 	if _, dump_err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); dump_err != nil {
+		f.Close()
 		*err = dump_err.Error()
 		return false
 	}
@@ -276,7 +276,8 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 			continue
 		}
 		if !bl.writeEntry(f, entry) {
-			*err = fmt.Sprintf("")
+			f.Close()
+			*err = ""
 			return false
 		}
 	}
@@ -287,6 +288,7 @@ func (bl *BuildLog) Recompact(path string, user BuildLogUser, err *string) bool 
 		}
 	}
 
+	f.Close()
 	return ReplaceContent(path, temp_path, err)
 }
 
@@ -299,33 +301,39 @@ func (bl *BuildLog) Restat(path string, disk FileSystem, outputs []string, err *
 		*err = create_err.Error()
 		return false
 	}
-	defer f.Close()
 
 	if _, dump_err := fmt.Fprintf(f, kBuildLogFileSignature, kBuildLogCurrentVersion); dump_err != nil {
+		f.Close()
 		*err = dump_err.Error()
 		return false
 	}
 
 	skipMap := make(map[string]bool)
+	hasFilter := len(outputs) > 0
 	for _, out := range outputs {
 		skipMap[out] = true
 	}
 
 	for output, entry := range bl.entries_ {
-		// 如果输出在 outputs 列表中，则更新其 mtime
-		if skipMap[output] {
+		// 如果指定了 outputs 过滤列表，只更新列表中的条目
+		// 如果没有指定过滤条件，更新所有条目
+		skip := hasFilter && !skipMap[output]
+		if !skip {
 			mtime := disk.Stat(output, err)
 			if mtime == -1 {
+				f.Close()
 				return false
 			}
 			entry.mtime = mtime
 		}
 		if !bl.writeEntry(f, entry) {
+			f.Close()
 			*err = fmt.Sprintf("failed to write entry for output %s", output)
 			return false
 		}
 	}
 
+	f.Close()
 	return ReplaceContent(tempPath, path, err)
 }
 

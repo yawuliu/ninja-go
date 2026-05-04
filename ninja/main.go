@@ -477,11 +477,11 @@ func (n *NinjaMain) ToolWinCodePage(options *Options, args []string) int {
 		fmt.Println("usage: ninja -t wincodepage")
 		return 1
 	}
-	// 获取当前 Windows 代码页（ANSI 或 UTF-8）
-	// 注：Go 的 runtime 未直接提供 GetACP，但可以检查环境或使用默认假定。
-	// 简单实现：判断是否处于 UTF-8 环境（如代码页 65001）
-	// 这里输出固定信息，实际需要调用 Windows API。
-	fmt.Println("Build file_ encoding: ANSI") // 或检测是否为 UTF-8
+	encoding := "ANSI"
+	if cp := getWindowsACP(); cp == 65001 {
+		encoding = "UTF-8"
+	}
+	fmt.Printf("Build file encoding: %s\n", encoding)
 	return 0
 }
 
@@ -956,7 +956,17 @@ options:
 
 // ToolUrtle 打印乌龟图案（彩蛋）。
 func (n *NinjaMain) ToolUrtle(options *Options, args []string) int {
-	urtle := "xx"
+	// RLE encoded.
+	urtle := " 13 ,3;2!2;\n8 ,;<11!;\n5 `'<10!(2`'2!\n11 ,6;, `\\. `\\9 .,c13$ec,.\n6 " +
+		",2;11!>; `. ,;!2> .e8$2\".2 \"?7$e.\n <:<8!'` 2.3,.2` ,3!' ;,(?7\";2!2'<" +
+		"; `?6$PF ,;,\n2 `'4!8;<!3'`2 3! ;,`'2`2'3!;4!`2.`!;2 3,2 .<!2'`).\n5 3`5" +
+		"'2`9 `!2 `4!><3;5! J2$b,`!>;2!:2!`,d?b`!>\n26 `'-;,(<9!> $F3 )3.:!.2 d\"" +
+		"2 ) !>\n30 7`2'<3!- \"=-='5 .2 `2-=\",!>\n25 .ze9$er2 .,cd16$bc.'\n22 .e" +
+		"14$,26$.\n21 z45$c .\n20 J50$c\n20 14$P\"`?34$b\n20 14$ dbc `2\"?22$?7$c" +
+		"\n20 ?18$c.6 4\"8?4\" c8$P\n9 .2,.8 \"20$c.3 ._14 J9$\n .2,2c9$bec,.2 `?" +
+		"21$c.3`4%,3%,3 c8$P\"\n22$c2 2\"?21$bc2,.2` .2,c7$P2\",cb\n23$b bc,.2\"2" +
+		"?14$2F2\"5?2\",J5$P\" ,zd3$\n24$ ?$3?%3 `2\"2?12$bcucd3$P3\"2 2=7$\n23$P" +
+		"\" ,3;<5!>2;,. `4\"6?2\"2 ,9;, `\"?2$\n"
 	count := 0
 	for _, ch := range urtle {
 		if ch >= '0' && ch <= '9' {
@@ -1071,6 +1081,7 @@ var kTools = []Tool{
 	{"rules", "list all rules", RUN_AFTER_LOAD, (*NinjaMain).ToolRules},
 	{"cleandead", "clean built files that are no longer produced by the manifest", RUN_AFTER_LOGS, (*NinjaMain).ToolCleanDead},
 	{"urtle", "", RUN_AFTER_FLAGS, (*NinjaMain).ToolUrtle},
+	{"wincodepage", "print the Windows code page used by ninja", RUN_AFTER_FLAGS, (*NinjaMain).ToolWinCodePage},
 }
 
 // ChooseTool 查找工具，如果工具名为 "list" 则打印列表并返回 nil，

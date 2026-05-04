@@ -162,6 +162,10 @@ func Truncate(path string, size int64, err *string) bool {
 
 // ReplaceContent 原子替换文件内容：先写临时文件，再重命名。
 func ReplaceContent(dst, src string, err *string) bool {
+	// On Windows, os.Rename cannot replace an existing file, so remove it first.
+	if runtime.GOOS == "windows" {
+		os.Remove(dst)
+	}
 	if rename_err := os.Rename(src, dst); rename_err != nil {
 		*err = rename_err.Error()
 		return false
