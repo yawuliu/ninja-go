@@ -82,14 +82,7 @@ func (ps *SubprocessSet) Add(command string, useConsole bool) (*Subprocess, erro
 	}
 
 	// 构建命令
-	if runtime.GOOS == "windows" {
-		sub.cmd = exec.Command("cmd")
-		sub.cmd.SysProcAttr = &syscall.SysProcAttr{
-			CmdLine: "cmd /c " + command,
-		}
-	} else {
-		sub.cmd = exec.Command("/bin/sh", "-c", command)
-	}
+	sub.cmd = makeCmd(command)
 
 	// 设置标准输入输出
 	if useConsole {

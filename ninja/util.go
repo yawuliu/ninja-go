@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"syscall"
 	"unicode"
 )
 
@@ -123,7 +122,7 @@ func ReadFile(path string) (string, error) {
 // SetCloseOnExec 设置文件描述符的 close-on-exec 标志（仅 Unix）。
 func SetCloseOnExec(f *os.File) {
 	if runtime.GOOS != "windows" {
-		syscall.CloseOnExec(syscall.Handle(f.Fd()))
+		setCloseOnExec(f.Fd())
 	}
 }
 

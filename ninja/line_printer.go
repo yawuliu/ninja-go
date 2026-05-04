@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"os"
 	"runtime"
 	"unsafe"
@@ -26,8 +25,8 @@ type LinePrinter struct {
 	output_buffer_         bytes.Buffer
 	smart_terminal_        bool
 	supports_color_        bool
-	console_               windows.Handle // Windows 专用
-	procWriteConsoleOutput *windows.LazyProc
+	console_               winHandle // Windows 专用
+	procWriteConsoleOutput *winLazyProc
 }
 
 // NewLinePrinter 创建并初始化 LinePrinter
@@ -37,7 +36,7 @@ func NewLinePrinter() *LinePrinter {
 		console_locked_:  false,
 		smart_terminal_:  false,
 		supports_color_:  false,
-		console_:         windows.InvalidHandle,
+		console_:         winInvalidHandle,
 	}
 
 	term := os.Getenv("TERM")
@@ -45,9 +44,9 @@ func NewLinePrinter() *LinePrinter {
 		if term == "dumb" {
 			lp.smart_terminal_ = false
 		} else {
-			lp.console_ = windows.Handle(os.Stdout.Fd())
-			var csbi windows.ConsoleScreenBufferInfo
-			err := windows.GetConsoleScreenBufferInfo(lp.console_, &csbi)
+			lp.console_ = winHandle(os.Stdout.Fd())
+			var csbi winConsoleScreenBufferInfo
+			err := winGetConsoleScreenBufferInfo(lp.console_, &csbi)
 			lp.smart_terminal_ = (err == nil)
 		}
 	} else {
@@ -60,9 +59,9 @@ func NewLinePrinter() *LinePrinter {
 
 	if runtime.GOOS == "windows" && lp.supports_color_ {
 		var mode uint32
-		if windows.GetConsoleMode(lp.console_, &mode) == nil {
+		if winGetConsoleMode(lp.console_, &mode) == nil {
 			// 尝试启用 ANSI 转义序列支持
-			if err := windows.SetConsoleMode(lp.console_, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING); err != nil {
+			if err := winSetConsoleMode(lp.console_, mode|winEnableVirtualTerminal); err != nil {
 				lp.supports_color_ = false
 			}
 		}
@@ -74,8 +73,7 @@ func NewLinePrinter() *LinePrinter {
 			lp.supports_color_ = true
 		}
 	}
-	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
-	lp.procWriteConsoleOutput = kernel32.NewProc("WriteConsoleOutputW")
+	lp.procWriteConsoleOutput = winNewLazyProc("WriteConsoleOutputW")
 
 	return lp
 }
@@ -86,7 +84,7 @@ type charInfo struct {
 	attributes  uint16 // word
 }
 
-func (lp *LinePrinter) WriteConsoleOutput(console windows.Handle, buffer []charInfo, bufferSize, bufferCoord windows.Coord, writeRegion *windows.SmallRect) {
+func (lp *LinePrinter) WriteConsoleOutput(console winHandle, buffer []charInfo, bufferSize, bufferCoord winCoord, writeRegion *winSmallRect) {
 	ret, _, err := lp.procWriteConsoleOutput.Call(
 		uintptr(console),
 		uintptr(unsafe.Pointer(&buffer[0])),
@@ -115,8 +113,8 @@ func (lp *LinePrinter) Print(toPrint string, typ LineType) {
 
 	if lp.smart_terminal_ && typ == ELIDE {
 		if runtime.GOOS == "windows" {
-			var csbi windows.ConsoleScreenBufferInfo
-			if err := windows.GetConsoleScreenBufferInfo(lp.console_, &csbi); err == nil {
+			var csbi winConsoleScreenBufferInfo
+			if err := winGetConsoleScreenBufferInfo(lp.console_, &csbi); err == nil {
 				width := int(csbi.Size.X)
 				toPrint = elideMiddle(toPrint, width)
 				if lp.supports_color_ {
@@ -124,9 +122,9 @@ func (lp *LinePrinter) Print(toPrint string, typ LineType) {
 					os.Stdout.Sync()
 				} else {
 					// 使用 WriteConsoleOutput 更新缓冲区但不移动光标
-					bufSize := windows.Coord{X: csbi.Size.X, Y: 1}
-					zeroZero := windows.Coord{X: 0, Y: 0}
-					target := windows.SmallRect{
+					bufSize := winCoord{X: csbi.Size.X, Y: 1}
+					zeroZero := winCoord{X: 0, Y: 0}
+					target := winSmallRect{
 						Left:   csbi.CursorPosition.X,
 						Top:    csbi.CursorPosition.Y,
 						Right:  csbi.CursorPosition.X + csbi.Size.X - 1,

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"syscall"
 )
 
 const (
@@ -522,7 +521,7 @@ func (d *DepsLog) OpenForWriteIfNeeded() bool {
 
 	// Set close-on-exec
 	if fd := d.file_.Fd(); fd > 0 {
-		syscall.CloseOnExec(syscall.Handle(fd))
+		setCloseOnExec(fd)
 	}
 
 	// In append mode, log_file_ pointer is already at end; but ensure we're at end.
