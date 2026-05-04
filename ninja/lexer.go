@@ -1154,13 +1154,25 @@ func (l *Lexer) ReadEvalString(eval *EvalString, path bool, err *string) bool {
 				continue
 			}
 		yy82:
-			p++
+			p++ // consume ':'
 			yych = l.input_[p]
 			marker = p
+			if yych == '{' {
+				goto yy84 // ${:varname} braced variable
+			}
+			if myybm[0+yych]&64 != 0 {
+				// $:varname — simple variable starting with ':'
+				// yy79 expects p to be at the first varname char
+				goto yy79
+			}
 			if myybm[0+yych]&128 != 0 {
 				goto yy84
 			}
-			goto yy74
+			// $: followed by non-varname char → literal colon escape
+			{
+				eval.AddText(":")
+				continue
+			}
 		yy83:
 			p++
 			yych = l.input_[p]

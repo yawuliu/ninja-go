@@ -270,9 +270,6 @@ func (p *Plan) computeCriticalPath() {
 }
 
 func (p *Plan) ScheduleInitialEdges() {
-	if p.ready_.Len() == 0 {
-		panic("ScheduleInitialEdges called before PrepareQueue")
-	}
 	pools := make(map[*Pool]bool)
 	for edge, want := range p.want_ {
 		if want == kWantToStart && edge.AllInputsReady() {
